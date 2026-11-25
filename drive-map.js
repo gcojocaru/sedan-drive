@@ -410,32 +410,68 @@ async function startGame(lat0, lon0, placeName) {
   renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
   document.body.prepend(renderer.domElement);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 5000);
 
-  function skyTex(night) {
-    return makeTex(1024, 512, (x) => {
-      const g = x.createLinearGradient(0, 0, 0, 512);
-      if (!night) { g.addColorStop(0, '#2c5fa6'); g.addColorStop(0.4, '#8fb9de'); g.addColorStop(0.5, '#dfe9ef'); g.addColorStop(0.505, '#8a9070'); g.addColorStop(1, '#3a4030'); }
-      else { g.addColorStop(0, '#04060b'); g.addColorStop(0.44, '#0d1422'); g.addColorStop(0.5, '#1a2131'); g.addColorStop(0.505, '#0a0c09'); g.addColorStop(1, '#040504'); }
-      x.fillStyle = g; x.fillRect(0, 0, 1024, 512);
-      if (!night) {
-        const s = x.createRadialGradient(300, 140, 0, 300, 140, 70); s.addColorStop(0, 'rgba(255,255,248,1)'); s.addColorStop(0.12, 'rgba(255,250,232,.95)'); s.addColorStop(1, 'rgba(255,240,210,0)'); x.fillStyle = s; x.fillRect(200, 40, 200, 200);
-        x.fillStyle = 'rgba(255,255,255,.35)'; for (let i = 0; i < 40; i++) { const cx = Math.random() * 1024, cy = 150 + Math.random() * 80; for (let k = 0; k < 6; k++) { x.beginPath(); x.ellipse(cx + k * 14, cy + Math.random() * 6, 22, 7, 0, 0, Math.PI * 2); x.fill(); } }
-      } else for (let i = 0; i < 700; i++) { x.fillStyle = 'rgba(255,255,255,' + Math.random() * 0.85 + ')'; x.fillRect(Math.random() * 1024, Math.random() * 230, 1, 1); }
+  // ---- sun, sky and time of day ----
+  // The sun sits where it really is over this place on today's date at the chosen local solar time, and the sky is
+  // redrawn around it, so the sun you see is the one casting the shadows. A cool moon takes over at night.
+  const ss = THREE.MathUtils.smoothstep, now = new Date();
+  const DOY = Math.round((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - Date.UTC(now.getUTCFullYear(), 0, 0)) / 864e5);
+  const DEC = 23.44 * Math.PI / 180 * Math.sin(2 * Math.PI * (284 + DOY) / 365), PHI = lat0 * Math.PI / 180;
+  const sunAt = h => { const H = (h - 12) * Math.PI / 12, c = Math.cos(DEC); return V(-c * Math.sin(H), Math.sin(DEC) * Math.sin(PHI) + c * Math.cos(H) * Math.cos(PHI), c * Math.cos(H) * Math.sin(PHI) - Math.sin(DEC) * Math.cos(PHI)).normalize(); };
+  const cH0 = -Math.tan(PHI) * Math.tan(DEC), SET = cH0 <= -1 ? 21 : cH0 >= 1 ? 12.5 : 12 + Math.acos(cH0) * 12 / Math.PI; // sunset (solar hours)
+  const TIMES = [['Morning', 25.6 - SET], ['Midday', 12.6], ['Afternoon', 12 + (SET - 12) * 0.62], ['Golden hour', SET - 0.8], ['Dusk', SET + 0.45], ['Night', 23.6]];
+  const NIGHT = 5, MOON = V(-0.45, 0.62, 0.64).normalize(), UPV = V(0, 1, 0);
+  // sky colours by sun elevation (degrees): zenith, horizon, glow around the sun, ground haze
+  const SKYK = [[-14, '#03050a', '#0e1420', '#0e1420', '#050605'], [-5, '#141f3d', '#363c5c', '#a0604c', '#16181a'], [-1, '#2a3f73', '#7c6f80', '#f08a54', '#2c2d2a'],
+    [4, '#3d63a3', '#e6b590', '#ffae68', '#4d4f3f'], [12, '#3567ad', '#cfdbe4', '#ffdcae', '#6a6f52'], [35, '#2c5fa6', '#dfe9ef', '#fff4e0', '#737a58']];
+  const skyCols = e => { let i = 0; while (i < SKYK.length - 2 && e > SKYK[i + 1][0]) i++; const a = SKYK[i], b = SKYK[i + 1], f = THREE.MathUtils.clamp((e - a[0]) / (b[0] - a[0]), 0, 1); return [1, 2, 3, 4].map(k => new THREE.Color(a[k]).lerp(new THREE.Color(b[k]), f)); };
+  const rgba = (c, a) => { const h = c.getHex(); return 'rgba(' + (h >> 16 & 255) + ',' + (h >> 8 & 255) + ',' + (h & 255) + ',' + a + ')'; };
+  const SW = 2048, SH = 1024, dirPx = d => [(Math.atan2(d.z, d.x) / (2 * Math.PI) + 0.5) * SW, (0.5 - Math.asin(THREE.MathUtils.clamp(d.y, -1, 1)) / Math.PI) * SH]; // equirect pixel for a direction
+  function drawSky(sd, e, dark) {
+    const [zen, hor, glow, gnd] = skyCols(e), warm = 1 - ss(e, 2, 30);
+    const t = makeTex(SW, SH, (x) => {
+      let g = x.createLinearGradient(0, 0, 0, SH / 2); g.addColorStop(0, rgba(zen, 1)); g.addColorStop(0.62, rgba(zen.clone().lerp(hor, 0.45), 1)); g.addColorStop(1, rgba(hor, 1));
+      x.fillStyle = g; x.fillRect(0, 0, SW, SH / 2);
+      g = x.createLinearGradient(0, SH / 2, 0, SH); g.addColorStop(0, rgba(hor, 1)); g.addColorStop(0.05, rgba(hor.clone().lerp(gnd, 0.6), 1)); g.addColorStop(1, rgba(gnd, 1));
+      x.fillStyle = g; x.fillRect(0, SH / 2, SW, SH / 2);
+      const rs = seeded(11), sa = dark ? 1 : 1 - ss(e, -10, -3); // stars
+      if (sa > 0.02) for (let i = 0; i < 1600; i++) { x.fillStyle = 'rgba(255,255,255,' + (rs() * 0.85 * sa).toFixed(3) + ')'; const z = rs() < 0.08 ? 2 : 1; x.fillRect(rs() * SW, rs() * SH * 0.46, z, z); }
+      const [sx, sy] = dirPx(sd), ga = dark ? 0 : (1 - ss(e, 2, 25)) * ss(e, -7, -2);
+      for (const ox of [-SW, 0, SW]) if (ga > 0.01) { // warm band on the horizon around the sun (drawn on both sides of the seam)
+        x.save(); x.translate(sx + ox, SH / 2); x.scale(1, 0.28); const r = x.createRadialGradient(0, 0, 0, 0, 0, SW * 0.28);
+        r.addColorStop(0, rgba(glow, 0.9 * ga)); r.addColorStop(1, rgba(glow, 0)); x.fillStyle = r; x.fillRect(-SW * 0.28, -SW * 0.28, SW * 0.56, SW * 0.56); x.restore();
+      }
+      const rc = seeded(7), cc = dark ? new THREE.Color('#2a3140') : new THREE.Color('#ffffff').lerp(glow, warm * 0.55).multiplyScalar(0.35 + 0.65 * ss(e, -6, 6));
+      for (let i = 0; i < 46; i++) { // clouds
+        const cx = rc() * SW, cy = SH * (0.29 + rc() * 0.16), n = 3 + Math.floor(rc() * 5); x.fillStyle = rgba(cc, ((0.18 + rc() * 0.2) * (dark ? 0.5 : 1)).toFixed(3));
+        for (let k = 0; k < n; k++) { x.beginPath(); x.ellipse(cx + k * 26, cy + rc() * 12, 40 + rc() * 20, 12 + rc() * 5, 0, 0, Math.PI * 2); x.fill(); }
+      }
+      const disc = (d, core, halo, hr, cr) => { // sun or moon, stretched like everything else near the top of an equirect image
+        const [px, py] = dirPx(d), st = 1 / Math.max(0.25, Math.sqrt(1 - d.y * d.y));
+        for (const ox of [-SW, 0, SW]) {
+          x.save(); x.translate(px + ox, py); x.scale(st, 1);
+          let r = x.createRadialGradient(0, 0, 0, 0, 0, hr); r.addColorStop(0, halo); r.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = r; x.fillRect(-hr, -hr, hr * 2, hr * 2);
+          r = x.createRadialGradient(0, 0, 0, 0, 0, cr); r.addColorStop(0, core); r.addColorStop(0.7, core); r.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = r; x.fillRect(-cr, -cr, cr * 2, cr * 2);
+          x.restore();
+        }
+      };
+      if (dark) disc(MOON, 'rgba(236,240,255,1)', 'rgba(150,170,220,.25)', 70, 10);
+      else if (e > -3) disc(sd, 'rgba(255,253,244,1)', rgba(glow, 0.6), 120, 14);
     });
+    t.mapping = THREE.EquirectangularReflectionMapping; t.wrapT = THREE.ClampToEdgeWrapping; return t;
   }
-  const SKY = { day: skyTex(false), night: skyTex(true) };
-  SKY.day.mapping = SKY.night.mapping = THREE.EquirectangularReflectionMapping;
   const pm = new THREE.PMREMGenerator(renderer);
-  const ENV = { day: pm.fromEquirectangular(SKY.day).texture, night: pm.fromEquirectangular(SKY.night).texture };
   const hemi = new THREE.HemisphereLight(0xd6e6ff, 0x5d6046, 0.7); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff0d8, 2.8); sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 1, far: 400 });
-  sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.04; scene.add(sun, sun.target);
-  const SUN_OFF = V(70, 110, -45);
+  // one shadow map over a box that reaches further ahead of the car than behind it (see placeShadow)
+  const SH_R = 90, SH_MAP = renderer.capabilities.maxTextureSize >= 4096 ? 4096 : 2048;
+  sun.shadow.mapSize.set(SH_MAP, SH_MAP); Object.assign(sun.shadow.camera, { left: -SH_R, right: SH_R, top: SH_R, bottom: -SH_R, near: 1, far: 900 });
+  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.05; scene.add(sun, sun.target);
+  const lightDir = V(0, 1, 0); // towards the sun (or moon)
   scene.fog = new THREE.Fog(0xdfe9ef, 160, 950);
 
   // ---- textures & materials ----
@@ -799,6 +835,40 @@ async function startGame(lat0, lon0, placeName) {
     for (const m of [T, R, C1, C2]) { m.castShadow = true; m.receiveShadow = true; scene.add(m); }
   }
 
+  // ---- street lamps: posts along the streets; from dusk their heads glow and they throw pools of light ----
+  const glowTex = makeTex(64, 64, (x) => { const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.18, 'rgba(255,255,255,.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); });
+  glowTex.wrapS = glowTex.wrapT = THREE.ClampToEdgeWrapping;
+  const lamps = [], LG = 12, lgrid = new Map();
+  const lampFree = (x, z) => { const i = Math.floor(x / LG), j = Math.floor(z / LG); for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const p of lgrid.get(gkey(i + a, j + b)) || []) if (Math.hypot(p[0] - x, p[1] - z) < 12) return false; return true; };
+  for (const r of roads) {
+    if (['service', 'track', 'raceway', 'busway'].includes(r.type) || r.hw < 2.6) continue;
+    const cum = cumLen(r.g), total = cum[cum.length - 1], wide = r.hw >= 4.5; let seg = 0, k = 0;
+    for (let s = 10; s < total - 4 && lamps.length < 2500; s += wide ? 26 : 34, k++) {
+      while (seg < cum.length - 2 && cum[seg + 1] < s) seg++;
+      const a = r.g[seg], b = r.g[seg + 1], L = cum[seg + 1] - cum[seg] || 1, dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L, f = s - cum[seg];
+      const side = wide && k % 2 ? -1 : 1, nx = -dz * side, nz = dx * side, off = r.hw + (r.walk ? 0.9 : 0.45); // wide streets: staggered on both sides
+      const x = a[0] + dx * f + nx * off, z = a[1] + dz * f + nz * off;
+      if (Math.abs(x) > HALF + 40 || Math.abs(z) > HALF + 40 || onDrive(x, z, -0.4) || inBuilding(x, z, 1) || (!isBridge(r.t) && areaAt(x, z, ['water'])) || !lampFree(x, z)) continue;
+      lamps.push([x, z, -nx, -nz]); const kk2 = gkey(Math.floor(x / LG), Math.floor(z / LG)); let Lc = lgrid.get(kk2); if (!Lc) lgrid.set(kk2, Lc = []); Lc.push([x, z]);
+    }
+  }
+  let setLamps = () => { };
+  if (lamps.length) {
+    const nL = lamps.length, metal = new THREE.MeshStandardMaterial({ color: 0x4a4e52, roughness: 0.5, metalness: 0.6 });
+    const lampHead = new THREE.MeshStandardMaterial({ color: 0xd8d8d0, roughness: 0.4, emissive: 0xffd9a0, emissiveIntensity: 0 });
+    const parts = [[new THREE.CylinderGeometry(0.06, 0.1, 7.4, 6).translate(0, 3.7, 0), metal], [new THREE.BoxGeometry(1.6, 0.09, 0.09).translate(0.8, 7.3, 0), metal], [new THREE.BoxGeometry(0.6, 0.13, 0.28).translate(1.5, 7.22, 0), lampHead]].map(([g, m]) => new THREE.InstancedMesh(g, m, nL));
+    const pools = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: glowTex, color: 0xffaa4c, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }), nL);
+    const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), one = V(1, 1, 1), pool = V(15, 1, 15), Y = V(0, 1, 0), I = new THREE.Quaternion(), gp = new Float32Array(nL * 3);
+    lamps.forEach(([x, z, ax, az], i) => {
+      Q.setFromAxisAngle(Y, Math.atan2(-az, ax)); M.compose(V(x, 0, z), Q, one); for (const m of parts) m.setMatrixAt(i, M); // arm points along (ax, az), over the road
+      const hx = x + ax * 1.5, hz = z + az * 1.5; M.compose(V(hx, 0.075, hz), I, pool); pools.setMatrixAt(i, M); gp.set([hx, 7.08, hz], i * 3);
+    });
+    parts.forEach((m, i) => { m.castShadow = i < 2; m.receiveShadow = true; scene.add(m); });
+    const glows = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(gp, 3)), new THREE.PointsMaterial({ map: glowTex, color: 0xffd39a, size: 2.4, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    pools.renderOrder = 1; scene.add(pools, glows);
+    setLamps = on => { lampHead.emissiveIntensity = on ? 3.5 : 0; pools.visible = glows.visible = on; };
+  }
+
   // ---- car ----
   await say('Placing the car…');
   const CAR = buildCar(), car = CAR.car;
@@ -813,8 +883,14 @@ async function startGame(lat0, lon0, placeName) {
     mk(blob(0.35, 0.6), 5.0, 2.1, -0.05, 0); const tb = blob(0.1, 0.8); for (const x of [1.32, -1.31]) for (const z of [0.735, -0.735]) mk(tb, 0.55, 0.34, x, z);
   }
   scene.add(car);
+  // glows on the head and tail lights while they are on
+  const glowMat = c => new THREE.SpriteMaterial({ map: glowTex, color: c, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const headGlow = glowMat(0xfff1dc), tailGlow = glowMat(0xff2a1a), tails = [];
+  for (const l of CAR.lights.low) { const s = new THREE.Sprite(headGlow); s.position.copy(l.position).add(V(0.12, 0, 0)); s.scale.setScalar(1.1); car.add(s); }
+  car.updateMatrixWorld(true); car.traverse(o => { if (o.isMesh && o.name === 'tail_brake') tails.push(new THREE.Box3().setFromObject(o).getCenter(V())); });
+  for (const c of tails) { const s = new THREE.Sprite(tailGlow); s.position.copy(car.worldToLocal(c)).add(V(-0.1, 0, 0)); s.scale.setScalar(0.6); car.add(s); }
 
-  const wheels = ['front_R', 'front_L', 'rear_R', 'rear_L'].map(k => { const w = car.getObjectByName('wheel_' + k); return w && { w, front: k.startsWith('front'), side: k.endsWith('R') ? 1 : -1, base: w.rotation.y }; }).filter(Boolean);
+  const wheels =['front_R', 'front_L', 'rear_R', 'rear_L'].map(k => { const w = car.getObjectByName('wheel_' + k); return w && { w, front: k.startsWith('front'), side: k.endsWith('R') ? 1 : -1, base: w.rotation.y }; }).filter(Boolean);
   const swFace = car.getObjectByName('steering_wheel_face');
   const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0 };
   const camPos = V();
@@ -832,17 +908,39 @@ async function startGame(lat0, lon0, placeName) {
     CAR.lights.low.forEach(l => { l.intensity = head ? 260 : 0; l.visible = head; });
     CAR.lights.high.forEach(l => { l.intensity = head && night ? 900 : 0; l.visible = head && night; });
   }
-  function setNight(n) {
-    night = n; scene.background = n ? SKY.night : SKY.day; scene.environment = n ? ENV.night : ENV.day; scene.environmentIntensity = n ? 0.3 : 1;
-    sun.intensity = n ? 0.1 : 2.8; sun.color.set(n ? 0x9fb3ff : 0xfff0d8); hemi.intensity = n ? 0.08 : 0.7;
-    scene.fog.color.set(n ? 0x1a2131 : 0xdfe9ef); scene.fog.near = n ? 80 : 160; scene.fog.far = n ? 650 : 950;
-    wallMat.emissiveIntensity = n ? 1.6 : 0;
-    head = n || head; setLights();
-  }
-  setNight(false);
-
   const msgEl = $('msg'); let msgTimer;
   function flash(t) { msgEl.textContent = t; msgEl.style.opacity = 1; clearTimeout(msgTimer); msgTimer = setTimeout(() => msgEl.style.opacity = 0, 2200); }
+
+  // ---- time of day ----
+  let tIdx = 0, dayIdx = 0, lowLight = false, skyT = null, envRT = null;
+  const clock = h => { const m = Math.round((((h % 24) + 24) % 24) * 60); return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+  function applyTime(i, announce) {
+    tIdx = i; if (i !== NIGHT) dayIdx = i;
+    const [name, h] = TIMES[i], sd = sunAt(h); let e = Math.asin(sd.y) * 180 / Math.PI;
+    night = i === NIGHT || e < -7; if (night) e = Math.min(e, -14);
+    lowLight = night || e < -0.5;
+    const [zen, hor, glow, gnd] = skyCols(e), warm = 1 - ss(e, 2, 30);
+    // direct light: the sun by day, soft light from the whole sky at dusk, the moon at night
+    if (night) { lightDir.copy(MOON); sun.color.set(0x9fb3ff); sun.intensity = 0.14; }
+    else if (e < -1) { lightDir.set(0.25, 1, 0.3).normalize(); sun.color.copy(zen).lerp(new THREE.Color(0xffffff), 0.6); sun.intensity = 0.3; }
+    else { lightDir.copy(sd); if (lightDir.y < 0.06) { lightDir.y = 0.06; lightDir.normalize(); } sun.color.set(0xfff3e4).lerp(glow, warm * 0.85); sun.intensity = 1 + 2.6 * ss(e, -1, 12); }
+    hemi.color.copy(hor).lerp(zen, 0.25); hemi.groundColor.copy(gnd); hemi.intensity = night ? 0.1 : 0.22 + 0.33 * ss(e, -6, 15); // sky fill kept well below the sun so shadows read
+    if (skyT) skyT.dispose(); if (envRT) envRT.dispose();
+    skyT = drawSky(sd, e, night); envRT = pm.fromEquirectangular(skyT);
+    scene.background = skyT; scene.environment = envRT.texture; scene.environmentIntensity = night ? 0.3 : 0.35 + 0.45 * ss(e, -6, 12);
+    scene.fog.color.copy(hor); scene.fog.near = night ? 80 : 110 + 50 * ss(e, -3, 10); scene.fog.far = night ? 650 : 760 + 190 * ss(e, -3, 10);
+    renderer.toneMappingExposure = night ? 1.1 : e < 0 ? 1.25 : 1 + 0.08 * warm;
+    wallMat.emissiveIntensity = night ? 1.6 : e < 0 ? 0.9 : 0;
+    setLamps(lowLight);
+    if (lowLight) head = true;
+    setLights();
+    $('tod').textContent = name + ' · ' + clock(h);
+    if (announce) flash(name + ' · ' + clock(h));
+  }
+  { // start in daylight: whichever of morning / midday / afternoon has the sun nearest 32° up (low winter sun, high summer sun)
+    const el = i => Math.asin(sunAt(TIMES[i][1]).y) * 180 / Math.PI;
+    applyTime([2, 1, 0].reduce((b, i) => Math.abs(el(i) - 32) < Math.abs(el(b) - 32) ? i : b));
+  }
   const corners = [[2.2, 0.86], [2.2, -0.86], [0, 0.88], [0, -0.88], [-2.18, 0.86], [-2.18, -0.86]];
   function blocked(x, z, h) {
     const c = Math.cos(h), s = Math.sin(h);
@@ -883,8 +981,16 @@ async function startGame(lat0, lon0, placeName) {
     if (swFace) swFace.rotation.z = st.steer * 4;
     CAR.tailMat.emissiveIntensity = s.braking ? 7 : head ? 1.8 : 0; CAR.cbrakeMat.emissiveIntensity = s.braking ? 7 : 0;
     CAR.revMat.emissiveIntensity = s.reversing ? 5 : 0;
+    headGlow.opacity = head ? (lowLight ? 0.85 : 0.25) : 0; tailGlow.opacity = s.braking ? (lowLight ? 0.9 : 0.4) : head && lowLight ? 0.35 : 0;
   }
-  const look = V(), want = V();
+  const look = V(), want = V(), shC = V(), lx = V(), ly = V();
+  function placeShadow() { // centre the shadow box ahead of the car, snapped to whole shadow-map texels so edges don't crawl
+    shC.set(st.pos.x + Math.cos(st.h) * 45, 0, st.pos.z - Math.sin(st.h) * 45);
+    lx.crossVectors(UPV, lightDir); if (lx.lengthSq() < 1e-6) lx.set(1, 0, 0); lx.normalize(); ly.crossVectors(lightDir, lx);
+    const tx = 2 * SH_R / SH_MAP, a = Math.round(shC.dot(lx) / tx) * tx, b = Math.round(shC.dot(ly) / tx) * tx, c = shC.dot(lightDir);
+    shC.copy(lx).multiplyScalar(a).addScaledVector(ly, b).addScaledVector(lightDir, c);
+    sun.target.position.copy(shC); sun.position.copy(shC).addScaledVector(lightDir, 400);
+  }
   function updateCam(dt) {
     const fx = Math.cos(st.h), fz = -Math.sin(st.h);
     if (camMode === 0) {
@@ -902,7 +1008,7 @@ async function startGame(lat0, lon0, placeName) {
     }
     if (shake > 0.01) { camera.position.x += (Math.random() - 0.5) * shake * 0.25; camera.position.y += (Math.random() - 0.5) * shake * 0.2; shake *= Math.exp(-dt * 7); }
     camera.updateProjectionMatrix();
-    sun.position.copy(st.pos).add(SUN_OFF); sun.target.position.copy(st.pos);
+    placeShadow();
   }
 
   // ---- HUD ----
@@ -934,7 +1040,8 @@ async function startGame(lat0, lon0, placeName) {
     if (!started) begin();
     keys[e.code] = true; if (e.repeat) return;
     if (e.code === 'KeyH') { head = !head; setLights(); }
-    if (e.code === 'KeyN') setNight(!night);
+    if (e.code === 'KeyN') applyTime(tIdx === NIGHT ? dayIdx : NIGHT, true);
+    if (e.code === 'KeyT') applyTime((tIdx + 1) % TIMES.length, true);
     if (e.code === 'KeyC') camMode = 1 - camMode;
     if (e.code === 'KeyR') { const s = snapToRoad(st.pos.x, st.pos.z); if (s) place(s.x, s.z, s.h); }
   });

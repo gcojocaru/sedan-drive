@@ -30,7 +30,8 @@ Then open http://localhost:5173 — it redirects to the real-map drive.
 | S / ↓ | Brake, then reverse |
 | A D / ← → | Steer |
 | Space | Handbrake |
-| H · N · C | Headlights · night · camera |
+| H · C | Headlights · camera |
+| T · N | Next time of day · night on/off (real-map page: the sun is placed where it really is over that place today) |
 | R | Reset / back on the road |
 | M | Choose another place (real-map page) |
 
