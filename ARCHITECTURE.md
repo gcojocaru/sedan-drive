@@ -23,7 +23,7 @@ how each part works; this file says how the parts may fit together.
 | `sedan-model.js` | 661 | `buildCar()`, used only by `drive-map.js` |
 | `three-d-stage.js` | 435 | Viewer web component (renderer, orbit, GLB/OBJ export) |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
-| `radio.js` | 29 | Car radio: Romanian internet station list and `radio(show)` player, used by both drive pages |
+| `radio.js` | 53 | Car radio for both drive pages: `stationsNear()` (radio-browser.info, real-map page), Romanian presets (test track), `radio(show, find)` player |
 | `osm-query.js` | 37 | Overpass query, cache key, start-point grid, servers; shared with the proxy |
 | `proxy/worker.js` | 69 | Cloudflare Worker that caches map downloads |
 
@@ -58,7 +58,7 @@ root, one copy each. Page URLs don't change.
 | `world.js` | `buildWorld(elements, origin, scene)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`, `snapToRoad`, lamps, lit windows) | `geom`, three |
 | `map-data.js` | `loadArea(lat, lon, status)`: IndexedDB cache → proxy → Overpass → vector fallback; returns `{ data, fallback, err }` | `osm-query`, `vector-fallback` |
 | `sedan-model.js` | `buildCar()` and the axle constants: the only car | three |
-| `radio.js` | Station list and `radio(show)` → `tune(step)`; the only audio | nothing |
+| `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find)` → `tune(step)`; the only audio | nothing |
 | `geom.js` | Pure geometry on plain arrays (`ribbon`, `fillPoly`, `obb`, `clipHalf`, `joinRings`, …) | nothing |
 | `osm-query.js` | Query, cache key, grid, servers, proxy address | nothing |
 | `vector-fallback.js` | Vector tiles → Overpass-shaped elements | `osm-query` |
@@ -67,7 +67,7 @@ root, one copy each. Page URLs don't change.
 
 Dependencies point down the table only. Page entries are the only modules that touch the page's DOM at import time.
 `geom.js`, `osm-query.js` and `vector-fallback.js` stay importable in Node: no three, no DOM, no storage, and network
-only through a passed-in `fetch`.
+only through a passed-in `fetch`. `radio.js` follows the same rules, except that calling `radio()` creates an `<audio>`.
 
 Tests live in `test/*.test.js` and run with `npm test`. Fixtures (a small Overpass reply, one vector tile) live in
 `test/fixtures/`; tests never touch the network.
@@ -78,7 +78,8 @@ Tests live in `test/*.test.js` and run with `npm test`. Fixtures (a small Overpa
    import. Where they need slightly different behaviour, pass the difference in (an argument, a callback such as
    `surface(x, z)` or `blocked(x, z, h)`); don't fork the code.
 2. **Respect the dependency table.** No upward imports, no new DOM or three.js use in the Node-importable modules, no
-   network or storage calls outside `map-data.js`, `vector-fallback.js`, the proxy and the page entries.
+   network or storage calls outside `map-data.js`, `vector-fallback.js`, `radio.js` (station search through a passed-in
+   `fetch`, and the stream itself), the proxy and the page entries.
 3. **New logic goes in its module, not in a page and not in `startGame()`.** A new world feature is its own function
    in `world.js` (until it exists, a function outside `startGame()` that takes what it needs). No new inline
    `<script type="module">` logic in pages.
