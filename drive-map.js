@@ -1,25 +1,38 @@
 import * as THREE from 'three';
 import { buildCar } from './sedan-model.js';
+import { HALF, CACHE_V, AREA_PROXY, ENDPOINTS, snap, areaKey, overpassQuery, overpassError } from './osm-query.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = id => document.getElementById(id);
-const HALF = 500; // metres each side of the start point (1 km square)
 const LS_PLACE = 'sedan-map-last-place-v1';
-const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 
 function backToMap() { history.replaceState(null, '', location.pathname + location.search); location.reload(); }
 $('retry').onclick = () => location.reload();
 $('pickAgain').onclick = backToMap;
 
 const hm = location.hash.match(/^#(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)(?:\|(.*))?$/);
-if (hm) startGame(+hm[1], +hm[2], hm[3] ? decodeURIComponent(hm[3]) : '');
+if (hm) startGame(snap(+hm[1]), snap(+hm[2]), hm[3] ? decodeURIComponent(hm[3]) : '');
 else showPicker();
 
 // ---------------- Map picker ----------------
+// Nominatim's usage policy: at most one request a second for the whole site, cache the results, no search-as-you-type.
+// So searches run on submit and are remembered, and a clicked spot is named once, when you press Drive.
+const GEO_KEY = 'sedan-geocode-cache-v1'; let nomLast = 0;
+async function nominatim(path) {
+  let cache = {}; try { cache = JSON.parse(localStorage.getItem(GEO_KEY) || '{}'); } catch { }
+  if (cache[path]) return cache[path].v;
+  const wait = nomLast + 1100 - Date.now(); if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  nomLast = Date.now();
+  const r = await fetch('https://nominatim.openstreetmap.org/' + path, { signal: AbortSignal.timeout(6000) });
+  if (!r.ok) throw new Error('place search replied ' + r.status);
+  const v = await r.json();
+  cache[path] = { v, t: Date.now() }; const ks = Object.keys(cache); if (ks.length > 60) ks.sort((a, b) => cache[a].t - cache[b].t).slice(0, ks.length - 60).forEach(k => delete cache[k]);
+  try { localStorage.setItem(GEO_KEY, JSON.stringify(cache)); } catch { }
+  return v;
+}
 async function reverseName(lat, lon) {
   try {
-    const r = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&zoom=17&lat=' + lat + '&lon=' + lon);
-    const a = (await r.json()).address || {};
+    const a = (await nominatim('reverse?format=json&zoom=17&lat=' + lat.toFixed(4) + '&lon=' + lon.toFixed(4))).address || {};
     return [a.road || a.pedestrian || a.neighbourhood || a.suburb, a.city || a.town || a.village || a.county, a.country].filter(Boolean).join(', ');
   } catch { return ''; }
 }
@@ -34,7 +47,7 @@ function showPicker() {
   let marker = null, rect = null, chosen = null;
   const go = $('go'), info = $('placeInfo');
   function choose(lat, lon, name) {
-    lon = ((lon + 540) % 360) - 180;
+    lon = snap(((lon + 540) % 360) - 180); lat = snap(lat); // the grid the map downloads are cached on
     chosen = { lat, lon, name: name || '' };
     const dLat = HALF / 110574, dLon = HALF / (111320 * Math.cos(lat * Math.PI / 180));
     const bounds = [[lat - dLat, lon - dLon], [lat + dLat, lon + dLon]];
@@ -44,8 +57,7 @@ function showPicker() {
     }
     marker.setLatLng([lat, lon]); rect.setBounds(bounds);
     go.disabled = false;
-    info.textContent = name || lat.toFixed(5) + ', ' + lon.toFixed(5);
-    if (!name) reverseName(lat, lon).then(n => { if (n && chosen && chosen.lat === lat && chosen.lon === lon) { chosen.name = n; info.textContent = n; } });
+    info.textContent = name || lat.toFixed(4) + ', ' + lon.toFixed(4);
   }
   map.on('click', e => { choose(e.latlng.lat, e.latlng.lng); if (map.getZoom() < 14) map.setView(e.latlng, 15); });
   if (last) choose(last.lat, last.lon, last.name);
@@ -54,8 +66,7 @@ function showPicker() {
     const q = $('q').value.trim(); if (!q) return;
     const msg = $('searchMsg'); msg.textContent = 'Searching…';
     try {
-      const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
-      const j = await r.json();
+      const j = await nominatim('search?format=json&limit=1&q=' + encodeURIComponent(q.toLowerCase()));
       if (!j.length) { msg.textContent = 'No match. Try another search or click the map.'; return; }
       msg.textContent = '';
       const lat = +j[0].lat, lon = +j[0].lon;
@@ -63,10 +74,12 @@ function showPicker() {
       choose(lat, lon, j[0].display_name.split(',').slice(0, 3).join(',').trim());
     } catch { msg.textContent = 'Search failed. Click the map instead.'; }
   });
-  go.addEventListener('click', () => {
-    if (!chosen) return;
+  go.addEventListener('click', async () => {
+    if (!chosen || go.disabled) return;
+    go.disabled = true;
+    if (!chosen.name) { go.textContent = 'Finding the address…'; chosen.name = await reverseName(chosen.lat, chosen.lon); }
     localStorage.setItem(LS_PLACE, JSON.stringify(chosen));
-    location.hash = chosen.lat.toFixed(6) + ',' + chosen.lon.toFixed(6) + '|' + encodeURIComponent(chosen.name);
+    location.hash = chosen.lat.toFixed(4) + ',' + chosen.lon.toFixed(4) + '|' + encodeURIComponent(chosen.name);
     location.reload();
   });
 }
@@ -77,6 +90,38 @@ async function idbGet(k) { try { const db = await idb(); return await new Promis
 async function idbSet(k, v) { try { const db = await idb(); db.transaction('osm', 'readwrite').objectStore('osm').put(v, k); } catch { } }
 async function idbPrune(prefix) { // drop entries saved by older versions of the query
   try { const s = (await idb()).transaction('osm', 'readwrite').objectStore('osm'), q = s.getAllKeys(); q.onsuccess = () => { for (const k of q.result) if (!String(k).startsWith(prefix)) s.delete(k); }; } catch { }
+}
+
+// ---------------- Map data download ----------------
+// The caching proxy first (one shared download per place for all players), then the public Overpass servers one by
+// one. A server that answers 429/406 is left alone for 30 s, as the Overpass usage policy asks.
+const REST_KEY = 'sedan-overpass-rest-v1';
+const restMap = () => { try { return JSON.parse(localStorage.getItem(REST_KEY) || '{}'); } catch { return {}; } };
+const restHost = host => { const m = restMap(); m[host] = Date.now() + 30000; try { localStorage.setItem(REST_KEY, JSON.stringify(m)); } catch { } };
+async function fetchArea(lat0, lon0, status) {
+  const proxy = AREA_PROXY ? [{ host: new URL(AREA_PROXY).host, url: AREA_PROXY.replace(/\/$/, '') + '/area?lat=' + lat0.toFixed(4) + '&lon=' + lon0.toFixed(4), wait: 150000, proxy: true }] : [];
+  const sources = proxy.concat(ENDPOINTS.map(u => ({ host: new URL(u).host, url: u, wait: 45000 })));
+  let err = null, rested = 0;
+  for (const s of sources) {
+    if ((restMap()[s.host] || 0) > Date.now()) { rested++; continue; }
+    const ac = new AbortController(), t0 = performance.now();
+    const tick = setInterval(() => status('Downloading map data from ' + s.host + '… ' + Math.round((performance.now() - t0) / 1000) + ' s'), 500);
+    const kill = setTimeout(() => ac.abort(), s.wait);
+    try {
+      const r = await fetch(s.url, s.proxy ? { signal: ac.signal } : { method: 'POST', signal: ac.signal, body: 'data=' + encodeURIComponent(overpassQuery(lat0, lon0)), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      if (s.proxy && r.status === 503) { // the proxy already tried every Overpass server; asking them again ourselves would only add load
+        const j = await r.json().catch(() => ({})); return { err: new Error(j.error || 'the map servers are busy') };
+      }
+      if (r.status === 429 || r.status === 406) { restHost(s.host); throw new Error('too many requests'); }
+      if (!r.ok) throw new Error('server replied ' + r.status);
+      const data = await r.json();
+      if (!data || !Array.isArray(data.elements)) throw new Error('bad reply');
+      const bad = overpassError(data.remark); if (bad) throw new Error(bad.slice(0, 90));
+      return { data };
+    } catch (e) { err = e.name === 'AbortError' ? new Error('no answer in time') : e; status(s.host + ' is busy, trying another server…'); }
+    finally { clearInterval(tick); clearTimeout(kill); }
+  }
+  return { err: rested && !err ? new Error('the servers asked us to wait 30 seconds') : err };
 }
 
 // ---------------- Geometry helpers ----------------
@@ -353,37 +398,10 @@ async function startGame(lat0, lon0, placeName) {
   await say('Downloading map data from OpenStreetMap…');
   const cosL = Math.cos(lat0 * Math.PI / 180), KX = 111320 * cosL, KZ = 110574;
   const P = (lat, lon) => [(lon - lon0) * KX, -(lat - lat0) * KZ];
-  const dLat = (HALF + 60) / KZ, dLon = (HALF + 60) / KX;
-  const bb = [lat0 - dLat, lon0 - dLon, lat0 + dLat, lon0 + dLon].map(v => v.toFixed(6)).join(',');
-  const parts = ['way["highway"]', 'node["highway"="crossing"]["crossing"!~"^(unmarked|no)$"]',
-    'way["building"]', 'relation["building"]["type"="multipolygon"]', 'way["building:part"]', 'relation["building:part"]["type"="multipolygon"]',
-    'way["natural"~"^(water|wood|scrub|grassland|heath|tree_row|beach|sand|wetland|coastline|bare_rock|scree)$"]', 'relation["natural"~"^(water|wood|scrub|beach|sand)$"]',
-    'way["waterway"~"^(river|stream|canal|riverbank|ditch|drain)$"]', 'relation["waterway"="riverbank"]', 'way["water"]',
-    'way["landuse"~"^(grass|meadow|forest|recreation_ground|village_green|cemetery|allotments|orchard|farmland|vineyard|residential|commercial|retail|industrial|railway|construction|brownfield|garages|military|religious|flowerbed|plant_nursery)$"]',
-    'relation["landuse"~"^(forest|grass|meadow|residential|commercial|retail|industrial|cemetery|recreation_ground|railway|construction)$"]',
-    'way["leisure"~"^(park|garden|pitch|playground|golf_course|common|dog_park)$"]', 'relation["leisure"~"^(park|garden|pitch)$"]',
-    'way["amenity"~"^(parking|marketplace)$"]', 'relation["amenity"="parking"]',
-    'way["railway"~"^(rail|light_rail|tram|narrow_gauge|subway|monorail|funicular|platform)$"]',
-    'way["barrier"~"^(wall|fence|hedge|retaining_wall|city_wall|guard_rail)$"]', 'way["man_made"~"^(pier|breakwater|groyne)$"]', 'node["natural"="tree"]'];
-  const q = '[out:json][timeout:90];(' + parts.map(s => s + '(' + bb + ');').join('') + ');out geom qt;';
-  let data = null, err = null;
-  const CACHE_V = 'osm2:', cacheKey = CACHE_V + lat0.toFixed(5) + ',' + lon0.toFixed(5) + ':' + HALF; // bump CACHE_V whenever the query changes
-  data = await idbGet(cacheKey);
+  const cacheKey = areaKey(lat0, lon0);
+  let data = await idbGet(cacheKey), err = null;
   if (data) await say('Loading saved map data…');
-  for (const u of data ? [] : ENDPOINTS) {
-    const host = u.split('/')[2], ac = new AbortController(), t0 = performance.now();
-    const tick = setInterval(() => { $('loadMsg').textContent = 'Downloading map data from ' + host + '… ' + Math.round((performance.now() - t0) / 1000) + ' s'; }, 500);
-    const kill = setTimeout(() => ac.abort(), 45000);
-    try {
-      const r = await fetch(u, { method: 'POST', signal: ac.signal, body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-      if (!r.ok) throw new Error(r.status === 429 ? 'too many requests' : 'server replied ' + r.status);
-      data = await r.json();
-      if (!data || !Array.isArray(data.elements)) throw new Error('bad reply');
-      idbSet(cacheKey, data); idbPrune(CACHE_V);
-      break;
-    } catch (e) { data = null; err = e.name === 'AbortError' ? new Error('servers did not answer in time') : e; await say(host + ' is busy, trying another server…'); }
-    finally { clearInterval(tick); clearTimeout(kill); }
-  }
+  else { ({ data, err } = await fetchArea(lat0, lon0, say)); if (data) { idbSet(cacheKey, data); idbPrune(CACHE_V); } }
   if (!data) { $('loadMsg').textContent = 'The free OpenStreetMap servers are busy (' + (err ? err.message : 'unknown error') + '). Try again in a minute.'; $('spin').style.display = 'none'; $('loadBtns').style.display = 'flex'; return; }
 
   await say('Building the streets…');
@@ -586,7 +604,7 @@ async function startGame(lat0, lon0, placeName) {
     let best = null, bd = 1e9, bt = 0;
     for (const s of allSegs) if (s.r.drive) { const [d, t] = segDist(x, z, s); if (d < bd) { bd = d; best = s; bt = t; } }
     if (!best) return null;
-    return { x: best.ax + best.dx * bt, z: best.az + best.dz * bt, h: Math.atan2(-best.dz, best.dx) };
+    return { x: best.ax + best.dx * bt, z: best.az + best.dz * bt, h: Math.atan2(-best.dz, best.dx), name: best.r.name };
   }
   const onDrive = (x, z, m = 0) => { const r = roadAt(x, z); return !!r.drv && r.de < -m; };
   const isBridge = t => t.bridge && t.bridge !== 'no';
@@ -1023,9 +1041,10 @@ async function startGame(lat0, lon0, placeName) {
     if (seg) label = seg.r.name || TYPE_LABEL[seg.r.type] || 'Road';
     if (label !== shownStreet) { shownStreet = label; streetEl.style.opacity = 0; setTimeout(() => { streetEl.textContent = label; streetEl.style.opacity = label ? 1 : 0; }, 180); }
   }
-  $('place').textContent = placeName || lat0.toFixed(4) + ', ' + lon0.toFixed(4);
+  const shownName = placeName || (start && start.name) || lat0.toFixed(4) + ', ' + lon0.toFixed(4); // no address found: the street you start on
+  $('place').textContent = shownName;
   $('stats').textContent = roads.length.toLocaleString() + ' streets · ' + nB.toLocaleString() + ' buildings · ' + trees.length.toLocaleString() + ' trees';
-  $('startPlace').textContent = placeName || lat0.toFixed(4) + ', ' + lon0.toFixed(4);
+  $('startPlace').textContent = shownName;
   if (!start) $('startNote').textContent = 'No drivable roads were found here. You can still drive on the ground, or press M to pick another place.';
 
   load.style.display = 'none';

@@ -1,0 +1,17 @@
+# Cloudflare Worker that caches the game's map downloads. Setup steps: proxy/README.md
+name = "sedan-drive-osm"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+# Sites allowed to use the proxy (the browser's Origin header). "*" allows any site.
+ALLOWED_ORIGINS = "https://gcojocaru.github.io,http://localhost:5173,http://localhost:5174"
+# Sent to Overpass as Referer and in the User-Agent, as its usage policy asks apps to identify themselves.
+APP_URL = "https://gcojocaru.github.io/sedan-drive/"
+# Days a downloaded place stays in KV before it is fetched fresh (keeps storage within the free 1 GB).
+TTL_DAYS = "30"
+
+# Filled in by: npx wrangler kv namespace create AREAS --update-config
+# [[kv_namespaces]]
+# binding = "AREAS"
+# id = "..."
