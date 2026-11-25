@@ -66,11 +66,12 @@ a{color:inherit} a:hover{opacity:.8}
     <dt>Q</dt><dd style="margin:0">Radio: next station (Shift+Q back)</dd>
   </dl>
   <p>Stay on the road. Grass slows you down. Cross the chequered line to start a lap.</p>
-  <p style="opacity:1;font-weight:600">Click or press any key to start</p>
+  <p style="opacity:1;font-weight:600">Tap, click or press any key to start</p>
 </div></div>
 <script type="module">
 import * as THREE from 'three';
 import { radio, radioHud } from './radio.js';
+import { touchControls } from './touch.js';
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 function buildCar() {
 const car = new THREE.Group(); car.name = 'sedan';
@@ -954,7 +955,10 @@ function hud(s) {
   lastT.textContent = fmt(lap.last); bestT.textContent = fmt(lap.best); lapN.textContent = lap.n;
 }
 const startEl = el('start');
-function begin() { if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => el('keys').style.opacity = 0, 6000); }
+function begin() {
+  if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => el('keys').style.opacity = 0, 6000);
+  touchControls([['Lights', 'KeyH'], ['Night', 'KeyN'], ['Camera', 'KeyC'], ['Radio', 'KeyQ'], ['Reset', 'KeyR']]);
+}
 startEl.addEventListener('click', begin);
 const tune = radio(radioHud());
 addEventListener('keydown', e => {
