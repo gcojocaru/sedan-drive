@@ -24,7 +24,9 @@ Then open http://localhost:5173 — it redirects to the real-map drive.
 
 ## Deploy
 
-It's a static site. `npm run build` copies just the site files into `dist/` (`npm run preview` builds and serves it on :5174). Pushes to `main` publish `dist/` to GitHub Pages via `.github/workflows/pages.yml`; this needs a one-time switch in the repo's Settings → Pages → Source: "GitHub Actions". Any static host works the same way: build command `npm run build`, publish directory `dist`.
+It's a static site. GitHub Pages publishes the repo root from `main` (Settings → Pages → Deploy from a branch: `main`, `/ (root)`); `.nojekyll` makes it serve the files as they are. Any other static host works too: `npm run build` copies just the site files into `dist/` (`npm run preview` builds and serves it on :5174).
+
+Before sharing the site widely, deploy the map data proxy: [proxy/README.md](proxy/README.md).
 
 ## Controls (driving pages)
 
