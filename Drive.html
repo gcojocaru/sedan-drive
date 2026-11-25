@@ -50,7 +50,7 @@ a{color:inherit} a:hover{opacity:.8}
   <span class="k">Laps</span><span id="lapN">0</span>
 </div>
 <div class="hud" id="msg"></div>
-<div class="hud" id="keys">W/↑ accelerate · S/↓ brake &amp; reverse · A/D steer · Space handbrake · H lights · N night · C camera · R reset</div>
+<div class="hud" id="keys">W/↑ accelerate · S/↓ brake &amp; reverse · A/D steer · Space handbrake · H lights · N night · C camera · Q radio · R reset</div>
 <div id="start"><div class="card">
   <h1>Drive the sedan</h1>
   <dl>
@@ -59,12 +59,14 @@ a{color:inherit} a:hover{opacity:.8}
     <dt>A D / ← →</dt><dd style="margin:0">Steer</dd>
     <dt>Space</dt><dd style="margin:0">Handbrake</dd>
     <dt>H · N · C · R</dt><dd style="margin:0">Headlights · night · camera · reset</dd>
+    <dt>Q</dt><dd style="margin:0">Radio: next station (Shift+Q back)</dd>
   </dl>
   <p>Stay on the road. Grass slows you down. Cross the chequered line to start a lap.</p>
   <p style="opacity:1;font-weight:600">Click or press any key to start</p>
 </div></div>
 <script type="module">
 import * as THREE from 'three';
+import { radio } from './radio.js';
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 function buildCar() {
 const car = new THREE.Group(); car.name = 'sedan';
@@ -950,6 +952,7 @@ function hud(s) {
 const startEl = el('start');
 function begin() { if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => el('keys').style.opacity = 0, 6000); }
 startEl.addEventListener('click', begin);
+const tune = radio(flash);
 addEventListener('keydown', e => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   if (!started) { begin(); }
@@ -957,6 +960,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyH') { head = !head; setLights(); }
   if (e.code === 'KeyN') setNight(!night);
   if (e.code === 'KeyC') camMode = 1 - camMode;
+  if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);
   if (e.code === 'KeyR') { const n = nearest(st.pos, true); st.idx = n.i; placeOnTrack(n.i); }
 });
 addEventListener('keyup', e => keys[e.code] = false);
