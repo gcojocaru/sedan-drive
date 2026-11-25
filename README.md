@@ -20,6 +20,8 @@ npm run dev        # http://localhost:5173  (uses npx serve)
 python3 -m http.server 5173
 ```
 
+`npm test` runs the tests (`node --test`, Node 22+).
+
 Then open http://localhost:5173 — it redirects to the real-map drive.
 
 ## Deploy
@@ -38,7 +40,7 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | Space | Handbrake |
 | H · C | Headlights · camera |
 | T · N | Next time of day · night on/off (real-map page: the sun is placed where it really is over that place today) |
-| Q · Shift+Q | Radio: next / previous station (free Romanian internet stations, last one is off) |
+| Q · Shift+Q | Radio: next / previous station, last one is off (real-map page: up to 30 stations from around the chosen place; test track: Romanian stations) |
 | R | Reset / back on the road |
 | M | Choose another place (real-map page) |
 
@@ -55,6 +57,7 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 - Map tiles: OpenStreetMap, Esri World Imagery (satellite toggle)
 - Geocoding: Nominatim. Searches run on submit and are cached in the browser, at most one request a second; a clicked spot is named once, when you press Drive.
 - Map data: Overpass API, through the caching proxy in `proxy/` when it is deployed (one download per place for all players), else straight from the Overpass servers one at a time. A server that answers HTTP 429 is left alone for 30 s. Each browser also keeps the places it loaded in IndexedDB (`sedan-map-cache`).
+- Radio: [radio-browser.info](https://www.radio-browser.info), the free community station directory. Asked once, on the first press of Q, for stations near the chosen place; the streams then play straight from each broadcaster.
 - Fallback map data: when every Overpass server (or the proxy) refuses, the place is built from [OpenFreeMap](https://openfreemap.org)'s vector tiles, which have no request limits. That map is simpler (no roof shapes, walls, crossings or single trees), says so on screen, and isn't saved, so the next visit tries for full detail.
 
 These are free community services with usage policies that count all of a site's players together. Deploy the proxy before sharing the site widely: see [proxy/README.md](proxy/README.md).
@@ -68,7 +71,7 @@ Drive Real Map.html   real-map page (markup + styles; logic in drive-map.js)
 drive-map.js          map picker, map data download/cache, world mesh building, driving game
 osm-query.js          the Overpass query, cache key, start-point grid and proxy address (shared with proxy/)
 vector-fallback.js    OpenFreeMap vector tiles → the same element list as an Overpass reply (fallback map data)
-radio.js              car radio: Romanian internet station list and player (both drive pages)
+radio.js              car radio: stations near the chosen place from radio-browser.info, Romanian presets on the test track
 proxy/                Cloudflare Worker that caches map downloads for all players (see proxy/README.md)
 vendor/               three.js 0.184.0 and Leaflet 1.9.4, served by the site
 sedan-model.js        buildCar() as an ES module (used by drive-map.js)
