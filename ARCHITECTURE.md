@@ -23,6 +23,7 @@ how each part works; this file says how the parts may fit together.
 | `sedan-model.js` | 661 | `buildCar()`, used only by `drive-map.js` |
 | `three-d-stage.js` | 435 | Viewer web component (renderer, orbit, GLB/OBJ export) |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
+| `radio.js` | 29 | Car radio: Romanian internet station list and `radio(show)` player, used by both drive pages |
 | `osm-query.js` | 37 | Overpass query, cache key, start-point grid, servers; shared with the proxy |
 | `proxy/worker.js` | 69 | Cloudflare Worker that caches map downloads |
 
@@ -57,6 +58,7 @@ root, one copy each. Page URLs don't change.
 | `world.js` | `buildWorld(elements, origin, scene)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`, `snapToRoad`, lamps, lit windows) | `geom`, three |
 | `map-data.js` | `loadArea(lat, lon, status)`: IndexedDB cache → proxy → Overpass → vector fallback; returns `{ data, fallback, err }` | `osm-query`, `vector-fallback` |
 | `sedan-model.js` | `buildCar()` and the axle constants: the only car | three |
+| `radio.js` | Station list and `radio(show)` → `tune(step)`; the only audio | nothing |
 | `geom.js` | Pure geometry on plain arrays (`ribbon`, `fillPoly`, `obb`, `clipHalf`, `joinRings`, …) | nothing |
 | `osm-query.js` | Query, cache key, grid, servers, proxy address | nothing |
 | `vector-fallback.js` | Vector tiles → Overpass-shaped elements | `osm-query` |

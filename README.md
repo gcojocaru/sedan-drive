@@ -38,6 +38,7 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | Space | Handbrake |
 | H · C | Headlights · camera |
 | T · N | Next time of day · night on/off (real-map page: the sun is placed where it really is over that place today) |
+| Q · Shift+Q | Radio: next / previous station (free Romanian internet stations, last one is off) |
 | R | Reset / back on the road |
 | M | Choose another place (real-map page) |
 
@@ -67,6 +68,7 @@ Drive Real Map.html   real-map page (markup + styles; logic in drive-map.js)
 drive-map.js          map picker, map data download/cache, world mesh building, driving game
 osm-query.js          the Overpass query, cache key, start-point grid and proxy address (shared with proxy/)
 vector-fallback.js    OpenFreeMap vector tiles → the same element list as an Overpass reply (fallback map data)
+radio.js              car radio: Romanian internet station list and player (both drive pages)
 proxy/                Cloudflare Worker that caches map downloads for all players (see proxy/README.md)
 vendor/               three.js 0.184.0 and Leaflet 1.9.4, served by the site
 sedan-model.js        buildCar() as an ES module (used by drive-map.js)

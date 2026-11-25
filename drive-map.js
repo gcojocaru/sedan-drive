@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { buildCar } from './sedan-model.js';
 import { HALF, CACHE_V, AREA_PROXY, ENDPOINTS, snap, areaKey, overpassQuery, overpassError } from './osm-query.js';
 import { fetchVectorArea, FALLBACK_CREDIT } from './vector-fallback.js';
+import { radio } from './radio.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = id => document.getElementById(id);
@@ -1061,6 +1062,7 @@ async function startGame(lat0, lon0, placeName) {
   function begin() { if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => $('keys').style.opacity = 0, 7000); }
   startEl.addEventListener('click', begin);
   $('changePlace').addEventListener('click', backToMap);
+  const tune = radio(flash);
   addEventListener('keydown', e => {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     if (e.code === 'KeyM') { backToMap(); return; }
@@ -1070,6 +1072,7 @@ async function startGame(lat0, lon0, placeName) {
     if (e.code === 'KeyN') applyTime(tIdx === NIGHT ? dayIdx : NIGHT, true);
     if (e.code === 'KeyT') applyTime((tIdx + 1) % TIMES.length, true);
     if (e.code === 'KeyC') camMode = 1 - camMode;
+    if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);
     if (e.code === 'KeyR') { const s = snapToRoad(st.pos.x, st.pos.z); if (s) place(s.x, s.z, s.h); }
   });
   addEventListener('keyup', e => keys[e.code] = false);
