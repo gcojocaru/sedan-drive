@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stationsNear } from '../radio.js';
+import { radio, stationsNear } from '../radio.js';
 
 // radio-browser.info station entries, only the fields stationsNear reads
 const st = (name, url_resolved, clickcount, more = {}) => ({ name, url_resolved, clickcount, hls: 0, countrycode: 'RO', geo_distance: null, ...more });
@@ -31,4 +31,17 @@ test('caps the list at 30 stations', async () => {
 test('a failed request rejects', async () => {
   const [, fetchFn] = fakeFetch();
   await assert.rejects(stationsNear(0, 0, fetchFn), /HTTP 503/);
+});
+
+test('radio: tuning shows the station busy, then plain once it plays (only once), and off at the end', async () => {
+  const shown = [], audios = [];
+  globalThis.Audio = class { constructor() { audios.push(this); } play() { return Promise.resolve(); } pause() {} removeAttribute() {} load() {} };
+  const tune = radio((...a) => shown.push(a), async () => [['A', 'https://a'], ['B', 'https://b']]);
+  await tune(1); const a = audios[0];
+  assert.equal(a.src, 'https://a');
+  a.onplaying(); a.onplaying(); // a stall and resume must not show the name again
+  await tune(1); a.onerror(); a.onerror(); a.onerror(); // two retries, then no signal
+  await tune(1);
+  assert.deepEqual(shown, [['Radio', 'Searching for stations…', true], ['A', 'Tuning…', true], ['A'], ['B', 'Tuning…', true], ['B', 'No signal'], ['Radio off']]);
+  delete globalThis.Audio;
 });

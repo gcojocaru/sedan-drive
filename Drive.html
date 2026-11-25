@@ -70,7 +70,7 @@ a{color:inherit} a:hover{opacity:.8}
 </div></div>
 <script type="module">
 import * as THREE from 'three';
-import { radio } from './radio.js';
+import { radio, radioHud } from './radio.js';
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 function buildCar() {
 const car = new THREE.Group(); car.name = 'sedan';
@@ -956,7 +956,7 @@ function hud(s) {
 const startEl = el('start');
 function begin() { if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => el('keys').style.opacity = 0, 6000); }
 startEl.addEventListener('click', begin);
-const tune = radio(flash);
+const tune = radio(radioHud());
 addEventListener('keydown', e => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   if (!started) { begin(); }
