@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { buildCar } from './sedan-model.js';
 import { HALF, CACHE_V, AREA_PROXY, ENDPOINTS, snap, areaKey, overpassQuery, overpassError } from './osm-query.js';
+import { fetchVectorArea, FALLBACK_CREDIT } from './vector-fallback.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = id => document.getElementById(id);
@@ -94,7 +95,8 @@ async function idbPrune(prefix) { // drop entries saved by older versions of the
 
 // ---------------- Map data download ----------------
 // The caching proxy first (one shared download per place for all players), then the public Overpass servers one by
-// one. A server that answers 429/406 is left alone for 30 s, as the Overpass usage policy asks.
+// one. A server that answers 429/406 is left alone for 30 s, as the Overpass usage policy asks. When none of them
+// delivers, the place is built from OpenFreeMap's vector tiles instead (no limits, less detail; see vector-fallback.js).
 const REST_KEY = 'sedan-overpass-rest-v1';
 const restMap = () => { try { return JSON.parse(localStorage.getItem(REST_KEY) || '{}'); } catch { return {}; } };
 const restHost = host => { const m = restMap(); m[host] = Date.now() + 30000; try { localStorage.setItem(REST_KEY, JSON.stringify(m)); } catch { } };
@@ -110,7 +112,7 @@ async function fetchArea(lat0, lon0, status) {
     try {
       const r = await fetch(s.url, s.proxy ? { signal: ac.signal } : { method: 'POST', signal: ac.signal, body: 'data=' + encodeURIComponent(overpassQuery(lat0, lon0)), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
       if (s.proxy && r.status === 503) { // the proxy already tried every Overpass server; asking them again ourselves would only add load
-        const j = await r.json().catch(() => ({})); return { err: new Error(j.error || 'the map servers are busy') };
+        const j = await r.json().catch(() => ({})); err = new Error(j.error || 'the map servers are busy'); break;
       }
       if (r.status === 429 || r.status === 406) { restHost(s.host); throw new Error('too many requests'); }
       if (!r.ok) throw new Error('server replied ' + r.status);
@@ -121,6 +123,8 @@ async function fetchArea(lat0, lon0, status) {
     } catch (e) { err = e.name === 'AbortError' ? new Error('no answer in time') : e; status(s.host + ' is busy, trying another server…'); }
     finally { clearInterval(tick); clearTimeout(kill); }
   }
+  status('The map servers are busy. Building a simplified map from OpenFreeMap…');
+  try { return { data: await fetchVectorArea(lat0, lon0), fallback: true }; } catch (e) { console.warn('vector fallback failed', e); }
   return { err: rested && !err ? new Error('the servers asked us to wait 30 seconds') : err };
 }
 
@@ -399,9 +403,9 @@ async function startGame(lat0, lon0, placeName) {
   const cosL = Math.cos(lat0 * Math.PI / 180), KX = 111320 * cosL, KZ = 110574;
   const P = (lat, lon) => [(lon - lon0) * KX, -(lat - lat0) * KZ];
   const cacheKey = areaKey(lat0, lon0);
-  let data = await idbGet(cacheKey), err = null;
+  let data = await idbGet(cacheKey), err = null, fallback = false;
   if (data) await say('Loading saved map data…');
-  else { ({ data, err } = await fetchArea(lat0, lon0, say)); if (data) { idbSet(cacheKey, data); idbPrune(CACHE_V); } }
+  else { ({ data, err, fallback } = await fetchArea(lat0, lon0, say)); if (data && !fallback) { idbSet(cacheKey, data); idbPrune(CACHE_V); } } // a simplified map isn't kept, so the next visit tries for full detail
   if (!data) { $('loadMsg').textContent = 'The free OpenStreetMap servers are busy (' + (err ? err.message : 'unknown error') + '). Try again in a minute.'; $('spin').style.display = 'none'; $('loadBtns').style.display = 'flex'; return; }
 
   await say('Building the streets…');
@@ -1046,6 +1050,10 @@ async function startGame(lat0, lon0, placeName) {
   $('stats').textContent = roads.length.toLocaleString() + ' streets · ' + nB.toLocaleString() + ' buildings · ' + trees.length.toLocaleString() + ' trees';
   $('startPlace').textContent = shownName;
   if (!start) $('startNote').textContent = 'No drivable roads were found here. You can still drive on the ground, or press M to pick another place.';
+  if (fallback) {
+    $('startNote').textContent = ($('startNote').textContent + ' The OpenStreetMap servers are busy, so this is a simplified map from OpenFreeMap: no roof shapes, walls, crossings or single trees. Pick the place again later for full detail.').trim();
+    $('stats').textContent += ' · simplified map'; $('attrib').textContent += ' · ' + FALLBACK_CREDIT;
+  }
 
   load.style.display = 'none';
   $('hud').style.display = 'block';
