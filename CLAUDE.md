@@ -20,6 +20,7 @@ Context for working on this repo. See README.md for what the pages do and how to
   - `Drive.html` → its own inline `buildCar()`.
   - `Sedan.html` → inline model inside the page module.
   The model bodies are identical today (interior and light rig included); only the page setup around them differs (Sedan.html adds a studio environment, contact shadows and light controls). Until migration step 2 in ARCHITECTURE.md lands, a change to the car's look must be made in all three.
+- `vaz-model.js` → `loadVaz()` loads `models/vaz-2101.glb` (third-party glTF, front at +Z) and returns it in `buildCar()`'s shape: turned to +X, axles centred, the merged wheel mesh cut into `wheel_front_R` … groups, own head/tail lamp materials, transmission glass swapped for plain transparency. The real-map picker chooses between the two cars; the other pages only have the sedan.
 - Units are metres; the car's long axis is +X (front axle at x≈1.32, rear at x≈-1.31), y up.
 - Meshes and groups are named (`car.getObjectByName('underbody')`, `steering_wheel`, `front_seat_L`, …). Other code looks parts up by name, so keep names stable when renaming things.
 - `osm-query.js` holds the Overpass query (`overpassQuery`), the cache key (`areaKey`, `CACHE_V`), the ~55 m start-point grid (`snap`), the server list and `AREA_PROXY`. It is imported by both `drive-map.js` and `proxy/worker.js` (Cloudflare Worker, bundled by wrangler), so the proxy only ever runs the game's own query. Change the query there, bump `CACHE_V`, and redeploy the Worker with the site.
@@ -37,6 +38,7 @@ Context for working on this repo. See README.md for what the pages do and how to
 - `sedan-map-last-place-v1` — last chosen place (real-map page)
 - `sedan-drive-best-v1` — best lap time (Drive.html)
 - `sedan-lights-v1` — viewer light toggles (Sedan.html)
+- `sedan-map-car-v1` — chosen car on the real-map page (`sedan` or `vaz`)
 - IndexedDB `sedan-map-cache` / store `osm` — cached Overpass responses, keyed `areaKey()` = `osm3:<lat>,<lon>:<HALF>` (4 decimals, snapped). Bump `CACHE_V` in `osm-query.js` whenever the query changes; entries with an older prefix are pruned after the next download.
 - `sedan-geocode-cache-v1` — Nominatim results (last 60 searches / reverse lookups)
 - `sedan-overpass-rest-v1` — Overpass servers to leave alone until a time (after HTTP 429/406)

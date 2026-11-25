@@ -75,6 +75,7 @@ radio.js              car radio: stations near the chosen place from radio-brows
 proxy/                Cloudflare Worker that caches map downloads for all players (see proxy/README.md)
 vendor/               three.js 0.184.0 and Leaflet 1.9.4, served by the site
 sedan-model.js        buildCar() as an ES module (used by drive-map.js)
+vaz-model.js          loadVaz(): the VAZ-2101 car from models/vaz-2101.glb, chosen in the real-map picker
 Drive.html            test-track page (self-contained, own inline copy of the car)
 Sedan.html            model viewer (self-contained, own inline copy of the car + interior)
 three-d-stage.js      <three-d-stage> web component: renderer, studio lights, orbit, GLB/OBJ export

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildCar } from './sedan-model.js';
+import { loadVaz } from './vaz-model.js';
 import { HALF, CACHE_V, AREA_PROXY, ENDPOINTS, snap, areaKey, overpassQuery, overpassError } from './osm-query.js';
 import { fetchVectorArea, FALLBACK_CREDIT } from './vector-fallback.js';
 import { radio, stationsNear } from './radio.js';
@@ -7,6 +8,7 @@ import { radio, stationsNear } from './radio.js';
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = id => document.getElementById(id);
 const LS_PLACE = 'sedan-map-last-place-v1';
+const LS_CAR = 'sedan-map-car-v1'; // 'sedan' or 'vaz'
 
 function backToMap() { history.replaceState(null, '', location.pathname + location.search); location.reload(); }
 $('retry').onclick = () => location.reload();
@@ -48,6 +50,7 @@ function showPicker() {
   L.control.layers({ Street: street, Satellite: sat }, null, { position: 'topright' }).addTo(map);
   let marker = null, rect = null, chosen = null;
   const go = $('go'), info = $('placeInfo');
+  const carSel = $('car'); carSel.value = localStorage.getItem(LS_CAR) || 'sedan'; carSel.onchange = () => localStorage.setItem(LS_CAR, carSel.value);
   function choose(lat, lon, name) {
     lon = snap(((lon + 540) % 360) - 180); lat = snap(lat); // the grid the map downloads are cached on
     chosen = { lat, lon, name: name || '' };
@@ -894,7 +897,7 @@ async function startGame(lat0, lon0, placeName) {
 
   // ---- car ----
   await say('Placing the car…');
-  const CAR = buildCar(), car = CAR.car;
+  const CAR = localStorage.getItem(LS_CAR) === 'vaz' ? await loadVaz().catch(e => (console.warn('VAZ-2101 did not load, using the sedan', e), buildCar())) : buildCar(), car = CAR.car;
   car.rotation.order = 'YXZ';
   CAR.lights.low.concat(CAR.lights.high, CAR.lights.fog, CAR.extraLights).forEach(l => { l.visible = false; l.intensity = 0; });
   car.traverse(o => { if (o.isMesh) { o.castShadow = o.material !== CAR.glass && o.material !== CAR.lensClear; o.receiveShadow = false; } });

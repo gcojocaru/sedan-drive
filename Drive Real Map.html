@@ -7,14 +7,18 @@
     "three": "./vendor/three-0.184.0/build/three.module.js",
     "three/addons/controls/OrbitControls.js": "./vendor/three-0.184.0/examples/jsm/controls/OrbitControls.js",
     "three/addons/exporters/OBJExporter.js": "./vendor/three-0.184.0/examples/jsm/exporters/OBJExporter.js",
-    "three/addons/exporters/GLTFExporter.js": "./vendor/three-0.184.0/examples/jsm/exporters/GLTFExporter.js"
+    "three/addons/exporters/GLTFExporter.js": "./vendor/three-0.184.0/examples/jsm/exporters/GLTFExporter.js",
+    "three/addons/loaders/GLTFLoader.js": "./vendor/three-0.184.0/examples/jsm/loaders/GLTFLoader.js"
   },
   "integrity": {
     "./vendor/three-0.184.0/build/three.module.js": "sha384-8FCZ1eVO6it4+pbec2aDtnTrwjWXZLJRC+MAGCIPDgsYnUrl/E0A2YlF8ioMKI/J",
     "./vendor/three-0.184.0/build/three.core.js": "sha384-dw2ooPewaEIrAgl6oFDBmmBWCE9oW9LxRGcfwZ0hLvEprzo202wXl7vCYHRlSnOT",
     "./vendor/three-0.184.0/examples/jsm/controls/OrbitControls.js": "sha384-4rziNxOBZKQ69i+w+f89KJ55TCYquwchVbByQwmaOeIOXdOU2PLDn3kOfXHwIJC9",
     "./vendor/three-0.184.0/examples/jsm/exporters/OBJExporter.js": "sha384-nbwtoZENJD3Vq+ACK0CuGQdPMuDWHkamC2KJD70EV5nfg6jQjfppKOea07YJN+N3",
-    "./vendor/three-0.184.0/examples/jsm/exporters/GLTFExporter.js": "sha384-VofkvpG6HERhFCYbsUOHeNXBCqID2nfqkQqnVzE1jc/oPcz+qJ13ADdXH08hE+cQ"
+    "./vendor/three-0.184.0/examples/jsm/exporters/GLTFExporter.js": "sha384-VofkvpG6HERhFCYbsUOHeNXBCqID2nfqkQqnVzE1jc/oPcz+qJ13ADdXH08hE+cQ",
+    "./vendor/three-0.184.0/examples/jsm/loaders/GLTFLoader.js": "sha384-3CnKaFWE2emo2DOUQi/yFm4SMemUgSZ9IAJe/V2pyJTw9KXWYSmR0MiX/7RoPyiJ",
+    "./vendor/three-0.184.0/examples/jsm/utils/BufferGeometryUtils.js": "sha384-7hDmXj1Pzh+247/oGQWqojXH2XGbc0fOGrcNmbi5ly2QK0IC1ouPa/niSKBka6nl",
+    "./vendor/three-0.184.0/examples/jsm/utils/SkeletonUtils.js": "sha384-Pozn8j5+YFr3ak8Pm90ayqDrGYn/DV7vVs/YIIqzJhzeJT0LQksoS1fZQ5lfsYlw"
   }
 }
 </script>
@@ -41,6 +45,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 #searchForm input:focus{border-color:rgba(255,255,255,.45)}
 #searchForm button{padding:10px 14px;background:rgba(255,255,255,.14)}
 #searchMsg:empty{display:none}
+#car{font:inherit;font-size:14px;padding:6px 8px;border-radius:7px;border:1px solid rgba(255,255,255,.18);background:#2a2d33;color:#fff}
 .chosen{display:flex;flex-direction:column;gap:4px;font-size:14px;padding:12px;border-radius:9px;background:rgba(255,255,255,.06)}
 .k{opacity:.6;text-transform:uppercase;font-size:11px;letter-spacing:.08em}
 #loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#1b1f26;z-index:2000}
@@ -82,6 +87,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
     <form id="searchForm"><input id="q" placeholder="Search a place or address" autocomplete="off"><button type="submit">Search</button></form>
     <div id="searchMsg" class="small"></div>
     <div class="chosen"><span class="k">Start point</span><span id="placeInfo">Not chosen yet</span></div>
+    <label class="chosen"><span class="k">Car</span><select id="car"><option value="sedan">Sedan (Logan-style)</option><option value="vaz">VAZ-2101 Zhiguli</option></select></label>
     <button id="go" disabled>Drive here</button>
   </div>
 </div>
