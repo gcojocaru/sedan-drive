@@ -47,7 +47,9 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 ## What gets built from the map (real-map page)
 
 - **Roads** at their tagged width, sidewalks, lane markings (centre line, edge lines, lane dividers from `lanes=*`), zebra crossings, railings on bridges.
+- Cars start and reset in a travel lane. Connected junctions have rounded corners, gaps in the lane markings and stop lines at mapped stops.
 - **Buildings** from footprints and height/level tags, with `roof:shape` roofs (gabled, hipped, pyramidal, skillion, dome, onion). Untagged houses get a pitched roof unless mappers in the area mostly tag flat roofs. `building:part` pieces replace their outline, so landmarks with 3D tagging come out properly. `building:colour`/`material` and `roof:colour`/`material` are used.
+- Ground-floor doors follow mapped entrances, with a street-facing doorway inferred when a building has none mapped. Retail frontages have framed display windows and a few softly lit bays at night.
 - **Ground**: residential, commercial and industrial land, parking lots, plazas, parks, forests, farmland, beaches, rivers, lakes, and the **sea**, which is built from coastlines.
 - **Railways** (ballast, sleepers, rails), **tram tracks**, **walls, fences and hedges**, piers and breakwaters, trees (mapped trees, tree rows, parks and forests, scattered garden trees).
 - Parking lots and plazas count as hard ground, so the car keeps its road speed there.
@@ -56,7 +58,7 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 
 - Map tiles: OpenStreetMap, Esri World Imagery (satellite toggle)
 - Geocoding: Nominatim. Searches run on submit and are cached in the browser, at most one request a second; a clicked spot is named once, when you press Drive.
-- Map data: Overpass API, through the caching proxy in `proxy/` when it is deployed (one download per place for all players), else straight from the Overpass servers one at a time. A server that answers HTTP 429 is left alone for 30 s. Each browser also keeps the places it loaded in IndexedDB (`sedan-map-cache`).
+- Map data: The game requests Overpass servers directly, one at a time. The optional shared cache is disabled (`AREA_PROXY` is empty). A server that answers HTTP 429 is left alone for 30 s. Each browser also keeps the places it loaded in IndexedDB (`sedan-map-cache`).
 - Radio: [radio-browser.info](https://www.radio-browser.info), the free community station directory. Asked once, on the first press of Q, for stations near the chosen place; the streams then play straight from each broadcaster.
 - Fallback map data: when every Overpass server (or the proxy) refuses, the place is built from [OpenFreeMap](https://openfreemap.org)'s vector tiles, which have no request limits. That map is simpler (no roof shapes, walls, crossings or single trees), says so on screen, and isn't saved, so the next visit tries for full detail.
 
@@ -69,6 +71,8 @@ Contributing: [ARCHITECTURE.md](ARCHITECTURE.md) has the target module layout an
 ```
 Drive Real Map.html   real-map page (markup + styles; logic in drive-map.js)
 drive-map.js          map picker, map data download/cache, world mesh building, driving game
+building-fronts.js    ground-floor entrance placement and retail window layouts
+road-layout.js        directional lanes, junction corners, stop lines and spawn positions
 osm-query.js          the Overpass query, cache key, start-point grid and proxy address (shared with proxy/)
 vector-fallback.js    OpenFreeMap vector tiles → the same element list as an Overpass reply (fallback map data)
 radio.js              car radio: stations near the chosen place from radio-browser.info, Romanian presets on the test track
