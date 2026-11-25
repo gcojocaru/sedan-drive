@@ -23,6 +23,8 @@ how each part works; this file says how the parts may fit together.
 | `sedan-model.js` | 661 | `buildCar()`, used only by `drive-map.js` |
 | `vaz-model.js` | 46 | `loadVaz()`: VAZ-2101 from `models/vaz-2101.glb` in `buildCar()`'s shape, the second car on the real-map page |
 | `three-d-stage.js` | 435 | Viewer web component (renderer, orbit, GLB/OBJ export) |
+| `road-layout.js` | — | Pure lane, junction and spawn geometry |
+| `building-fronts.js` | — | Ground-floor facade layout and atlas drawing on a supplied canvas context |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
 | `radio.js` | 53 | Car radio for both drive pages: `stationsNear()` (radio-browser.info, real-map page), Romanian presets (test track), `radio(show, find)` player, `radioHud()` station display |
 | `osm-query.js` | 37 | Overpass query, cache key, start-point grid, servers; shared with the proxy |

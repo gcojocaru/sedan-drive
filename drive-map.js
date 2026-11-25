@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { facadeWalls, onOutline, planFronts, shopBays, isRetail, facadeAtlas } from './building-fronts.js';
+import { drivingSide, prepareRoads, laneSpawn, mappedStops } from './road-layout.js';
 import { buildCar } from './sedan-model.js';
 import { loadVaz } from './vaz-model.js';
 import { HALF, CACHE_V, AREA_PROXY, ENDPOINTS, snap, areaKey, overpassQuery, overpassError } from './osm-query.js';
@@ -399,6 +401,171 @@ function tagColor(s) {
   return null;
 }
 
+const gkey = (i, j) => i * 65536 + j;
+const segDist = (x, z, s) => { const t = Math.max(0, Math.min(1, ((x - s.ax) * s.dx + (z - s.az) * s.dz) / s.l2)); return [Math.hypot(x - s.ax - s.dx * t, z - s.az - s.dz * t), t]; };
+
+function findBuildingParts(bPolys) {
+  const PG = 20, pgrid = new Map(), hidden = new Set(), parentOutline = new Map();
+  for (const part of bPolys) if (part.kind === 'part') {
+    const p = innerPt(part.outer), key = gkey(Math.floor(p[0] / PG), Math.floor(p[1] / PG));
+    if (!pgrid.has(key)) pgrid.set(key, []);
+    pgrid.get(key).push({p, part});
+  }
+  if (pgrid.size) for (const b of bPolys) if (b.kind === 'building') {
+    const B = bbox(b.outer);
+    for (let ix = Math.floor(B.x0 / PG); ix <= Math.floor(B.x1 / PG); ix++) for (let iz = Math.floor(B.z0 / PG); iz <= Math.floor(B.z1 / PG); iz++) {
+      for (const {p, part} of pgrid.get(gkey(ix, iz)) || []) {
+        if (inPoly(p[0], p[1], b.outer) && !b.holes.some(h => inPoly(p[0], p[1], h))) {
+          hidden.add(b);
+          parentOutline.set(part, b);
+        }
+      }
+    }
+  }
+  return {hidden, parentOutline};
+}
+
+function createFrontages(entranceNodes, hidden, parentOutline, roadAt) {
+  const fronts = new Map(), panels = { p: [], n: [], c: [], uv: [] };
+  function footprintWalls(outer, holes) {
+    return [outer, ...holes].flatMap((ring, i) =>
+      facadeWalls(ring, Math.sign(signedArea(ring)) * (i ? -1 : 1), i > 0));
+  }
+  function collectEntrances(doors, rings) {
+    for (const ring of rings) for (const p of ring) {
+      const key = p.join(',');
+      if (entranceNodes.has(key)) doors.set(key, p);
+    }
+  }
+  function collectFronts(b, outer, holes, eave, type, wc) {
+    const owner = parentOutline.get(b) || b;
+    let group = fronts.get(owner);
+    if (!group) {
+      group = { walls: [], doors: new Map(), outline: null };
+      if (hidden.has(owner)) {
+        group.outline = footprintWalls(openRing(owner.outer), owner.holes.map(openRing));
+        collectEntrances(group.doors, [owner.outer, ...owner.holes]);
+      }
+      fronts.set(owner, group);
+    }
+    collectEntrances(group.doors, [outer, ...holes]);
+    for (const wall of footprintWalls(outer, holes)) {
+      const exterior = !group.outline || onOutline(wall, group.outline);
+      wall.infer = exterior && !PLAIN_T.has(type);
+      wall.retail = exterior && (isRetail(b.t) || isRetail(owner.t));
+      wall.height = eave;
+      wall.color = wc;
+      group.walls.push(wall);
+    }
+  }
+  function streetScore(wall) {
+    const x = (wall.a[0] + wall.b[0]) / 2, z = (wall.a[1] + wall.b[1]) / 2;
+    const hit = roadAt(x,z);
+    let best = Infinity;
+    for (const seg of [hit.drv, hit.any]) {
+      if (!seg) continue;
+      const [distance, t] = segDist(x,z,seg);
+      const facing = ((seg.ax + t * seg.dx - x) * wall.nx + (seg.az + t * seg.dz - z) * wall.nz) / (distance || 1);
+      if (facing > 0.45) best = Math.min(best, distance / facing);
+    }
+    return best;
+  }
+  function render(PB, mkMesh) {
+    const white = new THREE.Color(0xffffff);
+    const awningColors = ['#286b64', '#924b3d', '#455d79', '#886b3e'].map(c => new THREE.Color(c));
+    for (const [building, group] of fronts) {
+      const faces = planFronts(group.walls, [...group.doors.values()], streetScore);
+      for (const {wall, doors, shop} of faces) {
+        const n = [wall.nx, 0, wall.nz];
+        const at = (u, y, depth) => [wall.a[0] + wall.dx*u + wall.nx*depth, y, wall.a[1] + wall.dz*u + wall.nz*depth];
+        const height = Math.min(3.0, wall.height - 0.03);
+        function panel(lo, hi, bottom, top, tile) {
+          // Half-texel inset keeps the other atlas tiles out of the window frames.
+          const u0 = (tile*128 + 1)/512, u1 = ((tile+1)*128 - 1)/512;
+          quad3(panels, at(lo,bottom,0.038), at(hi,bottom,0.038), at(hi,top,0.038), at(lo,top,0.038),
+            n, white, false, [[u0,0.01],[u1,0.01],[u1,0.99],[u0,0.99]]);
+        }
+        if (shop) {
+          quad3(PB, at(0,0.02,0.02), at(wall.length,0.02,0.02), at(wall.length,height,0.02), at(0,height,0.02), n, wall.color);
+          const bays = shopBays(wall.length, doors);
+          if (bays.length) {
+            const litBay = Math.abs(building.id || 0) % Math.min(3, bays.length);
+            bays.forEach(([lo, hi], i) => panel(lo, hi, 0.25, height - 0.26, i % 3 === litBay ? 3 : 2));
+          }
+          const color = awningColors[Math.abs(building.id || 0) % awningColors.length];
+          const w = wall.length;
+          quad3(PB, at(0,height,0.02), at(w,height,0.02), at(w,height-0.12,0.6), at(0,height-0.12,0.6), [0,1,0], color);
+          quad3(PB, at(0,height-0.25,0.6), at(w,height-0.25,0.6), at(w,height-0.12,0.6), at(0,height-0.12,0.6), n, color);
+        }
+        for (const door of doors) panel(door-0.55, door+0.55, 0.03, Math.min(2.3, shop ? height-0.26 : height), shop ? 1 : 0);
+      }
+    }
+    let frontMat;
+    if (panels.p.length) {
+      const atlas = emission => makeTex(512, 128, ctx => facadeAtlas(ctx, emission));
+      frontMat = new THREE.MeshStandardMaterial({ map: atlas(false), emissiveMap: atlas(true), emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.55 });
+      mkMesh(panels, frontMat, true, false).name = 'ground_floor_frontages';
+    }
+    return frontMat;
+  }
+  return { collect: collectFronts, render };
+}
+
+function indexCorners(corners, RG) {
+  const cornerGrid = new Map();
+  for (const {poly} of corners) {
+    const bounds = bbox(poly);
+    for (let i = Math.floor(bounds.x0/RG); i <= Math.floor(bounds.x1/RG); i++) {
+      for (let j = Math.floor(bounds.z0/RG); j <= Math.floor(bounds.z1/RG); j++) {
+        const key = gkey(i,j);
+        if (!cornerGrid.has(key)) cornerGrid.set(key, []);
+        cornerGrid.get(key).push(poly);
+      }
+    }
+  }
+  return cornerGrid;
+}
+
+function drawLaneMarkings(roads, dashLine) {
+  // lane markings: centre line (solid double on 4+ lanes), edge lines on main roads, lane dividers from lanes=*
+  for (const r of roads) {
+    if (r.hw * 2 < 6.4 || r.type === 'service' || r.type === 'living_street') continue;
+    const { edge, total, dividers } = r.lanes;
+    for (const line of r.markSections) {
+      const cum = cumLen(line);
+      const paint = (off, solid, width) => dashLine(line, cum, off, solid ? 4 : 3, solid ? 0 : 6, width, () => true);
+      if (MAJOR.has(r.type)) { paint(edge, true, 0.14); paint(-edge, true, 0.14); }
+      for (const {offset, boundary} of dividers) {
+        if (boundary && total >= 4) {
+          paint(offset - 0.12, true, 0.12);
+          paint(offset + 0.12, true, 0.12);
+        } else paint(offset, false, boundary ? 0.14 : 0.12);
+      }
+    }
+  }
+}
+
+function createSkyReflections(renderer) {
+  const pm = new THREE.PMREMGenerator(renderer);
+  // Keep fine detail in the visible sky. A smaller panorama is enough for lighting and car reflections.
+  const reflectionCanvas = document.createElement('canvas');
+  reflectionCanvas.width = 512;
+  reflectionCanvas.height = 256;
+  const reflectionContext = reflectionCanvas.getContext('2d');
+  const reflectionSky = new THREE.CanvasTexture(reflectionCanvas);
+  reflectionSky.colorSpace = THREE.SRGBColorSpace;
+  reflectionSky.wrapS = THREE.RepeatWrapping;
+  reflectionSky.generateMipmaps = false;
+  reflectionSky.minFilter = THREE.LinearFilter;
+  let target = null;
+  return sky => {
+    reflectionContext.drawImage(sky.image, 0, 0, reflectionCanvas.width, reflectionCanvas.height);
+    reflectionSky.needsUpdate = true;
+    target = pm.fromEquirectangular(reflectionSky, target);
+    return target.texture;
+  };
+}
+
 // ---------------- Game ----------------
 async function startGame(lat0, lon0, placeName) {
   const load = $('loading'), say = t => { $('loadMsg').textContent = t; return new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))); };
@@ -413,15 +580,26 @@ async function startGame(lat0, lon0, placeName) {
   if (!data) { $('loadMsg').textContent = 'The free OpenStreetMap servers are busy (' + (err ? err.message : 'unknown error') + '). Try again in a minute.'; $('spin').style.display = 'none'; $('loadBtns').style.display = 'flex'; return; }
 
   await say('Building the streets…');
-  const lines = [], polys = [], treePts = [], crossPts = [];
+  const lines = [], polys = [], treePts = [], crossPts = [], stopNodes = [];
+  const entranceNodes = new Set();
   for (const el of data.elements) {
-    if (el.type === 'node') { ((el.tags || {}).highway === 'crossing' ? crossPts : treePts).push(P(el.lat, el.lon)); continue; }
+    if (el.type === 'node') {
+      const tags = el.tags || {}, p = P(el.lat, el.lon);
+      const entrance = tags.entrance || (tags.building === 'entrance' ? 'yes' : '');
+      if (entrance && entrance !== 'no' && (!tags.level || tags.level.split(';').some(level => Number(level) === 0))) {
+        entranceNodes.add(p.join(','));
+      }
+      if (tags.highway === 'stop') stopNodes.push({ id: el.id, p, tags });
+      else if (tags.highway === 'crossing' && tags['crossing:markings'] !== 'no') crossPts.push(p);
+      else if (tags.natural === 'tree') treePts.push(p);
+      continue;
+    }
     const t = el.tags || {}, kind = areaKind(t);
     if (el.type === 'way') {
       if (!el.geometry || el.geometry.length < 2) continue;
       const g = el.geometry.map(p => P(p.lat, p.lon)), closed = g.length > 3 && same(g[0], g[g.length - 1]);
       if (kind && closed) polys.push({ kind, outer: g, holes: [], t, id: el.id });
-      else lines.push({ t, g });
+      else lines.push({ t, g, nodes: el.nodes });
     } else if (el.type === 'relation' && kind) {
       const outs = [], ins = [];
       for (const m of el.members || []) { if (m.type !== 'way' || !m.geometry) continue; const g = m.geometry.filter(Boolean).map(p => P(p.lat, p.lon)); if (g.length > 1) (m.role === 'inner' ? ins : outs).push(g); }
@@ -490,7 +668,7 @@ async function startGame(lat0, lon0, placeName) {
     });
     t.mapping = THREE.EquirectangularReflectionMapping; t.wrapT = THREE.ClampToEdgeWrapping; return t;
   }
-  const pm = new THREE.PMREMGenerator(renderer);
+  const reflectSky = createSkyReflections(renderer);
   const hemi = new THREE.HemisphereLight(0xd6e6ff, 0x5d6046, 0.7); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff0d8, 2.8); sun.castShadow = true;
   // one shadow map over a box that reaches further ahead of the car than behind it (see placeShadow)
@@ -529,7 +707,7 @@ async function startGame(lat0, lon0, placeName) {
 
   // ---- roads ----
   const roads = [], paths = [], rivers = [], rows = [], rails = [], barriers = [], coast = [];
-  for (const { t, g } of lines) {
+  for (const { t, g, nodes } of lines) {
     if (t.railway && t.railway !== 'platform' && !(t.tunnel && t.tunnel !== 'no')) rails.push({ g, t, tram: t.railway === 'tram' });
     if (t.barrier) barriers.push({ g, t });
     else if (t.natural === 'coastline') coast.push(g);
@@ -544,7 +722,7 @@ async function startGame(lat0, lon0, placeName) {
       if (drive && ln > 0) w = Math.max(w * 0.7, ln * 3.3 + 0.8);
       if (tw > 1 && tw < 40) w = tw;
       if (t.highway === 'service' && (t.service === 'driveway' || t.service === 'parking_aisle')) w = 3.6;
-      (drive ? roads : paths).push({ g, hw: w / 2, t, type: t.highway, name: t.name || t.ref || '', drive });
+      (drive ? roads : paths).push({ g, nodes, walk: drive && SIDEWALK.has(t.highway) && !['no', 'none', 'separate'].includes(t.sidewalk), hw: w / 2, t, type: t.highway, name: t.name || t.ref || '', drive });
     } else if (t.waterway) {
       const ww = { river: 12, canal: 10, stream: 2.5, ditch: 1.2, drain: 1.2 }[t.waterway]; const tw = parseFloat(t.width);
       if (ww) rivers.push({ g, hw: (tw > 0 && tw < 300 ? tw : ww) / 2 });
@@ -552,19 +730,21 @@ async function startGame(lat0, lon0, placeName) {
   }
   const seas = seaPolys(coast, HALF + 50, 3000);
   for (const s of seas) fillPoly(BUF.water, s.outer, s.holes, LAYERS.water[1]);
-  const kk = p => Math.round(p[0] * 20) + ',' + Math.round(p[1] * 20);
-  const deg = new Map();
-  for (const r of roads) r.g.forEach((p, i) => { const k = kk(p); deg.set(k, (deg.get(k) || 0) + (i === 0 || i === r.g.length - 1 ? 1 : 2)); });
+  const layout = prepareRoads(roads, drivingSide(data.elements));
+  for (const {poly, sidewalk} of layout.corners) {
+    fillPoly(BUF.road, poly, [], LAYERS.road[1]);
+    if (sidewalk) fillPoly(BUF.sidewalk, sidewalk, [], LAYERS.sidewalk[1]);
+  }
   for (const r of rivers) ribbon(BUF.water, r.g, r.hw, LAYERS.water[1], true);
   for (const r of paths) ribbon(DIRT.has(r.type) ? BUF.dirt : BUF.paved, r.g, r.hw, DIRT.has(r.type) ? LAYERS.dirt[1] : LAYERS.paved[1], true);
   for (const r of roads) {
-    const yR = LAYERS.road[1], walk = r.walk = SIDEWALK.has(r.type) && r.t.sidewalk !== 'no' && r.t.sidewalk !== 'none';
+    const yR = LAYERS.road[1], walk = r.walk;
     ribbon(BUF.road, r.g, r.hw, yR, false);
     if (walk) ribbon(BUF.sidewalk, r.g, r.hw + 2.2, LAYERS.sidewalk[1], false);
-    r.g.forEach((p, i) => {
-      const end = i === 0 || i === r.g.length - 1;
-      if (end || deg.get(kk(p)) >= 3) { disc(BUF.road, p, r.hw, yR, 20); if (walk) disc(BUF.sidewalk, p, r.hw + 2.2, LAYERS.sidewalk[1], 20); }
-    });
+    for (const p of [r.g[0], r.g.at(-1)]) {
+      disc(BUF.road, p, r.hw, yR, 20);
+      if (walk) disc(BUF.sidewalk, p, r.hw + 2.2, LAYERS.sidewalk[1], 20);
+    }
   }
   // Dashes along a polyline: pieces `on` m long every `on + gap` m, `w` wide, centred `off` m left of the line.
   // ok(s, p) can veto a piece (p = [x, z, nx, nz]); gap 0 draws a continuous line made of pieces.
@@ -578,41 +758,31 @@ async function startGame(lat0, lon0, placeName) {
       quad(B, [p[0] + p[2] * (off + hw), p[1] + p[3] * (off + hw)], [p[0] + p[2] * (off - hw), p[1] + p[3] * (off - hw)], [q[0] + q[2] * (off - hw), q[1] + q[3] * (off - hw)], [q[0] + q[2] * (off + hw), q[1] + q[3] * (off + hw)], y);
     }
   }
-  // lane markings: centre line (solid double on 4+ lanes), edge lines on main roads, lane dividers from lanes=*
-  for (const r of roads) {
-    if (r.hw * 2 < 6.4 || r.type === 'service' || r.type === 'living_street') continue;
-    const cum = cumLen(r.g);
-    const js = []; r.g.forEach((p, i) => { const d = deg.get(kk(p)); if ((i === 0 || i === r.g.length - 1) ? d !== 2 : d >= 3) js.push(cum[i]); });
-    const ok = s => js.every(j => Math.abs(s - j) > 8);
-    const oneway = ['yes', '1', 'true'].includes(r.t.oneway) || r.type === 'motorway', ln = parseInt(r.t.lanes) || 0, edge = r.hw - 0.45;
-    if (!oneway) { if (ln >= 4) for (const o of [0.12, -0.12]) dashLine(r.g, cum, o, 4, 0, 0.12, ok); else dashLine(r.g, cum, 0, 3, 6, 0.14, ok); }
-    if (MAJOR.has(r.type)) { dashLine(r.g, cum, edge, 4, 0, 0.14, ok); dashLine(r.g, cum, -edge, 4, 0, 0.14, ok); }
-    if (oneway && ln >= 2) for (let j = 1; j < ln; j++) dashLine(r.g, cum, -edge + j * 2 * edge / ln, 3, 6, 0.12, ok);
-    if (!oneway && ln >= 4) { const k = Math.floor(ln / 2); for (let j = 1; j < k; j++) for (const sg of [1, -1]) dashLine(r.g, cum, sg * j * edge / k, 3, 6, 0.12, ok); }
+  drawLaneMarkings(roads, dashLine);
+  for (const [a,b] of mappedStops(roads, layout.junctions, stopNodes)) {
+    ribbon(BUF.marks, [a,b], 0.20, LAYERS.marks[1], false);
   }
 
   // road lookup grid
-  const RG = 25, rgrid = new Map(), gkey = (i, j) => i * 65536 + j, allSegs = [];
+  const RG = 25, rgrid = new Map();
   for (const r of roads.concat(paths)) for (let i = 0; i < r.g.length - 1; i++) {
     const a = r.g[i], b = r.g[i + 1], s = { ax: a[0], az: a[1], dx: b[0] - a[0], dz: b[1] - a[1], hw: r.hw, r };
-    s.l2 = s.dx * s.dx + s.dz * s.dz || 1e-9; allSegs.push(s);
+    s.l2 = s.dx * s.dx + s.dz * s.dz || 1e-9;
     const x0 = Math.floor((Math.min(a[0], b[0]) - s.hw) / RG), x1 = Math.floor((Math.max(a[0], b[0]) + s.hw) / RG), z0 = Math.floor((Math.min(a[1], b[1]) - s.hw) / RG), z1 = Math.floor((Math.max(a[1], b[1]) + s.hw) / RG);
     for (let ix = x0; ix <= x1; ix++) for (let iz = z0; iz <= z1; iz++) { const k = gkey(ix, iz); let L = rgrid.get(k); if (!L) rgrid.set(k, L = []); L.push(s); }
   }
-  const segDist = (x, z, s) => { const t = Math.max(0, Math.min(1, ((x - s.ax) * s.dx + (z - s.az) * s.dz) / s.l2)); return [Math.hypot(x - s.ax - s.dx * t, z - s.az - s.dz * t), t]; };
+  const cornerGrid = indexCorners(layout.corners, RG);
   function roadAt(x, z) {
     const i0 = Math.floor(x / RG), j0 = Math.floor(z / RG); let any = null, ae = 1e9, drv = null, de = 1e9;
     for (let i = i0 - 1; i <= i0 + 1; i++) for (let j = j0 - 1; j <= j0 + 1; j++) {
       const L = rgrid.get(gkey(i, j)); if (!L) continue;
       for (const s of L) { const e = segDist(x, z, s)[0] - s.hw; if (e < ae) { ae = e; any = s; } if (s.r.drive && e < de) { de = e; drv = s; } }
     }
+    if (drv && de > 0 && cornerGrid.get(gkey(i0,j0))?.some(poly => inPoly(x,z,poly))) {
+      de = -0.01; // The rounded apron beyond the two road ribbons is also asphalt.
+      if (de < ae) { any = drv; ae = de; }
+    }
     return { any, ae, drv, de };
-  }
-  function snapToRoad(x, z) {
-    let best = null, bd = 1e9, bt = 0;
-    for (const s of allSegs) if (s.r.drive) { const [d, t] = segDist(x, z, s); if (d < bd) { bd = d; best = s; bt = t; } }
-    if (!best) return null;
-    return { x: best.ax + best.dx * bt, z: best.az + best.dz * bt, h: Math.atan2(-best.dz, best.dx), name: best.r.name };
   }
   const onDrive = (x, z, m = 0) => { const r = roadAt(x, z); return !!r.drv && r.de < -m; };
   const isBridge = t => t.bridge && t.bridge !== 'no';
@@ -697,13 +867,7 @@ async function startGame(lat0, lon0, placeName) {
   await say('Raising ' + nB.toLocaleString() + ' buildings…');
   const bPolys = polys.filter(p => p.kind === 'building' || p.kind === 'part');
   // outlines with building:part pieces inside are drawn as those parts only (OSM simple 3D buildings)
-  const PG = 20, pgrid = new Map(), hidden = new Set();
-  for (const p of bPolys) if (p.kind === 'part') { const q = innerPt(p.outer), k = gkey(Math.floor(q[0] / PG), Math.floor(q[1] / PG)); let L = pgrid.get(k); if (!L) pgrid.set(k, L = []); L.push(q); }
-  if (pgrid.size) for (const b of bPolys) if (b.kind === 'building') {
-    const B = bbox(b.outer);
-    out: for (let ix = Math.floor(B.x0 / PG); ix <= Math.floor(B.x1 / PG); ix++) for (let iz = Math.floor(B.z0 / PG); iz <= Math.floor(B.z1 / PG); iz++) for (const q of pgrid.get(gkey(ix, iz)) || [])
-      if (inPoly(q[0], q[1], b.outer) && !b.holes.some(h => inPoly(q[0], q[1], h))) { hidden.add(b); break out; }
-  }
+  const {hidden, parentOutline} = findBuildingParts(bPolys);
   // how mappers here tag roofs decides whether untagged houses get pitched or flat roofs
   let nFlat = 0, nPitch = 0; for (const b of bPolys) { const s = b.t['roof:shape']; if (s) s === 'flat' ? nFlat++ : nPitch++; }
   const flatShare = (nFlat + 1) / (nFlat + nPitch + 2), UP = [0, 1, 0];
@@ -755,6 +919,7 @@ async function startGame(lat0, lon0, placeName) {
       quad3(RB, a, b, c, d, n, col);
     }
   }
+  const frontages = createFrontages(entranceNodes, hidden, parentOutline, roadAt);
   for (const b of bPolys) {
     if (hidden.has(b)) continue;
     const t = b.t, rnd = seeded(b.id || b.outer[0][0] * 1000 + b.outer[0][1]), pick = a => a[Math.floor(rnd() * a.length)];
@@ -804,8 +969,12 @@ async function startGame(lat0, lon0, placeName) {
         eachTri(poly, [], (A, B, C) => tri3(RB, lift(A), lift(B), lift(C), n, rc));
       }
     }
+    if (minH === 0 && eave >= 2.15 && type !== 'roof' && t.location !== 'underground') {
+      frontages.collect(b, outer, holes, eave, type, wc);
+    }
     blds.push({ outer: b.outer, holes: b.holes, h: eave + roofH, minH, ...bbox(b.outer) });
   }
+  const frontMat = frontages.render(PB, mkMesh);
   const winDay = makeTex(512, 512, (x) => { x.fillStyle = '#ffffff'; x.fillRect(0, 0, 512, 512); speckle(x, 512, 512, 14000, 0.1); for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { x.fillStyle = '#7c8996'; x.fillRect(i * 64 + 20, j * 64 + 16, 24, 28); x.fillStyle = 'rgba(255,255,255,.22)'; x.fillRect(i * 64 + 20, j * 64 + 16, 24, 9); x.fillStyle = 'rgba(0,0,0,.25)'; x.fillRect(i * 64 + 31, j * 64 + 16, 2, 28); x.fillStyle = 'rgba(0,0,0,.18)'; x.fillRect(i * 64 + 18, j * 64 + 44, 28, 3); } });
   const winNight = makeTex(512, 512, (x) => { x.fillStyle = '#000'; x.fillRect(0, 0, 512, 512); for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) if (Math.random() < 0.32) { x.fillStyle = Math.random() < 0.7 ? '#ffd9a0' : '#cfe0ff'; x.fillRect(i * 64 + 20, j * 64 + 16, 24, 28); } });
   for (const t of [winDay, winNight]) { t.repeat.set(1 / 24, 1 / 24.8); t.offset.set(0, -1 / 24.8); }
@@ -924,21 +1093,30 @@ async function startGame(lat0, lon0, placeName) {
     st.pos.set(x, 0, z); st.h = h; st.v = 0; st.steer = 0;
     camPos.set(x - Math.cos(h) * 9, 3.2, z + Math.sin(h) * 9);
   }
-  const start = snapToRoad(0, 0);
+  const start = laneSpawn(layout.spawnSegments, 0, 0, undefined, HALF);
   if (start) place(start.x, start.z, start.h); else place(0, 0, 0);
 
   // ---- state / lights ----
   const keys = {}; let started = false, camMode = 0, head = false, night = false, shake = 0, edgeMsgT = 0;
+  const lowBeams = CAR.lights.low.map(light => ({
+    light, angle: light.angle, targetZ: light.target.position.z
+  }));
   function setLights() {
     CAR.headMat.emissiveIntensity = head ? 6 : 0;
-    CAR.lights.low.forEach(l => { l.intensity = head ? 260 : 0; l.visible = head; });
+    for (const { light, angle, targetZ } of lowBeams) {
+      // Spread the low beams toward both road edges. The high beams cover the lane ahead.
+      light.angle = night ? 0.65 : angle;
+      light.target.position.z = night ? 2.3 * Math.sign(light.position.z) : targetZ;
+      light.intensity = head ? 260 : 0;
+      light.visible = head;
+    }
     CAR.lights.high.forEach(l => { l.intensity = head && night ? 900 : 0; l.visible = head && night; });
   }
   const msgEl = $('msg'); let msgTimer;
   function flash(t) { msgEl.textContent = t; msgEl.style.opacity = 1; clearTimeout(msgTimer); msgTimer = setTimeout(() => msgEl.style.opacity = 0, 2200); }
 
   // ---- time of day ----
-  let tIdx = 0, dayIdx = 0, lowLight = false, skyT = null, envRT = null;
+  let tIdx = 0, dayIdx = 0, lowLight = false, skyT = null;
   const clock = h => { const m = Math.round((((h % 24) + 24) % 24) * 60); return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
   function applyTime(i, announce) {
     tIdx = i; if (i !== NIGHT) dayIdx = i;
@@ -950,12 +1128,22 @@ async function startGame(lat0, lon0, placeName) {
     if (night) { lightDir.copy(MOON); sun.color.set(0x9fb3ff); sun.intensity = 0.14; }
     else if (e < -1) { lightDir.set(0.25, 1, 0.3).normalize(); sun.color.copy(zen).lerp(new THREE.Color(0xffffff), 0.6); sun.intensity = 0.3; }
     else { lightDir.copy(sd); if (lightDir.y < 0.06) { lightDir.y = 0.06; lightDir.normalize(); } sun.color.set(0xfff3e4).lerp(glow, warm * 0.85); sun.intensity = 1 + 2.6 * ss(e, -1, 12); }
-    hemi.color.copy(hor).lerp(zen, 0.25); hemi.groundColor.copy(gnd); hemi.intensity = night ? 0.1 : 0.22 + 0.33 * ss(e, -6, 15); // sky fill kept well below the sun so shadows read
-    if (skyT) skyT.dispose(); if (envRT) envRT.dispose();
-    skyT = drawSky(sd, e, night); envRT = pm.fromEquirectangular(skyT);
-    scene.background = skyT; scene.environment = envRT.texture; scene.environmentIntensity = night ? 0.3 : 0.35 + 0.45 * ss(e, -6, 12);
+    if (night) {
+      // Cool indirect light keeps the kerb and car silhouette legible between street lamps.
+      hemi.color.set(0xa4b9d1);
+      hemi.groundColor.set(0x5c6270);
+      hemi.intensity = 0.24;
+    } else {
+      hemi.color.copy(hor).lerp(zen, 0.25);
+      hemi.groundColor.copy(gnd);
+      hemi.intensity = 0.22 + 0.33 * ss(e, -6, 15);
+    }
+    if (skyT) skyT.dispose();
+    skyT = drawSky(sd, e, night);
+    scene.background = skyT; scene.environment = reflectSky(skyT); scene.environmentIntensity = night ? 0.3 : 0.35 + 0.45 * ss(e, -6, 12);
     scene.fog.color.copy(hor); scene.fog.near = night ? 80 : 110 + 50 * ss(e, -3, 10); scene.fog.far = night ? 650 : 760 + 190 * ss(e, -3, 10);
     renderer.toneMappingExposure = night ? 1.1 : e < 0 ? 1.25 : 1 + 0.08 * warm;
+    if (frontMat) frontMat.emissiveIntensity = night ? 0.60 : e < 0 ? 0.25 : 0;
     wallMat.emissiveIntensity = night ? 1.6 : e < 0 ? 0.9 : 0;
     setLamps(lowLight);
     if (lowLight) head = true;
@@ -1076,7 +1264,7 @@ async function startGame(lat0, lon0, placeName) {
     if (e.code === 'KeyT') applyTime((tIdx + 1) % TIMES.length, true);
     if (e.code === 'KeyC') camMode = 1 - camMode;
     if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);
-    if (e.code === 'KeyR') { const s = snapToRoad(st.pos.x, st.pos.z); if (s) place(s.x, s.z, s.h); }
+    if (e.code === 'KeyR') { const s = laneSpawn(layout.spawnSegments, st.pos.x, st.pos.z, st.h, HALF); if (s) place(s.x, s.z, s.h); }
   });
   addEventListener('keyup', e => keys[e.code] = false);
   addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
