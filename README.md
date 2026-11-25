@@ -59,7 +59,8 @@ sedan-model.js        buildCar() as an ES module (used by drive-map.js)
 Drive.html            test-track page (self-contained, own inline copy of the car)
 Sedan.html            model viewer (self-contained, own inline copy of the car + interior)
 three-d-stage.js      <three-d-stage> web component: renderer, studio lights, orbit, GLB/OBJ export
-reference/            reference photos the model was built from (third-party photos — keep the repo private)
 ```
+
+The model was matched against third-party reference photos (Logan front 3/4, front, interior, wheel, underbody). They aren't in the repo for copyright reasons; keep local copies in `reference/`, which git ignores.
 
 Originally made in Claude Design; moved here to keep developing it as code.

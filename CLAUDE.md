@@ -35,4 +35,4 @@ Context for working on this repo. See README.md for what the pages do and how to
 
 - Code is written densely (many statements per line, short helper names like `V`, `B`, `add`). Match the surrounding style rather than reformatting whole files.
 - Pin any new CDN dependency to an exact version.
-- `reference/` holds the photos the model was matched against (Logan front 3/4, front, interior, wheel, underbody) — look at them when working on the car's shape.
+- `reference/` (git-ignored, local only) holds the photos the model was matched against (Logan front 3/4, front, interior, wheel, underbody) — look at them when working on the car's shape if they're present. They are third-party photos: never commit them; the repo is public.
