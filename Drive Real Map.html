@@ -1,0 +1,112 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sedan · Real map drive</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
+    "three/addons/controls/OrbitControls.js": "https://unpkg.com/three@0.184.0/examples/jsm/controls/OrbitControls.js",
+    "three/addons/exporters/OBJExporter.js": "https://unpkg.com/three@0.184.0/examples/jsm/exporters/OBJExporter.js",
+    "three/addons/exporters/GLTFExporter.js": "https://unpkg.com/three@0.184.0/examples/jsm/exporters/GLTFExporter.js"
+  },
+  "integrity": {
+    "https://unpkg.com/three@0.184.0/build/three.module.js": "sha384-8FCZ1eVO6it4+pbec2aDtnTrwjWXZLJRC+MAGCIPDgsYnUrl/E0A2YlF8ioMKI/J",
+    "https://unpkg.com/three@0.184.0/build/three.core.js": "sha384-dw2ooPewaEIrAgl6oFDBmmBWCE9oW9LxRGcfwZ0hLvEprzo202wXl7vCYHRlSnOT",
+    "https://unpkg.com/three@0.184.0/examples/jsm/controls/OrbitControls.js": "sha384-4rziNxOBZKQ69i+w+f89KJ55TCYquwchVbByQwmaOeIOXdOU2PLDn3kOfXHwIJC9",
+    "https://unpkg.com/three@0.184.0/examples/jsm/exporters/OBJExporter.js": "sha384-nbwtoZENJD3Vq+ACK0CuGQdPMuDWHkamC2KJD70EV5nfg6jQjfppKOea07YJN+N3",
+    "https://unpkg.com/three@0.184.0/examples/jsm/exporters/GLTFExporter.js": "sha384-VofkvpG6HERhFCYbsUOHeNXBCqID2nfqkQqnVzE1jc/oPcz+qJ13ADdXH08hE+cQ"
+  }
+}
+</script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#dfe9ef;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:#fff}
+canvas{display:block}
+a{color:inherit} a:hover{opacity:.8}
+button{font:inherit;border:0;border-radius:9px;padding:11px 16px;background:#c8102e;color:#fff;font-weight:600;cursor:pointer}
+button:hover{background:#a80d26}
+button:disabled{background:#4a4d53;color:#9a9ca1;cursor:default}
+button.ghost{background:rgba(255,255,255,.12)}
+button.ghost:hover{background:rgba(255,255,255,.2)}
+.card{background:rgba(18,20,24,.9);border-radius:14px;padding:22px 24px;display:flex;flex-direction:column;gap:14px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.small{font-size:13px;opacity:.75;text-decoration:none}
+#picker{position:fixed;inset:0}
+#map{position:absolute;inset:0;background:#e5e3df}
+#picker .card{position:absolute;left:16px;top:16px;width:320px;max-width:calc(100vw - 80px);z-index:1000}
+#picker h1{margin:0;font-size:22px;font-weight:600}
+#picker p{margin:0;font-size:14px;line-height:1.45;opacity:.85;text-wrap:pretty}
+#searchForm{display:flex;gap:8px}
+#searchForm input{flex:1;min-width:0;font:inherit;font-size:14px;padding:10px 12px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;outline:none}
+#searchForm input:focus{border-color:rgba(255,255,255,.45)}
+#searchForm button{padding:10px 14px;background:rgba(255,255,255,.14)}
+#searchMsg:empty{display:none}
+.chosen{display:flex;flex-direction:column;gap:4px;font-size:14px;padding:12px;border-radius:9px;background:rgba(255,255,255,.06)}
+.k{opacity:.6;text-transform:uppercase;font-size:11px;letter-spacing:.08em}
+#loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#1b1f26;z-index:2000}
+#loading .card{align-items:center;min-width:280px;text-align:center}
+#loadMsg{margin:0;font-size:15px}
+#loadBtns{display:none;gap:10px}
+#spin{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.18);border-top-color:#fff;animation:sp 0.9s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.hud{position:fixed;pointer-events:none;text-shadow:0 1px 6px rgba(0,0,0,.4);font-variant-numeric:tabular-nums}
+#speed{left:28px;bottom:24px;display:flex;align-items:baseline;gap:8px}
+#speed b{font-size:64px;font-weight:600;letter-spacing:-.02em;line-height:1}
+#speed span{font-size:14px;opacity:.85;letter-spacing:.06em;text-transform:uppercase}
+#gear{margin-left:10px;padding:2px 7px;border:1px solid rgba(255,255,255,.6);border-radius:5px}
+#street{left:50%;bottom:30px;transform:translateX(-50%);font-size:22px;font-weight:600;padding:8px 16px;border-radius:10px;background:rgba(0,0,0,.35);backdrop-filter:blur(6px);text-shadow:none;opacity:0;transition:opacity .25s;white-space:nowrap;max-width:46vw;overflow:hidden;text-overflow:ellipsis}
+#where{right:20px;top:18px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:auto;max-width:40vw}
+#place{font-size:15px;font-weight:600;text-align:right}
+#stats{font-size:12px;opacity:.8}
+#changePlace{font-size:13px;padding:7px 11px;border-radius:8px;background:rgba(0,0,0,.4);backdrop-filter:blur(6px);font-weight:500}
+#back{position:fixed;left:20px;top:18px;font-size:13px;text-decoration:none;background:rgba(0,0,0,.4);padding:7px 11px;border-radius:8px;backdrop-filter:blur(6px)}
+#keys{left:50%;top:22px;transform:translateX(-50%);font-size:12px;opacity:.85;text-align:center;max-width:calc(100vw - 520px);transition:opacity .8s}
+@media (max-width:1000px){#keys{display:none}}
+#msg{left:50%;top:22%;transform:translateX(-50%);font-size:22px;font-weight:600;opacity:0;transition:opacity .4s;text-align:center}
+#attrib{position:fixed;right:8px;bottom:6px;font-size:11px;opacity:.85;background:rgba(0,0,0,.35);padding:3px 7px;border-radius:5px;text-decoration:none}
+#start{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,14,20,.45);backdrop-filter:blur(3px);cursor:pointer;z-index:1500}
+#start .card{max-width:380px}
+#start h1{margin:0;font-size:24px;font-weight:600}
+#start dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 18px;font-size:14px}
+#start dt{opacity:.65} #start dd{margin:0}
+#start p{margin:0;font-size:14px;opacity:.85;text-wrap:pretty}
+#startNote:empty{display:none}
+</style></head><body>
+<div id="picker" style="display:none">
+  <div id="map"></div>
+  <div class="card">
+    <a class="small" href="Sedan.html">← Model viewer</a>
+    <h1>Choose where to drive</h1>
+    <p>Search for a place or click anywhere on the map. The square shows the 1 km area that will be built in 3D.</p>
+    <form id="searchForm"><input id="q" placeholder="Search a place or address" autocomplete="off"><button type="submit">Search</button></form>
+    <div id="searchMsg" class="small"></div>
+    <div class="chosen"><span class="k">Start point</span><span id="placeInfo">Not chosen yet</span></div>
+    <button id="go" disabled>Drive here</button>
+  </div>
+</div>
+<div id="loading"><div class="card"><div id="spin"></div><p id="loadMsg">Loading…</p><div id="loadBtns"><button id="retry">Try again</button><button id="pickAgain" class="ghost">Choose another place</button></div></div></div>
+<div id="hud" style="display:none">
+  <a id="back" href="Sedan.html">← Model viewer</a>
+  <div class="hud" id="speed"><b id="kmh">0</b><span>km/h</span><span id="gear">N</span></div>
+  <div class="hud" id="street"></div>
+  <div class="hud" id="where"><span id="place"></span><span id="stats"></span><button id="changePlace">Change place (M)</button></div>
+  <div class="hud" id="keys">W/↑ accelerate · S/↓ brake &amp; reverse · A/D steer · Space handbrake · H lights · N night · C camera · R back on road · M map</div>
+  <div class="hud" id="msg"></div>
+  <a id="attrib" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>
+</div>
+<div id="start"><div class="card">
+  <h1>Ready to drive</h1>
+  <p id="startPlace"></p>
+  <dl>
+    <dt>W / ↑</dt><dd>Accelerate</dd>
+    <dt>S / ↓</dt><dd>Brake, then reverse</dd>
+    <dt>A D / ← →</dt><dd>Steer</dd>
+    <dt>Space</dt><dd>Handbrake</dd>
+    <dt>H · N · C</dt><dd>Headlights · night · camera</dd>
+    <dt>R · M</dt><dd>Back on the road · choose another place</dd>
+  </dl>
+  <p id="startNote"></p>
+  <p style="opacity:1;font-weight:600">Click or press any key to start</p>
+</div></div>
+<script type="module" src="drive-map.js"></script>
+</body></html>

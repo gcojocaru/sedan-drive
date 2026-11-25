@@ -1,0 +1,57 @@
+# Sedan Drive
+
+A procedurally modelled 3D compact sedan (Dacia Logan–style) built in three.js, with three pages:
+
+| Page | What it does |
+|---|---|
+| `Drive Real Map.html` | **Main page.** Pick any spot on a world map; the 1 km square around it is built in 3D from OpenStreetMap (roads, buildings, parks, water) and you drive the sedan through it. |
+| `Drive.html` | Drive the sedan around a closed test track with lap timing (best lap saved in `localStorage`). |
+| `Sedan.html` | Studio model viewer: orbit the car, toggle every light (headlights, fog, indicators, hazards, brake, reverse, cabin), night scene, underside and interior views, export to GLB / OBJ. |
+
+No build step, no dependencies to install: plain HTML + ES modules. three.js 0.184.0 and Leaflet 1.9.4 load from unpkg (pinned, with SRI hashes).
+
+## Run it
+
+ES modules don't load over `file://`, so serve the folder:
+
+```bash
+npm run dev        # http://localhost:5173  (uses npx serve)
+# or
+python3 -m http.server 5173
+```
+
+Then open http://localhost:5173 — it redirects to the real-map drive.
+
+## Controls (driving pages)
+
+| Key | Action |
+|---|---|
+| W / ↑ | Accelerate |
+| S / ↓ | Brake, then reverse |
+| A D / ← → | Steer |
+| Space | Handbrake |
+| H · N · C | Headlights · night · camera |
+| R | Reset / back on the road |
+| M | Choose another place (real-map page) |
+
+## External services (real-map page)
+
+- Map tiles: OpenStreetMap, Esri World Imagery (satellite toggle)
+- Geocoding: Nominatim (search + reverse)
+- Map data: Overpass API, with fallback mirrors; responses are cached in IndexedDB (`sedan-map-cache`)
+
+These are free community services with usage policies — fine for personal use, but a public deployment should use its own Overpass/Nominatim instance or a commercial provider.
+
+## Files
+
+```
+Drive Real Map.html   real-map page (markup + styles; logic in drive-map.js)
+drive-map.js          map picker, OSM fetch/cache, world mesh building, driving game
+sedan-model.js        buildCar() as an ES module (used by drive-map.js)
+Drive.html            test-track page (self-contained, own inline copy of the car)
+Sedan.html            model viewer (self-contained, own inline copy of the car + interior)
+three-d-stage.js      <three-d-stage> web component: renderer, studio lights, orbit, GLB/OBJ export
+reference/            reference photos the model was built from (third-party photos — keep the repo private)
+```
+
+Originally made in Claude Design; moved here to keep developing it as code.
