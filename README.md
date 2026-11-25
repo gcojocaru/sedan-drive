@@ -60,6 +60,8 @@ These are free community services with usage policies that count all of a site's
 
 ## Files
 
+Contributing: [ARCHITECTURE.md](ARCHITECTURE.md) has the target module layout and the rules every PR follows.
+
 ```
 Drive Real Map.html   real-map page (markup + styles; logic in drive-map.js)
 drive-map.js          map picker, map data download/cache, world mesh building, driving game
