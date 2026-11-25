@@ -24,6 +24,8 @@ python3 -m http.server 5173
 
 Then open http://localhost:5173 — it redirects to the real-map drive.
 
+While driving on a real map, the minimap shows 240 metres across with north at the top. The amber arrow shows where your car is and which way it faces. A dashed line marks the edge of the playable area.
+
 ## Deploy
 
 It's a static site. GitHub Pages publishes the repo root from `main` (Settings → Pages → Deploy from a branch: `main`, `/ (root)`); `.nojekyll` makes it serve the files as they are. Any other static host works too: `npm run build` copies just the site files into `dist/` (`npm run preview` builds and serves it on :5174).
@@ -73,6 +75,7 @@ Drive Real Map.html   real-map page (markup + styles; logic in drive-map.js)
 drive-map.js          map picker, map data download/cache, world mesh building, driving game
 building-fronts.js    ground-floor entrance placement and retail window layouts
 road-layout.js        directional lanes, junction corners, stop lines and spawn positions
+minimap.js            north-up driving minimap drawn from the loaded world geometry
 osm-query.js          the Overpass query, cache key, start-point grid and proxy address (shared with proxy/)
 vector-fallback.js    OpenFreeMap vector tiles → the same element list as an Overpass reply (fallback map data)
 radio.js              car radio: stations near the chosen place from radio-browser.info, Romanian presets on the test track

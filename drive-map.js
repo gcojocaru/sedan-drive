@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { facadeWalls, onOutline, planFronts, shopBays, isRetail, facadeAtlas } from './building-fronts.js';
 import { drivingSide, prepareRoads, laneSpawn, mappedStops } from './road-layout.js';
+import { createMinimap } from './minimap.js';
 import { buildCar } from './sedan-model.js';
 import { loadVaz } from './vaz-model.js';
 import { HALF, CACHE_V, AREA_PROXY, ENDPOINTS, snap, areaKey, overpassQuery, overpassError } from './osm-query.js';
@@ -1226,9 +1227,12 @@ async function startGame(lat0, lon0, placeName) {
   }
 
   // ---- HUD ----
+  const drawMinimap = createMinimap($('minimap').querySelector('canvas'), document.createElement('canvas'), HALF,
+    { polys, seas, rivers, buildings: blds, paths, roads });
   const kmh = $('kmh'), gear = $('gear'), streetEl = $('street');
   let streetT = 0, shownStreet = null;
   function hud(s, dt) {
+    drawMinimap(st.pos.x, st.pos.z, st.h);
     kmh.textContent = Math.round(Math.abs(st.v) * 3.6);
     gear.textContent = s.reversing ? 'R' : st.v === 0 ? 'N' : 'D';
     if ((streetT -= dt) > 0) return; streetT = 0.25;
