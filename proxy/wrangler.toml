@@ -11,7 +11,7 @@ APP_URL = "https://gcojocaru.github.io/sedan-drive/"
 # Days a downloaded place stays in KV before it is fetched fresh (keeps storage within the free 1 GB).
 TTL_DAYS = "30"
 
-# Filled in by: npx wrangler kv namespace create AREAS --update-config
-# [[kv_namespaces]]
-# binding = "AREAS"
-# id = "..."
+# Created by: npm run proxy:kv
+[[kv_namespaces]]
+binding = "AREAS"
+id = "f3fa709da9e14d02a8325e1e4968b35a"
