@@ -21,6 +21,7 @@ how each part works; this file says how the parts may fit together.
 | `Drive.html` | 973 | Test-track page with everything inline: its own copy of the car, physics, camera, HUD |
 | `Sedan.html` | 822 | Viewer page with everything inline: its own copy of the car, studio lights, light toggles |
 | `sedan-model.js` | 661 | `buildCar()`, used only by `drive-map.js` |
+| `vaz-model.js` | 46 | `loadVaz()`: VAZ-2101 from `models/vaz-2101.glb` in `buildCar()`'s shape, the second car on the real-map page |
 | `three-d-stage.js` | 435 | Viewer web component (renderer, orbit, GLB/OBJ export) |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
 | `radio.js` | 53 | Car radio for both drive pages: `stationsNear()` (radio-browser.info, real-map page), Romanian presets (test track), `radio(show, find)` player |
@@ -57,7 +58,8 @@ root, one copy each. Page URLs don't change.
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD | three |
 | `world.js` | `buildWorld(elements, origin, scene)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`, `snapToRoad`, lamps, lit windows) | `geom`, three |
 | `map-data.js` | `loadArea(lat, lon, status)`: IndexedDB cache → proxy → Overpass → vector fallback; returns `{ data, fallback, err }` | `osm-query`, `vector-fallback` |
-| `sedan-model.js` | `buildCar()` and the axle constants: the only car | three |
+| `sedan-model.js` | `buildCar()` and the axle constants: the procedural car | three |
+| `vaz-model.js` | `loadVaz()`: the VAZ-2101 model file, returned in `buildCar()`'s shape | three (GLTFLoader) |
 | `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find)` → `tune(step)`; the only audio | nothing |
 | `geom.js` | Pure geometry on plain arrays (`ribbon`, `fillPoly`, `obb`, `clipHalf`, `joinRings`, …) | nothing |
 | `osm-query.js` | Query, cache key, grid, servers, proxy address | nothing |
@@ -79,7 +81,7 @@ Tests live in `test/*.test.js` and run with `npm test`. Fixtures (a small Overpa
    `surface(x, z)` or `blocked(x, z, h)`); don't fork the code.
 2. **Respect the dependency table.** No upward imports, no new DOM or three.js use in the Node-importable modules, no
    network or storage calls outside `map-data.js`, `vector-fallback.js`, `radio.js` (station search through a passed-in
-   `fetch`, and the stream itself), the proxy and the page entries.
+   `fetch`, and the stream itself), `vaz-model.js` (its own model file), the proxy and the page entries.
 3. **New logic goes in its module, not in a page and not in `startGame()`.** A new world feature is its own function
    in `world.js` (until it exists, a function outside `startGame()` that takes what it needs). No new inline
    `<script type="module">` logic in pages.
