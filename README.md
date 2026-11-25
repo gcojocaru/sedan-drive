@@ -8,7 +8,7 @@ A procedurally modelled 3D compact sedan (Dacia Logan–style) built in three.js
 | `Drive.html` | Drive the sedan around a closed test track with lap timing (best lap saved in `localStorage`). |
 | `Sedan.html` | Studio model viewer: orbit the car, toggle every light (headlights, fog, indicators, hazards, brake, reverse, cabin), night scene, underside and interior views, export to GLB / OBJ. |
 
-No build step, no dependencies to install: plain HTML + ES modules. three.js 0.184.0 and Leaflet 1.9.4 load from unpkg (pinned, with SRI hashes).
+No build step, no dependencies to install: plain HTML + ES modules. three.js 0.184.0 and Leaflet 1.9.4 are served from `vendor/` (copies of the published files, checked with SRI hashes), so the game needs no CDN.
 
 ## Run it
 
@@ -50,16 +50,19 @@ It's a static site. `npm run build` copies just the site files into `dist/` (`np
 ## External services (real-map page)
 
 - Map tiles: OpenStreetMap, Esri World Imagery (satellite toggle)
-- Geocoding: Nominatim (search + reverse)
-- Map data: Overpass API, with fallback mirrors; responses are cached in IndexedDB (`sedan-map-cache`)
+- Geocoding: Nominatim. Searches run on submit and are cached in the browser, at most one request a second; a clicked spot is named once, when you press Drive.
+- Map data: Overpass API, through the caching proxy in `proxy/` when it is deployed (one download per place for all players), else straight from the Overpass servers one at a time. A server that answers HTTP 429 is left alone for 30 s. Each browser also keeps the places it loaded in IndexedDB (`sedan-map-cache`).
 
-These are free community services with usage policies — fine for personal use, but a public deployment should use its own Overpass/Nominatim instance or a commercial provider.
+These are free community services with usage policies that count all of a site's players together. Deploy the proxy before sharing the site widely: see [proxy/README.md](proxy/README.md).
 
 ## Files
 
 ```
 Drive Real Map.html   real-map page (markup + styles; logic in drive-map.js)
-drive-map.js          map picker, OSM fetch/cache, world mesh building, driving game
+drive-map.js          map picker, map data download/cache, world mesh building, driving game
+osm-query.js          the Overpass query, cache key, start-point grid and proxy address (shared with proxy/)
+proxy/                Cloudflare Worker that caches map downloads for all players (see proxy/README.md)
+vendor/               three.js 0.184.0 and Leaflet 1.9.4, served by the site
 sedan-model.js        buildCar() as an ES module (used by drive-map.js)
 Drive.html            test-track page (self-contained, own inline copy of the car)
 Sedan.html            model viewer (self-contained, own inline copy of the car + interior)
