@@ -34,6 +34,14 @@ Then open http://localhost:5173 — it redirects to the real-map drive.
 | R | Reset / back on the road |
 | M | Choose another place (real-map page) |
 
+## What gets built from the map (real-map page)
+
+- **Roads** at their tagged width, sidewalks, lane markings (centre line, edge lines, lane dividers from `lanes=*`), zebra crossings, railings on bridges.
+- **Buildings** from footprints and height/level tags, with `roof:shape` roofs (gabled, hipped, pyramidal, skillion, dome, onion). Untagged houses get a pitched roof unless mappers in the area mostly tag flat roofs. `building:part` pieces replace their outline, so landmarks with 3D tagging come out properly. `building:colour`/`material` and `roof:colour`/`material` are used.
+- **Ground**: residential, commercial and industrial land, parking lots, plazas, parks, forests, farmland, beaches, rivers, lakes, and the **sea**, which is built from coastlines.
+- **Railways** (ballast, sleepers, rails), **tram tracks**, **walls, fences and hedges**, piers and breakwaters, trees (mapped trees, tree rows, parks and forests, scattered garden trees).
+- Parking lots and plazas count as hard ground, so the car keeps its road speed there.
+
 ## External services (real-map page)
 
 - Map tiles: OpenStreetMap, Esri World Imagery (satellite toggle)
