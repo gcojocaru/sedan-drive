@@ -2,6 +2,10 @@
 
 Context for working on this repo. See README.md for what the pages do and how to run them.
 
+**Every PR follows the rules and target layout in ARCHITECTURE.md** (imported below). If a change can't follow them, say why in the PR.
+
+@ARCHITECTURE.md
+
 ## Stack
 
 - Plain HTML + native ES modules. No bundler, no npm dependencies, no TypeScript.
@@ -14,8 +18,8 @@ Context for working on this repo. See README.md for what the pages do and how to
 - **The car model exists in three copies** — keep this in mind before editing it:
   - `sedan-model.js` → `export function buildCar()`; imported by `drive-map.js`.
   - `Drive.html` → its own inline `buildCar()`.
-  - `Sedan.html` → inline model inside the page module, plus the full interior and light rig.
-  A change to the car's look only shows up on the page(s) whose copy you edit. Consolidating them into `sedan-model.js` is a reasonable refactor, but do it deliberately (the Sedan.html copy has extras the others lack) and only when asked.
+  - `Sedan.html` → inline model inside the page module.
+  The model bodies are identical today (interior and light rig included); only the page setup around them differs (Sedan.html adds a studio environment, contact shadows and light controls). Until migration step 2 in ARCHITECTURE.md lands, a change to the car's look must be made in all three.
 - Units are metres; the car's long axis is +X (front axle at x≈1.32, rear at x≈-1.31), y up.
 - Meshes and groups are named (`car.getObjectByName('underbody')`, `steering_wheel`, `front_seat_L`, …). Other code looks parts up by name, so keep names stable when renaming things.
 - `osm-query.js` holds the Overpass query (`overpassQuery`), the cache key (`areaKey`, `CACHE_V`), the ~55 m start-point grid (`snap`), the server list and `AREA_PROXY`. It is imported by both `drive-map.js` and `proxy/worker.js` (Cloudflare Worker, bundled by wrangler), so the proxy only ever runs the game's own query. Change the query there, bump `CACHE_V`, and redeploy the Worker with the site.
