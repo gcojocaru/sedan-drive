@@ -139,19 +139,24 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 #stats{font-size:12px;opacity:.8}
 #tod{font-size:13px;font-weight:600}
 #changePlace{font-size:13px;padding:7px 11px;border-radius:8px;background:rgba(0,0,0,.4);backdrop-filter:blur(6px);font-weight:500}
+#jobButton{font-size:13px;min-height:36px;padding:7px 12px;background:#1b3739;color:#c5fff2;border:1px solid #76c7b7}
+#jobButton:hover{background:#294c4d}
+#jobStatus{max-width:100%;box-sizing:border-box;text-align:right;background:#13262bee;border-right:3px solid #68e6d3;border-radius:5px;padding:7px 10px;pointer-events:none}
+#jobStatus strong,#jobStatus small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#jobStatus strong{font-size:13px} #jobStatus small{color:#a6efdf;font-size:12px;margin-top:3px}
 #back{position:fixed;left:20px;top:18px;font-size:13px;text-decoration:none;background:rgba(0,0,0,.4);padding:7px 11px;border-radius:8px;backdrop-filter:blur(6px)}
 #keys{left:50%;top:22px;transform:translateX(-50%);font-size:12px;opacity:.85;text-align:center;max-width:calc(100vw - 520px);transition:opacity .8s}
 @media (max-width:1000px){#keys{display:none}}
 #msg{left:50%;top:22%;transform:translateX(-50%);font-size:22px;font-weight:600;opacity:0;transition:opacity .4s;text-align:center}
 #mapHud{position:fixed;right:8px;bottom:6px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}
 #attrib,#wxCredit{pointer-events:auto;font-size:11px;opacity:.85;background:rgba(0,0,0,.35);padding:3px 7px;border-radius:5px;text-decoration:none}
-#minimap{position:relative;margin-right:clamp(0px,1vw,12px);width:clamp(112px,23vmin,180px);overflow:hidden;border:1px solid rgba(235,244,240,.6);border-radius:12px;background:#253237;box-shadow:0 2px 12px rgba(0,0,0,.35)}
+#minimap{position:relative;margin-right:clamp(0px,1vw,12px);width:clamp(142px,25vmin,196px);overflow:hidden;border:1px solid rgba(235,244,240,.6);border-radius:12px;background:#253237;box-shadow:0 2px 12px rgba(0,0,0,.35)}
 #minimap canvas{width:100%;height:auto}
 #minimap .north{position:absolute;top:5px;left:6px;padding:2px 5px;border-radius:3px;background:#172126;color:#f2f5f3;font:bold 11px/1.2 sans-serif}
 @media(max-width:680px){#street{left:14px;bottom:90px;transform:none;max-width:calc(100vw - 184px);font-size:15px;padding:5px 8px}#speed{left:14px}#speed b{font-size:clamp(40px,10vw,64px)}}
 /* on-screen touch controls (touch.js) take both bottom corners: minimap to the top left, street name between or above them */
 .touch-ui #mapHud{right:auto;left:14px;bottom:auto;top:58px;align-items:flex-start}
-.touch-ui #minimap{margin-right:0;width:clamp(88px,23vmin,180px)}
+.touch-ui #minimap{margin-right:0;width:clamp(142px,24vmin,180px)}
 .touch-ui #street{left:50%;bottom:30px;transform:translateX(-50%);max-width:calc(100vw - 400px)}
 @media (orientation:portrait){.touch-ui #street{left:14px;bottom:186px;transform:none;max-width:calc(100vw - 28px)}}
 #start{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,14,20,.45);backdrop-filter:blur(3px);cursor:pointer;z-index:1500}
@@ -161,6 +166,9 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 #start dt{opacity:.65} #start dd{margin:0}
 #start p{margin:0;font-size:14px;opacity:.85;text-wrap:pretty}
 #startNote:empty{display:none}
+.setting[hidden]{display:none}
+.setting[data-app-version]{padding-top:12px;border-top:1px solid #465557}
+.setting[data-app-version] span{font-variant-numeric:tabular-nums}
 </style></head><body>
 <div id="picker" style="display:none">
   <div id="map"></div>
@@ -200,6 +208,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
     <label class="setting">Time of day<select id="timeSel"></select></label>
     <label class="setting">Weather<select id="wxSel"></select></label>
     <label class="setting">Traffic<select id="trafficSel"></select></label>
+    <div class="setting" data-app-version hidden>Game version<span></span></div>
     <div class="travel-actions"><button autofocus>Back to driving</button></div>
   </form>
 </dialog>
@@ -207,11 +216,13 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
   <a id="back" href="Sedan.html">← Model viewer</a>
   <div class="hud" id="speed"><b id="kmh">0</b><span>km/h</span><span id="gear">N</span></div>
   <div class="hud" id="street"></div>
-  <div class="hud" id="where"><span id="place"></span><span id="stats"></span><span id="tod"></span><button id="changePlace">Change place (M)</button></div>
-  <div class="hud" id="keys">W/↑ accelerate · S/↓ brake &amp; reverse · A/D steer · Space handbrake · H lights · T time of day · E weather · N night · C camera · Esc settings · V driving sounds · Q radio · R back on road · M map</div>
+  <div class="hud" id="where"><span id="place"></span><span id="stats"></span><span id="tod"></span><button id="changePlace">Change place (M)</button>
+    <button type="button" id="jobButton" aria-keyshortcuts="J">Start delivery</button>
+    <div id="jobStatus" hidden><strong id="jobStage" aria-live="polite"></strong><small id="jobDistance"></small></div></div>
+  <div class="hud" id="keys">W/↑ accelerate · S/↓ brake &amp; reverse · A/D steer · Space handbrake · H lights · T time of day · E weather · N night · C camera · Esc settings · V driving sounds · Q radio · J delivery · R back on road · M map</div>
   <div class="hud" id="msg"></div>
   <div id="mapHud">
-    <div id="minimap" role="img" aria-label="North-up minimap showing nearby streets and the car’s heading"><canvas width="360" height="360"></canvas><span class="north" aria-hidden="true">N</span></div>
+    <div id="minimap" role="img" aria-label="North-up minimap with street names, house numbers and an arrow toward the active delivery"><canvas width="360" height="360"></canvas><span class="north" aria-hidden="true">N</span></div>
     <a id="attrib" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>
     <a id="wxCredit" href="https://open-meteo.com/" target="_blank" rel="noopener" hidden>Weather data by Open-Meteo.com</a>
   </div>
@@ -229,6 +240,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
     <dt>Esc</dt><dd>Settings: choose the time and weather</dd>
     <dt>V</dt><dd>Toggle driving sounds</dd>
     <dt>Q</dt><dd>Radio: next station (Shift+Q back)</dd>
+    <dt>J</dt><dd>Start or cancel a delivery job</dd>
     <dt>R · M</dt><dd>Back on the road · choose another place</dd>
   </dl>
   <p id="startNote"></p>

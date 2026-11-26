@@ -1,10 +1,15 @@
 // The 3D world built from a place's OpenStreetMap elements: ground layers, sea, roads and markings, crossings, railways,
 // walls and fences, buildings (buildings.js), trees and street lamps, plus the lookups the game drives on (roadAt,
-// areaAt, inBuilding). buildWorld() runs one builder per feature, in an order that later ones depend on.
+// areaAt, inBuilding). buildWorld() runs one builder per feature, in an order that later ones depend on. The surfaces
+// that face the sky can be made wet or snowy afterwards (setGround).
 import * as THREE from 'three';
 import { same, joinRings, inPoly, polyArea, bbox, newBuf, quad, disc, ribbon, offsetLine, cumLen, densify, runs, wallStrip, fenceStrip, seaPolys, gkey, segDist } from './geom.js';
-import { fillPoly, makeTex, speckle, num, tagColor, matColor, WALL_MAT } from './world-kit.js';
+import { fillPoly, makeTex, speckle, num, tagColor, matColor, WALL_MAT, weatherLook } from './world-kit.js';
 import { buildBuildings } from './buildings.js';
+import { landmarkName, planSigns } from './sign-layout.js';
+import { furnitureKind, planFurniture } from './street-furniture.js';
+import { addFurniture } from './furniture-mesh.js';
+import { addSignMeshes } from './sign-mesh.js';
 import { drivingSide, prepareRoads, mappedStops } from './road-layout.js';
 import { HALF } from './osm-query.js';
 
@@ -84,10 +89,13 @@ const NOTREE = ['parking', 'paving', 'water', 'pitch']; // trees keep off these
 const isBridge = t => t.bridge && t.bridge !== 'no';
 
 // elements: an Overpass reply's elements; (lat0, lon0) becomes the origin. say(text) shows progress and waits for a repaint.
+// setGround(wet, snow) (0–1 each, from weather.js groundOf) wets roads, roofs and ground or lays snow on them;
+// reflectLamps(x, z), called as the camera moves, lets the lit street lamps nearest it glint in wet roads.
 export async function buildWorld(elements, lat0, lon0, scene, say) {
   await say('Building the streets…');
-  const { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts } = parseElements(elements, lat0, lon0);
-  const G = groundLayers(scene), { LAYERS, BUF } = G;
+  const { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts, landmarks, furniture, addressPoints } = parseElements(elements, lat0, lon0);
+  const wx = weatherLook(), { wear } = wx;
+  const G = groundLayers(scene, wear), { LAYERS, BUF } = G;
   for (const p of polys) if (LAYERS[p.kind]) fillPoly(BUF[p.kind], p.outer, p.holes, LAYERS[p.kind][1]); // area fills
   const { roads, paths, rivers, rows, rails, barriers, seas, layout } = layRoads(lines, elements, stopNodes, G);
   const look = roadLookup(roads, paths, rails, layout), { roadAt } = look;
@@ -99,15 +107,20 @@ export async function buildWorld(elements, lat0, lon0, scene, say) {
     if (uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(B.uv, 2));
     const m = new THREE.Mesh(g, mat); m.castShadow = shadow; m.receiveShadow = true; scene.add(m); return m;
   };
-  buildWalls(barriers, roads, paths, look, G.noise, mkMesh);
+  buildWalls(barriers, roads, paths, look, G.noise, mkMesh, wear);
   const areaAt = areaLookup(polys, seas);
   const nB = polys.filter(p => p.kind === 'building').length;
   await say('Raising ' + nB.toLocaleString() + ' buildings…');
-  const { blds, inBuilding, frontMat, wallMat } = buildBuildings(polys, entranceNodes, roadAt, mkMesh);
+  const { blds, inBuilding, frontMat, wallMat } = buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear);
   await say('Planting trees…');
-  const trees = plantTrees(scene, treePts, rows, polys, G.noise, look, areaAt, inBuilding);
-  const { setLamps, glowTex } = streetLamps(scene, roads, look, areaAt, inBuilding);
-  return { roads, paths, rivers, polys, seas, blds, trees, nB, layout, signalPts, roadAt, areaAt, inBuilding, frontMat, wallMat, setLamps, glowTex };
+  const trees = plantTrees(scene, treePts, rows, polys, G.noise, look, areaAt, inBuilding, wear);
+  const { setLamps, glowTex, lamps } = streetLamps(scene, roads, look, areaAt, inBuilding, wx);
+  const clear = signClearance(trees, lamps, look, areaAt, inBuilding);
+  const { objects, hit } = planFurniture(furniture, polys, roadAt, clear);
+  addFurniture(scene, objects);
+  const signFree = (x,z) => clear(x,z) && !hit(x,z,0,0.35,0.35);
+  addSignMeshes(scene, planSigns(layout.junctions, landmarks, roadAt, signFree));
+  return { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex };
 }
 
 // OSM elements → local metres: lines (ways), polys (closed areas and multipolygons), and the point features we use.
@@ -115,10 +128,19 @@ function parseElements(elements, lat0, lon0) {
   const cosL = Math.cos(lat0 * Math.PI / 180), KX = 111320 * cosL, KZ = 110574;
   const P = (lat, lon) => [(lon - lon0) * KX, -(lat - lat0) * KZ];
   const lines = [], polys = [], treePts = [], crossPts = [], stopNodes = [], signalPts = [];
-  const entranceNodes = new Set();
+  const entranceNodes = new Set(), landmarks = [], furniture = [], addressPoints = [];
+  function area(kind, outer, holes, t, id, label) {
+    if (kind) polys.push({ kind, outer, holes, t, id });
+    if (label) landmarks.push({ label, points: outer });
+  }
   for (const el of elements) {
     if (el.type === 'node') {
       const tags = el.tags || {}, p = P(el.lat, el.lon);
+      if (tags['addr:housenumber']) addressPoints.push({text:tags['addr:housenumber'],point:p});
+      const kind = furnitureKind(tags);
+      if (kind) furniture.push({ kind, t: tags, point: p });
+      const label = landmarkName(tags);
+      if (label) landmarks.push({ label, points: [p] });
       const entrance = tags.entrance || (tags.building === 'entrance' ? 'yes' : '');
       if (entrance && entrance !== 'no' && (!tags.level || tags.level.split(';').some(level => Number(level) === 0))) {
         entranceNodes.add(p.join(','));
@@ -129,24 +151,31 @@ function parseElements(elements, lat0, lon0) {
       else if (tags.natural === 'tree') treePts.push(p);
       continue;
     }
-    const t = el.tags || {}, kind = areaKind(t);
+    const t = el.tags || {}, kind = areaKind(t), label = landmarkName(t);
     if (el.type === 'way') {
       if (!el.geometry || el.geometry.length < 2) continue;
       const g = el.geometry.map(p => P(p.lat, p.lon)), closed = g.length > 3 && same(g[0], g[g.length - 1]);
-      if (kind && closed) polys.push({ kind, outer: g, holes: [], t, id: el.id });
+      const item = furnitureKind(t);
+      if (item) {
+        const middle = Math.floor((g.length-1)/2), a = g[middle], b = g[middle+1];
+        furniture.push({ kind: item, t, point: [(a[0]+b[0])/2, (a[1]+b[1])/2] });
+      }
+      if ((kind || label) && closed) area(kind, g, [], t, el.id, label);
       else lines.push({ t, g, nodes: el.nodes });
-    } else if (el.type === 'relation' && kind) {
+    } else if (el.type === 'relation' && (kind || label)) {
       const outs = [], ins = [];
       for (const m of el.members || []) { if (m.type !== 'way' || !m.geometry) continue; const g = m.geometry.filter(Boolean).map(p => P(p.lat, p.lon)); if (g.length > 1) (m.role === 'inner' ? ins : outs).push(g); }
       const I = joinRings(ins);
-      for (const o of joinRings(outs)) polys.push({ kind, outer: o, holes: I.filter(h => inPoly(h[0][0], h[0][1], o)), t, id: el.id });
+      for (const o of joinRings(outs)) area(kind, o, I.filter(h => inPoly(h[0][0], h[0][1], o)), t, el.id, label);
     }
   }
-  return { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts };
+  return { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts, landmarks, furniture, addressPoints };
 }
 
 // Textures, the flat ground layers (each with its own buffer, filled by the builders below) and the base ground plane.
-function groundLayers(scene) {
+// wear(material, kind) lets rain and snow onto them (world-kit.js weatherLook).
+const WORN = { road: 'road', parking: 'road', marks: 'mark', sidewalk: 'pave', paving: 'pave', paved: 'pave', water: null, rail: null }; // the rest: 'ground'
+function groundLayers(scene, wear) {
   const noise = makeTex(256, 256, (x, w, h) => { x.fillStyle = '#dcdcdc'; x.fillRect(0, 0, w, h); speckle(x, w, h, 40000, 0.3); });
   const asphalt = makeTex(512, 512, (x, w, h) => { x.fillStyle = '#4b4c4f'; x.fillRect(0, 0, w, h); for (let i = 0; i < 14; i++) { x.fillStyle = 'rgba(0,0,0,' + (0.04 + Math.random() * 0.06) + ')'; x.beginPath(); x.ellipse(Math.random() * w, Math.random() * h, 30 + Math.random() * 80, 20 + Math.random() * 50, Math.random() * 3, 0, Math.PI * 2); x.fill(); } speckle(x, w, h, 80000, 0.24); });
   const slabs = makeTex(256, 256, (x, w, h) => { x.fillStyle = '#bdbab2'; x.fillRect(0, 0, w, h); speckle(x, w, h, 16000, 0.14); x.fillStyle = 'rgba(0,0,0,.16)'; for (let i = 0; i < w; i += 64) { x.fillRect(i, 0, 2, h); x.fillRect(0, i, w, 2); } });
@@ -164,9 +193,10 @@ function groundLayers(scene) {
     marks: [new THREE.MeshStandardMaterial({ color: '#ecebe4', roughness: 0.55, side: THREE.DoubleSide }), 0.058],
     rail: [new THREE.MeshStandardMaterial({ color: '#a4a7ad', metalness: 0.8, roughness: 0.3, side: THREE.DoubleSide }), 0.062]
   };
+  for (const k in LAYERS) { const kind = k in WORN ? WORN[k] : 'ground'; if (kind) wear(LAYERS[k][0], kind); }
   const BUF = Object.fromEntries(Object.keys(LAYERS).map(k => [k, newBuf()]));
   // the base ground sits a few cm below the flat layers and is tiled, so it can't win the depth test against them far away
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(8000, 8000, 50, 50), new THREE.MeshStandardMaterial({ map: noise, color: '#8a9468', roughness: 1 }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(8000, 8000, 50, 50), wear(new THREE.MeshStandardMaterial({ map: noise, color: '#8a9468', roughness: 1 }), 'ground'));
   ground.material.map = noise.clone(); ground.material.map.repeat.set(1600, 1600); ground.material.map.needsUpdate = true;
   ground.rotation.x = -Math.PI / 2; ground.position.y = -0.03; ground.receiveShadow = true; scene.add(ground);
   // Dashes along a polyline: pieces `on` m long every `on + gap` m, `w` wide, centred `off` m left of the line.
@@ -299,8 +329,8 @@ function layRailways(rails, { onDrive }, { LAYERS, BUF, dashLine }) {
   }
 }
 
-// walls, fences, hedges, guard rails, and railings along bridges
-function buildWalls(barriers, roads, paths, { onDrive, onOther, nearRail }, noise, mkMesh) {
+// walls, fences, hedges, guard rails, and railings along bridges (snow settles on the tops of walls and hedges)
+function buildWalls(barriers, roads, paths, { onDrive, onOther, nearRail }, noise, mkMesh, wear) {
   const SB = { p: [], n: [], c: [], uv: [] }, FB = { p: [], n: [], c: [], uv: [] };
   const BAR = { wall: [1.8, 0.3, '#b9ae9c'], retaining_wall: [1.1, 0.4, '#a29e95'], city_wall: [5, 1.6, '#a99f8c'], hedge: [1.4, 0.9, '#4f6b33'], guard_rail: [0.75, 0.06, '#a8acb0'], fence: [1.5, 0, '#5d6160'] };
   for (const { g, t } of barriers) {
@@ -318,7 +348,7 @@ function buildWalls(barriers, roads, paths, { onDrive, onOther, nearRail }, nois
     for (const sg of [1, -1]) for (const part of runs(densify(offsetLine(r.g, sg * off), 2), (x, z) => !onOther(x, z, r) && !nearRail(x, z))) fenceStrip(FB, part, 0, 1.1, railCol);
   }
   const fenceTex = makeTex(64, 64, (x) => { x.clearRect(0, 0, 64, 64); x.fillStyle = '#fff'; x.fillRect(0, 0, 64, 6); x.fillRect(0, 52, 64, 5); for (let i = 0; i < 64; i += 8) x.fillRect(i + 3, 0, 2, 64); });
-  if (SB.p.length) mkMesh(SB, new THREE.MeshStandardMaterial({ map: noise, vertexColors: true, roughness: 0.95 }), true);
+  if (SB.p.length) mkMesh(SB, wear(new THREE.MeshStandardMaterial({ map: noise, vertexColors: true, roughness: 0.95 }), 'roof'), true);
   if (FB.p.length) mkMesh(FB, new THREE.MeshStandardMaterial({ map: fenceTex, vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.3 }), true);
 }
 
@@ -334,8 +364,8 @@ function areaLookup(polys, seas) {
   return areaAt;
 }
 
-// mapped trees, tree rows, and trees scattered over forests, scrub, parks and gardens
-function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, areaAt, inBuilding) {
+// mapped trees, tree rows, and trees scattered over forests, scrub, parks and gardens (snow settles on the crowns)
+function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, areaAt, inBuilding, wear) {
   const trees = [], LIM = HALF + 60, within = (x, z) => Math.abs(x) < LIM && Math.abs(z) < LIM;
   const clear = (x, z) => { const r = roadAt(x, z); return !(r.any && r.ae < 1.2) && !inBuilding(x, z, 1) && !areaAt(x, z, NOTREE) && !nearRail(x, z); };
   const roomy = (x, z) => !inBuilding(x + 3, z, 1) && !inBuilding(x - 3, z, 1) && !inBuilding(x, z + 3, 1) && !inBuilding(x, z - 3, 1) && !(roadAt(x, z).ae < 2.5);
@@ -360,7 +390,7 @@ function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, ar
     crownG.computeVertexNormals();
     const coneG = new THREE.ConeGeometry(2.0, 5.5, 9).translate(0, 4.6, 0), cone2 = new THREE.ConeGeometry(1.4, 3.6, 9).translate(0, 6.6, 0);
     const trunkG = new THREE.CylinderGeometry(0.14, 0.24, 3.2, 7).translate(0, 1.6, 0);
-    const leaf = new THREE.MeshStandardMaterial({ map: noise, roughness: 0.85 }), bark = new THREE.MeshStandardMaterial({ color: 0x5a4330, roughness: 0.95 });
+    const leaf = wear(new THREE.MeshStandardMaterial({ map: noise, roughness: 0.85 }), 'tree'), bark = new THREE.MeshStandardMaterial({ color: 0x5a4330, roughness: 0.95 });
     const nR = trees.filter(t => !t[3]).length, nC = trees.length - nR;
     const T = new THREE.InstancedMesh(trunkG, bark, Math.max(1, trees.length)), R = new THREE.InstancedMesh(crownG, leaf, Math.max(1, nR)), C1 = new THREE.InstancedMesh(coneG, leaf, Math.max(1, nC)), C2 = new THREE.InstancedMesh(cone2, leaf, Math.max(1, nC));
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), S = V(1, 1, 1), c = new THREE.Color(); let r = 0, k = 0;
@@ -375,8 +405,9 @@ function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, ar
   return trees;
 }
 
-// street lamps: posts along the streets; from dusk their heads glow and they throw pools of light (setLamps)
-function streetLamps(scene, roads, { onDrive }, areaAt, inBuilding) {
+// street lamps: posts along the streets; from dusk their heads glow and they throw pools of light (setLamps), and wet
+// roads reflect them (wx: world-kit.js weatherLook)
+function streetLamps(scene, roads, { onDrive }, areaAt, inBuilding, wx) {
   const glowTex = makeTex(64, 64, (x) => { const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.18, 'rgba(255,255,255,.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); });
   glowTex.wrapS = glowTex.wrapT = THREE.ClampToEdgeWrapping;
   const lamps = [], LG = 12, lgrid = new Map();
@@ -407,7 +438,28 @@ function streetLamps(scene, roads, { onDrive }, areaAt, inBuilding) {
     parts.forEach((m, i) => { m.castShadow = i < 2; m.receiveShadow = true; scene.add(m); });
     const glows = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(gp, 3)), new THREE.PointsMaterial({ map: glowTex, color: 0xffd39a, size: 2.4, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     pools.renderOrder = 1; scene.add(pools, glows);
-    setLamps = on => { lampHead.emissiveIntensity = on ? 3.5 : 0; pools.visible = glows.visible = on; };
+    setLamps = on => { lampHead.emissiveIntensity = on ? 3.5 : 0; pools.visible = glows.visible = on; wx.lit(on); };
+    wx.lamps(gp);
   }
-  return { setLamps, glowTex };
+  return { setLamps, glowTex, lamps };
+}
+
+
+// Test a proposed sign against nearby tree trunks and lamp posts as well as the terrain.
+function signClearance(trees, lamps, { roadAt, nearRail }, areaAt, inBuilding) {
+  const grid = new Map(), cell = 5;
+  for (const p of [...trees, ...lamps]) {
+    const key = gkey(Math.floor(p[0] / cell), Math.floor(p[1] / cell));
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(p);
+  }
+  return (x, z) => {
+    if (roadAt(x, z).ae < 0.3 || inBuilding(x, z, 1) || inBuilding(x, z, 2.6) ||
+        areaAt(x, z, ['water']) || nearRail(x, z)) return false;
+    const ix = Math.floor(x / cell), iz = Math.floor(z / cell);
+    for (let i = ix-1; i <= ix+1; i++) for (let j = iz-1; j <= iz+1; j++) {
+      for (const p of grid.get(gkey(i,j)) || []) if ((p[0]-x)**2 + (p[1]-z)**2 < 1.5**2) return false;
+    }
+    return true;
+  };
 }

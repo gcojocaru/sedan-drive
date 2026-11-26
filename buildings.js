@@ -2,7 +2,7 @@
 // (roof:shape, or the house default) is the lower envelope of a few planes over the footprint's oriented bounding box:
 // walls rise to that roof line, which makes gable ends on their own, and each plane's roof face is the footprint
 // clipped to where that plane is the lowest. Also building:part pieces, ground-floor shopfronts and entrances, lit
-// windows, and inBuilding(x, z, y) for the car, camera, trees and lamps.
+// windows, and inBuilding(x, z, y) for the car, camera, trees and lamps. Roofs, parapets and awnings take rain and snow.
 import * as THREE from 'three';
 import { inPoly, bbox, seeded, openRing, signedArea, obb, clipHalf, tri3, quad3, gkey, segDist, offsetRing } from './geom.js';
 import { eachTri, makeTex, num, tagColor, matColor, WALL_MAT } from './world-kit.js';
@@ -209,8 +209,9 @@ function roofTex(key) {
 }
 
 // polys: parsed OSM areas (buildings and building:parts are used); entranceNodes: 'x,z' keys of mapped entrances.
-// roadAt finds the street a wall faces; mkMesh(buffer, material, uv, castShadow) adds a mesh to the scene.
-export function buildBuildings(polys, entranceNodes, roadAt, mkMesh) {
+// roadAt finds the street a wall faces; mkMesh(buffer, material, uv, castShadow) adds a mesh to the scene;
+// wear(material, kind) lets rain and snow onto a material (world-kit.js weatherLook).
+export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m => m) {
   const bPolys = polys.filter(p => p.kind === 'building' || p.kind === 'part');
   // outlines with building:part pieces inside are drawn as those parts only (OSM simple 3D buildings)
   const {hidden, parentOutline} = findBuildingParts(bPolys);
@@ -350,8 +351,8 @@ export function buildBuildings(polys, entranceNodes, roadAt, mkMesh) {
   const frontMat = frontages.render(PB, mkMesh);
   const wallMat = facadeMaterial();
   if (WB.p.length) mkMesh(WB, wallMat, true).geometry.setAttribute('facade', new THREE.Float32BufferAttribute(WB.f, 2));
-  if (PB.p.length) mkMesh(PB, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), false);
-  for (const [B, key] of [[RF, 'gravel'], [RT, 'tiles'], [RM, 'metal']]) if (B.p.length) mkMesh(B, new THREE.MeshStandardMaterial({ map: roofTex(key), vertexColors: true, roughness: B === RM ? 0.55 : 0.9, metalness: B === RM ? 0.35 : 0 }), true);
+  if (PB.p.length) mkMesh(PB, wear(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), 'roof'), false);
+  for (const [B, key] of [[RF, 'gravel'], [RT, 'tiles'], [RM, 'metal']]) if (B.p.length) mkMesh(B, wear(new THREE.MeshStandardMaterial({ map: roofTex(key), vertexColors: true, roughness: B === RM ? 0.55 : 0.9, metalness: B === RM ? 0.35 : 0 }), 'roof'), true);
   const BG = 20, bgrid = new Map();
   blds.forEach((b, i) => { for (let ix = Math.floor(b.x0 / BG); ix <= Math.floor(b.x1 / BG); ix++) for (let iz = Math.floor(b.z0 / BG); iz <= Math.floor(b.z1 / BG); iz++) { const k = gkey(ix, iz); let L = bgrid.get(k); if (!L) bgrid.set(k, L = []); L.push(i); } });
   function inBuilding(x, z, y) {

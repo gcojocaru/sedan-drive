@@ -24,7 +24,11 @@ python3 -m http.server 5173
 
 Then open http://localhost:5173 — it redirects to the real-map drive.
 
-While driving on a real map, the minimap shows 240 metres across with north at the top. The amber arrow shows where your car is and which way it faces. A dashed line marks the edge of the playable area. When you reach it, choose **Load next area** to continue in that direction or **Stay here** to turn back. Neighboring map loads have a 30-second cooldown. The car resumes at rest, facing the same way.
+While driving on a real map, the minimap shows 240 metres across with north at the top. Nearby streets and mapped house numbers are labeled as space allows. The amber arrow shows where your car is and which way it faces. During a delivery, the mint marker points toward the stop, including when it is beyond the map edge. A dashed line marks the edge of the playable area. When you reach it, choose **Load next area** to continue in that direction or **Stay here** to turn back. Neighboring map loads have a 30-second cooldown. The car resumes at rest, facing the same way.
+
+## Release version
+
+On the real map, open **Settings** with Esc or the touch menu and look for **Game version**. The test track and model viewer also display the version from `package.json`. Use `npm version patch --no-git-tag-version` for a fix, or replace `patch` with `minor` for a feature or `major` for a breaking change. Commit the manifest with the release. Both the repository-root site and the production build read the same file.
 
 ## Deploy
 
@@ -42,24 +46,30 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | Space | Handbrake |
 | H · C | Headlights · camera |
 | T · N | Next time of day · night on/off (real-map page: starts at the place's real local time, with the sun where it really is; T goes through the presets and back to live) |
-| E | Next weather (real-map page: starts with the real weather there now; then clear, partly cloudy, overcast, fog, rain, snow, thunderstorm, and back to live) |
+| E | Next weather (real-map page: starts with the real weather there now; then clear, partly cloudy, overcast, fog, rain, snow, thunderstorm, and back to live). Rain leaves the roads wet and shiny and snow lies on the ground and roofs; both cost grip, so the car takes longer to stop and slides wide in fast corners |
 | Esc | Settings (real-map page): choose the time of day, the weather and how much traffic (off, light, normal, heavy). Driving pauses while it is open |
 | V | Mute or unmute engine sound and tuning static. The radio has its own off position. |
 | Q · Shift+Q | Radio: next / previous station, last one is off (real-map page: up to 30 stations from around the chosen place; test track: Romanian stations) |
 | R | Reset / back on the road |
+| J | Start or cancel a parcel delivery (real-map page). You can also use the Start delivery button. |
 | M | Choose another place (real-map page) |
 
 On phones and tablets only the driving controls appear on screen: steer on the left, gas and brake/reverse on the right. The ••• button above the brake opens the rest (handbrake, lights, time of day or night, weather, settings, camera, radio, reset).
 
+In a delivery job, follow the mint minimap marker and stop inside the road ring to collect the parcel. The marker then moves to the drop-off. Each job stays in the current area.
+
 ## What gets built from the map (real-map page)
 
 - **Roads** at their tagged width, sidewalks, lane markings (centre line, edge lines, lane dividers from `lanes=*`), zebra crossings, railings on bridges.
+- Teal street signs mark junctions where named roads meet. Brown roadside signs identify nearby mapped parks, stations and shops by name.
 - Cars start and reset in a travel lane. Connected junctions have rounded corners, gaps in the lane markings and stop lines at mapped stops.
 - **Buildings** from footprints and height/level tags, with `roof:shape` roofs (gabled, hipped, pyramidal, skillion, dome, onion). Untagged houses get a pitched roof unless mappers in the area mostly tag flat roofs. `building:part` pieces replace their outline, so landmarks with 3D tagging come out properly. `building:colour`/`material` and `roof:colour`/`material` are used.
 - Ground-floor doors follow mapped entrances, with a street-facing doorway inferred when a building has none mapped. Retail frontages have framed display windows and a few softly lit bays at night.
 - **Ground**: residential, commercial and industrial land, parking lots, plazas, parks, forests, farmland, beaches, rivers, lakes, and the **sea**, which is built from coastlines.
 - **Railways** (ballast, sleepers, rails), **tram tracks**, **walls, fences and hedges**, piers and breakwaters, trees (mapped trees, tree rows, parks and forests, scattered garden trees).
+- Outdoor parking lots contain parked cars with gaps for driving aisles. Benches, bollards and bus-stop poles appear at mapped locations.
 - Parking lots and plazas count as hard ground, so the car keeps its road speed there.
+- **Weather on the ground**: in rain the roads, sidewalks and roofs turn dark and glossy, with puddles, and at night the street lamps glint in the wet asphalt. Snow whitens the ground, roofs, wall tops and tree crowns, and leaves grey slush on the roads. Live weather goes by the real snow depth and the last few hours of rain, so snow stays after it stops falling and roads stay wet after a shower (the clock line then says e.g. "20 cm on the ground" or "wet roads"). Wet roads cost about a third of the grip and full snow over half: braking from 50 km/h takes about 8 m wet and 12 m on snow instead of 5, the car pulls away slower on snow, and corners taken too fast make it slide wide until its path lines up with where it points again.
 - **Traffic**: other cars drive the streets around you in their lanes, on the side of the road the place drives on, at each road's speed limit (`maxspeed`, or a typical speed for the road type), slowing for bends. They keep their distance, stop for you if you're in their way, and take junctions in turn without blocking them. One-way streets are respected, and service roads and private roads stay empty. Their lights come on at dusk and their brake lights as they slow. Bumping into one is like hitting a wall. New cars appear out of sight 150 to 260 m away; set the amount in the settings (Esc). They show on the minimap as dots.
 - **Traffic lights** where OpenStreetMap has them (`highway=traffic_signals`), on every road into the junction; the simplified map has none, so there they stand where main roads cross. Traffic stops at red and goes in turns, one direction at a time. Nobody stops you running a red.
 
@@ -68,7 +78,7 @@ On phones and tablets only the driving controls appear on screen: steer on the l
 - Map tiles: OpenStreetMap, Esri World Imagery (satellite toggle)
 - Geocoding: Nominatim. Searches run on submit and are cached in the browser, at most one request a second; a clicked spot is named once, when you press Drive.
 - Map data: The game requests Overpass servers directly, one at a time. The optional shared cache is disabled (`AREA_PROXY` is empty). A server that answers HTTP 429 is left alone for 30 s. Each browser also keeps the places it loaded in IndexedDB (`sedan-map-cache`).
-- Weather: [Open-Meteo](https://open-meteo.com), free and keyless. Asked for the current weather and the local time zone once while the place loads, and again every 15 minutes while live weather is on.
+- Weather: [Open-Meteo](https://open-meteo.com), free and keyless. Asked for the current weather, snow depth, the last 3 hours of precipitation and the local time zone once while the place loads, and again every 15 minutes while live weather is on.
 - Radio: [radio-browser.info](https://www.radio-browser.info), the free community station directory. Asked once, on the first press of Q, for stations near the chosen place; the streams then play straight from each broadcaster.
 - Fallback map data: when every Overpass server (or the proxy) refuses, the place is built from [OpenFreeMap](https://openfreemap.org)'s vector tiles, which have no request limits. That map is simpler (no roof shapes, walls, crossings or single trees), says so on screen, and isn't saved, so the next visit tries for full detail.
 
@@ -82,14 +92,18 @@ Contributing: [ARCHITECTURE.md](ARCHITECTURE.md) has the target module layout an
 Drive Real Map.html   real-map page (markup + styles; logic in drive-map.js)
 drive-map.js          real-map page: map picker, loading screen, time of day and weather choice, car, game loop, HUD
 sky.js                real-map sky: the sun where it really is, sky canvas, lights, shadows, fog, clouds, rain and snow
-weather.js            the weather and local time right now at a place (Open-Meteo), and the weather presets
+weather.js            the weather and local time right now at a place (Open-Meteo), the weather presets, and what they leave on the ground
 map-data.js           map data: browser cache, proxy, Overpass servers, vector-tile fallback
 world.js              buildWorld(): the 3D place from OpenStreetMap elements, one builder per feature, plus road/area lookups
 buildings.js          buildBuildings(): walls and roofs per footprint, building parts, shopfronts, lit windows
-world-kit.js          three.js and tag helpers shared by world.js and buildings.js
+world-kit.js          three.js and tag helpers shared by world.js and buildings.js, and the wet and snowy surface shader
 geom.js               pure geometry helpers (strips, polygons, roofs, coastline → sea)
-drive-core.js         driving shared by both drive pages: physics, car posing, chase camera, speed HUD
+drive-core.js         driving shared by both drive pages: physics (with grip and sliding), car posing, chase camera, speed HUD
 building-fronts.js    ground-floor entrance placement and retail window layouts
+street-furniture.js   outdoor parking rows, furniture placement and collision footprints
+furniture-mesh.js     instanced benches, bollards and bus-stop poles
+sign-layout.js        curbside placement of named street and landmark signs
+sign-mesh.js          sign lettering, two-sided boards and posts
 road-layout.js        directional lanes, junction corners, stop lines and spawn positions
 area-travel.js        adjacent map areas, boundary prompts and load cooldown
 driving-audio.js      synthesized engine and radio tuning sounds for both drive pages

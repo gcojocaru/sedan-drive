@@ -65,7 +65,7 @@ export function cooldownButton(button, label, available = true) {
   return () => clearInterval(timer);
 }
 
-export function edgePrompt({ dialog, title, detail, proceed, stay, destination, depart }) {
+export function edgePrompt({ dialog, title, detail, proceed, stay, destination, depart, departureNote = () => '' }) {
   let side = null, dismissed = null, target = null, stopTimer = null;
   stay.onclick = () => dialog.close();
   dialog.addEventListener('close', () => {
@@ -89,7 +89,7 @@ export function edgePrompt({ dialog, title, detail, proceed, stay, destination, 
       side = direction;
       target = destination(direction);
       title.textContent = 'Continue ' + direction + '?';
-      detail.textContent = target ? 'Load the next area and continue from this spot.' : 'Map coverage ends here. Turn back to keep driving in this area.';
+      detail.textContent = target ? 'Load the next area and continue from this spot.' + departureNote() : 'Map coverage ends here. Turn back to keep driving in this area.';
       dialog.showModal();
       stay.focus();
       stopTimer = cooldownButton(proceed, 'Load next area', !!target);

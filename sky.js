@@ -112,7 +112,8 @@ function precipitation(scene) {
 }
 
 // Adds the sun (with its shadow map), the sky light and fog to the scene.
-// set(h, forceNight, weather) lights the scene for local solar hour h and a weather from weather.js ({ kind, amount });
+// set(h, forceNight, weather, snow) lights the scene for local solar hour h and a weather from weather.js ({ kind, amount });
+// snow (0–1) is how much of the ground is white, which brightens the light bouncing up from it;
 // update(dt, cameraPosition) moves the rain or snow each frame; placeShadow(x, z) centres the shadow box on a point.
 export function createSky(renderer, scene, lat, now = new Date()) {
   const DOY = Math.round((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - Date.UTC(now.getUTCFullYear(), 0, 0)) / 864e5);
@@ -133,13 +134,14 @@ export function createSky(renderer, scene, lat, now = new Date()) {
   let skyT = null;
 
   const fall = precipitation(scene); let kind = 'clear', exposure = 1, flash = 0, nextFlash = 3;
-  function set(h, forceNight, w = { kind: 'clear' }) {
+  function set(h, forceNight, w = { kind: 'clear' }, snow = 0) {
     const sd = sunAt(h); let e = Math.asin(sd.y) * 180 / Math.PI;
     const night = forceNight || e < -7; if (night) e = Math.min(e, -14);
     const [cover, haze0, gloom] = LOOK[w.kind] || LOOK.clear, haze = haze0 * (w.amount ? 0.5 + 0.5 * w.amount : 1), warm = 1 - ss(e, 2, 30);
     const cols = skyCols(e), [zen, hor, glow, gnd] = cols, hg = grey(hor); // clouds grey the sky and gloom darkens it
     zen.lerp(hg.clone().multiplyScalar(0.85), cover * 0.85); hor.lerp(hg, cover * 0.8); glow.lerp(hg, cover * 0.9);
     for (const c of cols) c.multiplyScalar(1 - 0.5 * gloom);
+    gnd.lerp(hor, 0.7 * snow); // snow on the ground
     // direct light: the sun by day, soft light from the whole sky at dusk, the moon at night
     if (night) { lightDir.copy(MOON); sun.color.set(0x9fb3ff); sun.intensity = 0.14; }
     else if (e < -1) { lightDir.set(0.25, 1, 0.3).normalize(); sun.color.copy(zen).lerp(new THREE.Color(0xffffff), 0.6); sun.intensity = 0.3; }
@@ -147,7 +149,7 @@ export function createSky(renderer, scene, lat, now = new Date()) {
     if (night) {
       // Cool indirect light keeps the kerb and car silhouette legible between street lamps.
       hemi.color.set(0xa4b9d1);
-      hemi.groundColor.set(0x5c6270);
+      hemi.groundColor.set(0x5c6270).lerp(new THREE.Color(0x9aa3b5), 0.6 * snow);
       hemi.intensity = 0.24;
     } else {
       hemi.color.copy(hor).lerp(zen, 0.25);

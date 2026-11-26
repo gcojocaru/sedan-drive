@@ -152,7 +152,7 @@ export function prepareRoads(roads, regionalSide) {
   return { junctions, corners, spawnSegments };
 }
 
-export function laneSpawn(segments, x, z, heading, half) {
+export function laneSpawn(segments, x, z, heading, half, occupied) {
   let best = null, bestDist = Infinity;
   const fx = heading == null ? 0 : Math.cos(heading);
   const fz = heading == null ? 0 : -Math.sin(heading);
@@ -171,10 +171,24 @@ export function laneSpawn(segments, x, z, heading, half) {
     }
     if (lo > hi) continue;
     const along = Math.max(lo, Math.min(hi, (x - ax) * dx + (z - az) * dz));
-    const px = ax + along * dx, pz = az + along * dz, d = (px - x)**2 + (pz - z)**2;
-    if (d < bestDist) {
+    const h = Math.atan2(-dir * dz, dir * dx);
+    function consider(s) {
+      const px = ax + s * dx, pz = az + s * dz, d = (px - x)**2 + (pz - z)**2;
+      if (d >= bestDist) return true;
+      if (occupied?.(px, pz, h)) return false;
       bestDist = d;
-      best = { x: px, z: pz, h: Math.atan2(-dir * dz, dir * dx), name: road.name };
+      best = { x: px, z: pz, h, name: road.name };
+      return true;
+    }
+    if (!consider(along)) {
+      // A mapped bollard can sit on the lane itself. Search outwards in both directions.
+      for (const end of [lo, hi]) {
+        const distance = Math.abs(end - along);
+        for (let offset = 0; offset < distance;) {
+          offset = Math.min(distance, offset + 4);
+          if (consider(along + Math.sign(end - along) * offset)) break;
+        }
+      }
     }
   }
   return best;

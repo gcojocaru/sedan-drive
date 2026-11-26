@@ -1,6 +1,6 @@
 {
   "name": "sedan-drive",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Procedural three.js sedan you can drive on a test track or through any real place built from OpenStreetMap.",
@@ -8,7 +8,7 @@
     "dev": "npx --yes serve@14.2.4 -l 5173 .",
     "start": "npm run dev",
     "test": "node --test 'test/*.test.js'",
-    "build": "rm -rf dist && mkdir dist && cp *.html *.js dist/ && cp -r vendor models textures dist/",
+    "build": "rm -rf dist && mkdir dist && cp *.html *.js package.json dist/ && cp -r vendor models textures dist/",
     "preview": "npm run build && npx --yes serve@14.2.4 -l 5174 dist",
     "proxy:kv": "cd proxy && npx --yes wrangler@4.159.0 kv namespace create AREAS --update-config",
     "proxy:dev": "cd proxy && npx --yes wrangler@4.159.0 dev",

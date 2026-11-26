@@ -1,3 +1,6 @@
+import { STOP_RADIUS } from './delivery.js';
+import { minimapLabels } from './minimap-labels.js';
+
 // The world is in metres, with east along +x and south along +z.
 const SPAN = 240;
 const WATER = '#35637a';
@@ -58,14 +61,15 @@ function drawWorld(canvas, half, { polys, seas, rivers, buildings, paths, roads 
 
 export function createMinimap(canvas, base, half, geometry) {
   drawWorld(base, half, geometry);
+  const labels = minimapLabels(geometry, half);
   const ctx = canvas.getContext('2d');
   const size = 180; // drawing units, independent of the display's CSS size
   ctx.scale(canvas.width / size, canvas.height / size);
-  let lastX, lastZ, lastHeading;
-  // others: other cars ({ x, z }), drawn as dots
-  return (x, z, heading, others = []) => {
-    if (x === lastX && z === lastZ && heading === lastHeading && !others.length) return;
-    lastX = x; lastZ = z; lastHeading = heading;
+  let lastX, lastZ, lastHeading, lastTarget;
+  // target: the delivery stop ({ x, z }) or null; others: other cars ({ x, z }), drawn as dots
+  return (x, z, heading, target = null, others = []) => {
+    if (x === lastX && z === lastZ && heading === lastHeading && target === lastTarget && !others.length) return;
+    lastX = x; lastZ = z; lastHeading = heading; lastTarget = target;
     const { left, top, span, rotation } = minimapView(x, z, heading, half);
     ctx.fillStyle = '#151d21';
     ctx.fillRect(0, 0, size, size);
@@ -77,6 +81,43 @@ export function createMinimap(canvas, base, half, geometry) {
       const [px, py] = minimapPoint(c.x, c.z, { left, top, span }, half, size);
       if (px < -3 || py < -3 || px > size + 3 || py > size + 3) continue;
       ctx.beginPath(); ctx.arc(px, py, 2.4, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+    }
+
+    let goal;
+    if (target) {
+      const dx=(target.x-x)*size/span, dz=(target.z-z)*size/span;
+      const scale=Math.min(1,(size/2-13)/(Math.max(Math.abs(dx),Math.abs(dz)) || 1));
+      const metres=Math.hypot(target.x-x,target.z-z), angle=Math.atan2(dz,dx);
+      // Keep the direction arrow clear of the car as the driver pulls up. At the stop, circle the car.
+      const radius=metres*size/span, nearby=metres<=STOP_RADIUS;
+      const distance=nearby ? 0 : Math.max(20,radius*scale);
+      goal={x:size/2+Math.cos(angle)*distance,y:size/2+Math.sin(angle)*distance,angle,outside:scale<1,nearby};
+    }
+    labels(ctx,x,z,size,span,goal);
+
+    const bar = 50 * size / span;
+    ctx.fillStyle = '#172126';
+    ctx.fillRect(6, size - 19, bar + 36, 15);
+    ctx.fillStyle = '#e6edeb';
+    ctx.fillRect(10, size - 10, bar, 2);
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText('50 m', 15 + bar, size - 8);
+
+    if (goal) {
+      ctx.save();
+      ctx.translate(goal.x,goal.y);
+      ctx.rotate(goal.angle);
+      ctx.beginPath();
+      if (goal.outside) {
+        ctx.moveTo(8,0); ctx.lineTo(-5,-6); ctx.lineTo(-5,6); ctx.closePath();
+      } else ctx.arc(0,0,goal.nearby?15:7,0,Math.PI*2);
+      ctx.fillStyle = '#68e6d3';
+      if (!goal.nearby) ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = goal.nearby ? '#68e6d3' : '#102d2c'; ctx.stroke();
+      if (!goal.outside && !goal.nearby) {
+        ctx.beginPath(); ctx.moveTo(-2,-3); ctx.lineTo(2,0); ctx.lineTo(-2,3); ctx.stroke();
+      }
+      ctx.restore();
     }
 
     ctx.save();
@@ -91,13 +132,5 @@ export function createMinimap(canvas, base, half, geometry) {
     ctx.fillStyle = '#ffbd66';
     ctx.fill();
     ctx.restore();
-
-    const bar = 50 * size / span;
-    ctx.fillStyle = '#172126';
-    ctx.fillRect(6, size - 19, bar + 36, 15);
-    ctx.fillStyle = '#e6edeb';
-    ctx.fillRect(10, size - 10, bar, 2);
-    ctx.font = 'bold 10px sans-serif';
-    ctx.fillText('50 m', 15 + bar, size - 8);
   };
 }
