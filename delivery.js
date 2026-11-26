@@ -4,6 +4,7 @@ const separation = (a,b) => Math.hypot(a.x-b.x, a.z-b.z);
 
 // What's at stake once the parcel is aboard: the clock, the parcel's condition and the fines.
 export const FINE = 10; // for running a red light
+export const KNOCK_FINE = 25; // for knocking into a pedestrian
 // Seconds allowed from pickup to drop-off `metres` apart: by road about 1.5 times as far, at 9 m/s (town driving,
 // junctions and lights), plus 25 s to find the way.
 export const allowedTime = metres => Math.round(25 + 1.5 * metres / 9);
@@ -81,14 +82,16 @@ function reachable(start) {
 export const money = n => (n < 0 ? '−$' : '$') + Math.abs(n);
 export const minutes = s => { s = Math.round(Math.abs(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 // A delivery's receipt for the HUD: what it paid and how long it took, then the pay and each adjustment there was
+// (fined: what each fine was for, 'red light' or 'pedestrian'; red lights when not known)
 export function receiptText(r) {
-  const parts = [[r.base, 'pay'], [r.bonus, 'early'], [r.late, 'late'], [r.damage, 'damage'], [r.fines, r.fines === -FINE ? 'red light' : 'red lights']];
+  const why = r.fined || [], reds = why.every(f => f === 'red light');
+  const parts = [[r.base, 'pay'], [r.bonus, 'early'], [r.late, 'late'], [r.damage, 'damage'], [r.fines, !reds ? (why.length > 1 ? 'fines' : 'pedestrian hit') : r.fines === -FINE ? 'red light' : 'red lights']];
   return { title: 'Delivered in ' + minutes(r.taken) + ' · ' + money(r.total), detail: parts.filter(([n]) => n).map(([n, what], i) => (i && n > 0 ? '+' : '') + money(n) + ' ' + what).join(' · ') };
 }
 
 // A job: pick the parcel up, then drop it off. Once it's aboard (`load`: { metres, allowed, since, condition,
-// fines }), crash() damages it and ranRed() fines the driver; delivering it leaves the pay in `receipt`. Times are
-// in seconds of driving, passed in as t.
+// fines, fined }), crash() damages it, and ranRed() and knocked() (into a pedestrian) fine the driver; delivering it
+// leaves the pay in `receipt`. Times are in seconds of driving, passed in as t.
 export function createDelivery(stops, random = Math.random) {
   let phase = 'idle', pickup, dropoff, load = null, receipt = null;
   const pick = list => list[Math.floor(random()*list.length)];
@@ -117,15 +120,16 @@ export function createDelivery(stops, random = Math.random) {
     get receipt() { return receipt; },
     cancel() { phase = 'idle'; pickup = dropoff = load = null; },
     crash(speed, cushion = 1) { if (load) load.condition = afterCrash(load.condition, speed, cushion); },
-    ranRed() { if (load) load.fines += FINE; },
+    ranRed() { if (load) { load.fines += FINE; load.fined.push('red light'); } },
+    knocked() { if (load) { load.fines += KNOCK_FINE; load.fined.push('pedestrian'); } },
     arrive(x,z,speed,t = 0) {
       if (!this.target || Math.abs(speed) > 0.5 || separation(this.target,{x,z}) > STOP_RADIUS) return null;
       if (phase === 'pickup') {
         const metres = separation(pickup, dropoff);
-        phase = 'dropoff'; load = { metres, allowed: allowedTime(metres), since: t, condition: 1, fines: 0 };
+        phase = 'dropoff'; load = { metres, allowed: allowedTime(metres), since: t, condition: 1, fines: 0, fined: [] };
         return 'collected';
       }
-      receipt = { ...deliveryPay({ ...load, taken: t - load.since }), taken: t - load.since, condition: load.condition };
+      receipt = { ...deliveryPay({ ...load, taken: t - load.since }), taken: t - load.since, condition: load.condition, fined: load.fined };
       this.cancel();
       return 'delivered';
     }

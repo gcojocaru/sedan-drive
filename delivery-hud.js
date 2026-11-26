@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createDelivery, deliveryNetwork, receiptText, money, minutes, STOP_RADIUS, FINE } from './delivery.js';
+import { createDelivery, deliveryNetwork, receiptText, money, minutes, STOP_RADIUS, FINE, KNOCK_FINE } from './delivery.js';
 
 
 // Wire up one area's job. The road network is sampled on the first job request. paid(receipt) banks a delivery.
@@ -71,12 +71,14 @@ export function deliveryHud(scene, graph, occupied, button, stage, detail, flash
       }
       refresh(x,z);
     },
-    // a crash at `speed` m/s, and running a red light: they count while the parcel is aboard
+    // a crash at `speed` m/s, running a red light and knocking into someone: they count while the parcel is aboard
+    // (knocked() says whether it did)
     crash(speed, cushion = 1) {
       const load = job?.load; if (!load) return;
       const before = load.condition; job.crash(speed, cushion);
       if (load.condition < before) flash(load.condition > 0 ? 'Parcel damaged · ' + Math.round(load.condition * 100) + '%' : 'Parcel ruined');
     },
-    ranRed() { if (job?.load) { job.ranRed(); flash('Ran a red light · ' + money(-FINE)); } }
+    ranRed() { if (job?.load) { job.ranRed(); flash('Ran a red light · ' + money(-FINE)); } },
+    knocked() { if (!job?.load) return false; job.knocked(); flash('Hit a pedestrian · ' + money(-KNOCK_FINE)); return true; }
   };
 }

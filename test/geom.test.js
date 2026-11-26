@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { joinRings, inPoly, polyArea, signedArea, bbox, openRing, obb, clipHalf, ribbon, newBuf, tri3, seeded, segDist, seaPolys, offsetRing } from '../geom.js';
+import { joinRings, inPoly, polyArea, signedArea, bbox, openRing, obb, clipHalf, ribbon, newBuf, tri3, seeded, segDist, seaPolys, offsetRing, trimLine, pointAt } from '../geom.js';
 
 const near = (a, b, e = 1e-9) => assert.ok(Math.abs(a - b) < e, a + ' is not ' + b);
 const square = [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]];
@@ -81,4 +81,13 @@ test('offsetRing moves edges out (or in) by d whichever way the ring winds', () 
   assert.deepEqual(offsetRing([...sq].reverse(), -0.5), [[0.5, 9.5], [9.5, 9.5], [9.5, 0.5], [0.5, 0.5]]);
   const spike = offsetRing([[0, 0], [10, 0], [0, 1]], 1); // a sharp corner's mitre is capped at 2d
   assert.ok(Math.hypot(spike[1][0] - 10, spike[1][1]) <= 2 + 1e-9);
+});
+
+test('a polyline trimmed at both ends, and points along it', () => {
+  const g = [[0, 0], [10, 0], [10, 10]], cum = [0, 10, 20];
+  assert.deepEqual(trimLine(g, 2, 3), [[2, 0], [10, 0], [10, 7]]);
+  assert.deepEqual(trimLine(g, 12, 0), [[10, 2], [10, 10]]);
+  assert.deepEqual(pointAt(g, cum, 5), [5, 0, 1, 0]);
+  assert.deepEqual(pointAt(g, cum, 15), [10, 5, 0, 1]);
+  assert.deepEqual(pointAt(g, cum, 99), [10, 10, 0, 1], 'clamped to the end');
 });

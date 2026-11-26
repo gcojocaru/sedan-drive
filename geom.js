@@ -61,6 +61,21 @@ export function ribbon(B, g, hw, y, caps) {
 }
 export const offsetLine = (g, off) => sides(g, off)[0];
 export function cumLen(g) { const c = [0]; for (let i = 1; i < g.length; i++) c.push(c[i - 1] + Math.hypot(g[i][0] - g[i - 1][0], g[i][1] - g[i - 1][1])); return c; }
+// The part of polyline g from a m along it to b m before its end
+export function trimLine(g, a, b) {
+  const c = cumLen(g), hi = Math.max(a, c.at(-1) - b);
+  const at = s => { let i = 1; while (i < g.length - 1 && c[i] < s) i++; const t = Math.min(1, (s - c[i - 1]) / (c[i] - c[i - 1] || 1)); return [g[i - 1][0] + (g[i][0] - g[i - 1][0]) * t, g[i - 1][1] + (g[i][1] - g[i - 1][1]) * t]; };
+  const out = [at(a)];
+  for (let i = 1; i < g.length - 1; i++) if (c[i] > a + 0.01 && c[i] < hi - 0.01) out.push(g[i]);
+  out.push(at(hi));
+  return out;
+}
+// The point s m along polyline g (cum = cumLen(g)), clamped to it, and the direction there: [x, z, ux, uz]
+export function pointAt(g, cum, s) {
+  let i = 1; while (i < g.length - 1 && cum[i] < s) i++;
+  const a = g[i - 1], b = g[i], L = cum[i] - cum[i - 1], t = L ? Math.max(0, Math.min(1, (s - cum[i - 1]) / L)) : 0;
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, L ? (b[0] - a[0]) / L : 0, L ? (b[1] - a[1]) / L : 0];
+}
 export function densify(g, step) { const o = [g[0]]; for (let i = 1; i < g.length; i++) { const a = g[i - 1], b = g[i], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step)); for (let k = 1; k <= n; k++) o.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]); } return o; }
 export function runs(g, ok) { // split a polyline into the pieces whose segment midpoints pass ok(x, z)
   const out = []; let cur = null;

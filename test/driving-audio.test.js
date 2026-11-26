@@ -93,6 +93,8 @@ test('crashes sound by how hard and into what', () => {
   assert.ok(smash.ring === 0 && smash.glass === 0, 'a wall neither rings nor breaks glass');
   assert.ok(impactSound(5, 'post').ring > impactSound(5, 'car').ring && impactSound(5, 'car').ring > 0);
   assert.ok(impactSound(5, 'car').glass === 0 && impactSound(14, 'car').glass > 0, 'glass only breaks in a hard hit');
+  const thud = impactSound(8, 'person');
+  assert.ok(thud.thump > 0 && !thud.crunch && !thud.ring && !thud.glass && thud.cutoff < impactSound(8, 'wall').cutoff, 'a person is a soft thud');
 });
 
 test('a traffic car braking hard screeches', () => {

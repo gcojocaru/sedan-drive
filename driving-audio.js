@@ -52,12 +52,13 @@ export function tyreSound(speed, braking, ride = {}) {
   return { squeal, pitch: 850 + 450 * squeal + 6 * v, rumble: clamp(v / 12) * (ride.rough ? 1 : 0.6 * snow), swish: hard ? clamp(v / 18) ** 1.5 * wet : 0 };
 }
 
-// A hit at `speed` (m/s) against a 'wall', a 'car' or a 'post': null when too soft to hear, else how loud each part
+// A hit at `speed` (m/s) against a 'wall', a 'car', a 'post' or a 'person': null when too soft to hear, else how loud each part
 // is: a low thump (the body), a crunch (noise, brighter the harder, dying away over `decay` s), a metal ring (cars and
-// posts) and breaking glass (cars, hard hits).
+// posts) and breaking glass (cars, hard hits). A person is only a soft thud.
 export function impactSound(speed, kind) {
   const v = Math.abs(speed), s = Math.min(1, v / 14);
   if (v < 1.2) return null; // (leaning on a wall makes no noise)
+  if (kind === 'person') return { thump: 0.3 * s ** 0.7, crunch: 0, cutoff: 500 + 900 * s, decay: 0.1, ring: 0, glass: 0 }; // a soft thud
   return { thump: 0.4 * s ** 0.7, crunch: 0.22 * s, cutoff: 900 + 4000 * s, decay: 0.12 + 0.3 * s,
     ring: kind === 'wall' ? 0 : (kind === 'car' ? 0.06 : 0.1) * s ** 0.8, glass: kind === 'car' && v > 7 ? Math.min(1, (v - 7) / 8) * 0.12 : 0 };
 }

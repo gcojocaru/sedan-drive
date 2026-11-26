@@ -120,7 +120,7 @@ export async function buildWorld(elements, lat0, lon0, scene, say) {
   addFurniture(scene, objects);
   const signFree = (x,z) => clear(x,z) && !hit(x,z,0,0.35,0.35);
   addSignMeshes(scene, planSigns(layout.junctions, landmarks, roadAt, signFree));
-  return { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex };
+  return { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex };
 }
 
 // OSM elements → local metres: lines (ways), polys (closed areas and multipolygons), and the point features we use.

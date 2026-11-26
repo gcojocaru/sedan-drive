@@ -49,6 +49,8 @@ how each part works; this file says how the parts may fit together.
 | `garage-panel.js` | — | The garage dialog: cash, upgrade levels and prices, paint swatches |
 | `minimap-labels.js` | — | Nearby street and address labels, footprint anchors and label spacing |
 | `traffic-lights.js` | — | Traffic light poles and signal heads on screen, the lamp that's on |
+| `pedestrians.js` | — | Pedestrians on the real map: the walk network (sidewalks, crosswalks, corners, footways, crossings), people who walk it, wait to cross and step out of the way |
+| `pedestrian-figures.js` | — | The pedestrians on screen: instanced figures, clothes colours, swinging limbs |
 | `minimap.js` | — | North-up driving minimap and car marker, drawn on supplied canvases |
 | `building-fronts.js` | — | Facade layout (style, storeys, window bays, doors, shop windows) and atlas drawing on a supplied canvas context |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
@@ -76,7 +78,7 @@ root, one copy each. Page URLs don't change.
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model`, `app-version` |
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`, `brake`), and `repaint(C, hex)` colours the car's `paint`; the ground under the car (`vmax`, `drag`, `rough`, `grip`) and collisions | nothing (works on the three.js objects it is given) |
 | `app-version.js` | Show the current release on the three game pages | nothing |
-| `delivery.js` | Select reachable stops and advance an area-local parcel job; `allowedTime`, `afterCrash` (with the padding's cushion), `deliveryPay`, `receiptText` | nothing |
+| `delivery.js` | Select reachable stops and advance an area-local parcel job; `allowedTime`, `afterCrash` (with the padding's cushion), `deliveryPay`, `receiptText`; fines for red lights and knocking into pedestrians (`FINE`, `KNOCK_FINE`) | nothing |
 | `delivery-hud.js` | Drive the HUD (countdown, damage and fines, receipt) and place the active stop in the scene; `paid(receipt)` hands the pay to the page | `delivery`, three |
 | `garage-panel.js` | `garagePanel(root, choose)` → `draw(garage, wallet)`: the shop in the garage dialog | `garage` |
 | `garage.js` | `UPGRADES`, `PAINTS`, `readGarage`, `readWallet`, `earn`, `price`, `buy`, `carTuning`: what delivery money buys and what it does to the car | nothing |
@@ -84,9 +86,11 @@ root, one copy each. Page URLs don't change.
 | `minimap-labels.js` | Nearby names and address numbers on the supplied canvas | `geom` |
 | `traffic-cars.js` | `trafficCars(scene, max, glowTex)` → `sync(cars, lit)`: instanced car bodies posed from `traffic.js` cars | three |
 | `traffic-lights.js` | `trafficLights(scene, signals, glowTex)` → `sync(lit)`: the signal heads in `graph.signals`, showing their `state` | three |
-| `traffic.js` | `laneGraph(roads, junctions, half, signals)` → lanes, nodes and `signals` (light heads), `lightAt(signal, t)`, `ranRed(signals, ax, az, bx, bz)`, `createTraffic(graph, { rand, max, seen })` → `step`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
+| `pedestrian-figures.js` | `pedestrianFigures(scene, max)` → `sync(people)`: instanced figures posed from `pedestrians.js` people | three |
+| `pedestrians.js` | `walkGraph(roads, paths, junctions, { armBack, roadAt, crossings })` → `{ nodes, edges }`, `createPedestrians(walks, { rand, max, radius, half, seen })` → `people`, `crossing`, `step(dt, player, cars, signals)`, `hit`, `bump`, `clear`, `setLevel`; `PEOPLE`, `SIDEWALK`, `CROSSWALK` | `road-layout`, `geom` |
+| `traffic.js` | `laneGraph(roads, junctions, half, signals)` → lanes, nodes, `signals` (light heads) and `armBack(road, i, direction)` (how far each junction's stop lines stand back), `lightAt(signal, t)`, `ranRed(signals, ax, az, bx, bz)`, `createTraffic(graph, { rand, max, seen })` → `step(dt, player, others)`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
 | `sky.js` | `createSky(renderer, scene, lat)` → `TIMES`, `sunAt`, `set(h, forceNight, weather, snow)`, `update(dt, cameraPosition)`, `placeShadow(x, z)`: sun, sky, lights, fog, exposure, rain and snow | `world-kit`, `geom`, three |
-| `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`), mapped traffic signals (`signalPts`), wet and snowy surfaces (`setGround(wet, snow)`, `reflectLamps(x, z)`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, `sign-layout`, `sign-mesh`, `street-furniture`, `furniture-mesh`, three |
+| `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`), mapped traffic signals and crossings (`signalPts`, `crossPts`), wet and snowy surfaces (`setGround(wet, snow)`, `reflectLamps(x, z)`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, `sign-layout`, `sign-mesh`, `street-furniture`, `furniture-mesh`, three |
 | `street-furniture.js` | Plan parked cars and mapped furnishings and provide the player collision lookup | `geom`, `osm-query` |
 | `furniture-mesh.js` | Draw static parking and street furniture | `traffic-cars`, `world-kit`, three |
 | `sign-layout.js` | Choose sign positions at named junctions and near mapped landmarks | `geom`, `osm-query` |
@@ -102,14 +106,14 @@ root, one copy each. Page URLs don't change.
 | `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find, tuningStatic)` → `tune(step)`; station playback | nothing |
 | `weather.js` | `weatherNow(lat, lon, fetch)` → `{ kind, label, amount, temp, offset, snowDepth?, recent? }`, `weatherOf(code)`, `WEATHERS`, `groundOf(w)` → `{ wet, snow, grip }`, `solarHour(ms, lon)` | nothing |
 | `touch.js` | `touchControls(extras)`: on-screen buttons for touch screens that press keys (synthetic keydown/keyup), so pages handle touch and keyboard the same way | nothing |
-| `geom.js` | Pure geometry on plain arrays (`ribbon`, `obb`, `clipHalf`, `offsetRing`, `joinRings`, `seaPolys`, …). Triangulating polygons needs three.js, so `fillPoly` is in `world-kit.js` | nothing |
+| `geom.js` | Pure geometry on plain arrays (`ribbon`, `obb`, `clipHalf`, `offsetRing`, `joinRings`, `seaPolys`, `trimLine`, `pointAt`, …). Triangulating polygons needs three.js, so `fillPoly` is in `world-kit.js` | nothing |
 | `osm-query.js` | Query, cache key, grid, servers, proxy address | nothing |
 | `vector-fallback.js` | Vector tiles → Overpass-shaped elements | `osm-query` |
 | `three-d-stage.js` | Viewer component | three |
 | `proxy/worker.js` | Caching proxy | `osm-query` |
 
 Dependencies point down the table only. Page entries are the only modules that touch the page's DOM at import time.
-`geom.js`, `drive-core.js`, `road-layout.js`, `traffic.js`, `garage.js`, `osm-query.js`, `vector-fallback.js` and `weather.js` stay importable in Node: no three, no DOM, no storage, and network
+`geom.js`, `drive-core.js`, `road-layout.js`, `traffic.js`, `pedestrians.js`, `garage.js`, `osm-query.js`, `vector-fallback.js` and `weather.js` stay importable in Node: no three, no DOM, no storage, and network
 only through a passed-in `fetch`. `radio.js` follows the same rules, except that calling `radio()` creates an `<audio>` and `radioHud()` its on-screen station display. The travel controller reads browser history and the cooldown at runtime. The driving audio factory reads the tab’s mute preference and initializes Web Audio on a driving gesture.
 
 Tests live in `test/*.test.js` and run with `npm test`. Tests build their own fixtures (the vector-fallback test
