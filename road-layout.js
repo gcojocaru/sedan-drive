@@ -47,7 +47,7 @@ export function laneLayout(road, regionalSide) {
   return { one, side, total, edge, width, forward, backward, dividers };
 }
 
-function nodeKey(road, i) {
+export function nodeKey(road, i) {
   if (road.nodes?.[i] != null) return road.nodes[i];
   return road.g[i].join(',') + '/' + (road.t.layer || 0) + '/' + (road.t.bridge || 'no');
 }
