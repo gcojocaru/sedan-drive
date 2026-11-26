@@ -36,8 +36,9 @@ how each part works; this file says how the parts may fit together.
 | `area-travel.js` | — | Neighboring-area geometry, boundary confirmation and cooldown |
 | `driving-audio.js` | — | Shared engine and tuning synthesis and per-tab mute |
 | `road-layout.js` | — | Pure lane, junction and spawn geometry |
-| `traffic.js` | — | Traffic on the real map: lane graph, car following, junction claims, spawning around the player |
+| `traffic.js` | — | Traffic on the real map: lane graph, traffic lights, car following, junction claims, spawning around the player |
 | `traffic-cars.js` | — | The traffic cars on screen: instanced bodies, paint, brake lights and night glows |
+| `traffic-lights.js` | — | Traffic light poles and signal heads on screen, the lamp that's on |
 | `minimap.js` | — | North-up driving minimap and car marker, drawn on supplied canvases |
 | `building-fronts.js` | — | Facade layout (style, storeys, window bays, doors, shop windows) and atlas drawing on a supplied canvas context |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
@@ -66,9 +67,10 @@ root, one copy each. Page URLs don't change.
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`), the ground under the car (`vmax`, `drag`, `rough`) and collisions | nothing (works on the three.js objects it is given) |
 | `minimap.js` | Cached raster of real-map geometry and car-centred HUD view | nothing |
 | `traffic-cars.js` | `trafficCars(scene, max, glowTex)` → `sync(cars, lit)`: instanced car bodies posed from `traffic.js` cars | three |
-| `traffic.js` | `laneGraph(roads, junctions, half)`, `createTraffic(graph, { rand, max, seen })` → `step`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
+| `traffic-lights.js` | `trafficLights(scene, signals, glowTex)` → `sync(lit)`: the signal heads in `graph.signals`, showing their `state` | three |
+| `traffic.js` | `laneGraph(roads, junctions, half, signals)` → lanes, nodes and `signals` (light heads), `lightAt(signal, t)`, `createTraffic(graph, { rand, max, seen })` → `step`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
 | `sky.js` | `createSky(renderer, scene, lat)` → `TIMES`, `sunAt`, `set(h, forceNight, weather)`, `update(dt, cameraPosition)`, `placeShadow(x, z)`: sun, sky, lights, fog, exposure, rain and snow | `world-kit`, `geom`, three |
-| `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, three |
+| `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`), mapped traffic signals (`signalPts`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, three |
 | `road-layout.js` | `prepareRoads(roads, side)` → lanes per road, junction arms and corners, spawn segments; `laneSpawn`, `mappedStops`, `drivingSide`, `nodeKey` | nothing |
 | `buildings.js` | `buildBuildings(polys, entranceNodes, roadAt, mkMesh)` → `{ blds, inBuilding, frontMat, wallMat }`; building tag tables, `roofPlanes`, parapets and eaves, shopfronts, the facade material | `world-kit`, `geom`, `building-fronts`, three |
 | `world-kit.js` | three.js and tag helpers shared by `world.js` and `buildings.js`: `fillPoly`/`eachTri`, `makeTex`, `speckle`, `num`, `tagColor`, `matColor` | `geom`, three |

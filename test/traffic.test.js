@@ -1,18 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { prepareRoads } from '../road-layout.js';
-import { laneGraph, createTraffic, LEVELS } from '../traffic.js';
+import { laneGraph, createTraffic, lightAt, LEVELS } from '../traffic.js';
 import { seeded } from '../geom.js';
 
+const LEN_ = 2.2; // a car's half length
 const street = (g, nodes, t = {}) => ({ g, nodes, hw: 3.5, walk: true, name: '', t: { highway: 'residential', ...t }, type: t.highway || 'residential', drive: true });
 
 // n × n two-way streets `gap` m apart; crossing vertices share their node ids
-function grid(n = 3, gap = 100, side = 'right') {
+function grid(n = 3, gap = 100, side = 'right', signals = null, t = {}) {
   const id = (i, j) => i * 100 + j, at = k => (k - (n - 1) / 2) * gap, roads = [];
-  for (let j = 0; j < n; j++) roads.push(street([...Array(n)].map((_, i) => [at(i), at(j)]), [...Array(n)].map((_, i) => id(i, j))));
-  for (let i = 0; i < n; i++) roads.push(street([...Array(n)].map((_, j) => [at(i), at(j)]), [...Array(n)].map((_, j) => id(i, j))));
+  for (let j = 0; j < n; j++) roads.push(street([...Array(n)].map((_, i) => [at(i), at(j)]), [...Array(n)].map((_, i) => id(i, j)), t));
+  for (let i = 0; i < n; i++) roads.push(street([...Array(n)].map((_, j) => [at(i), at(j)]), [...Array(n)].map((_, j) => id(i, j)), t));
   const { junctions } = prepareRoads(roads, side);
-  return { roads, graph: laneGraph(roads, junctions, 500) };
+  return { roads, graph: laneGraph(roads, junctions, 500, signals) };
 }
 
 // do two cars' bodies (4.4 × 1.75 m) overlap? separating axis test on their boxes
@@ -133,6 +134,55 @@ test('a crooked city with one-way streets and wide avenues at sharp angles never
   assert.equal(hits, 0, 'cars overlapped');
   const parked = sim.cars.filter(c => c.s - mid.get(c) < 5).map(c => c.id);
   assert.deepEqual(parked, [], 'cars that did not move for the last minute');
+});
+
+test('a mapped signal puts a light on every road into its junction, in two phases that never show green together', () => {
+  for (const [side, kerb] of [['right', 1], ['left', -1]]) {
+    const { graph } = grid(3, 100, side, [[3, -4]]); // mapped a few metres off the middle crossing
+    assert.equal(graph.signals.length, 4);
+    const east = graph.signals.find(s => s.e.dirA[0] > 0.99), north = graph.signals.find(s => s.e.dirA[1] < -0.99);
+    assert.ok(east.x < -3.5 && Math.abs(east.z - kerb * 4.1) < 1e-6, 'the head stands at the kerb before the crossing: ' + [east.x, east.z]);
+    assert.ok(Math.abs(Math.cos(east.h) + 1) < 1e-9, 'and faces the cars coming in');
+    const west = graph.signals.find(s => s.e.dirA[0] < -0.99);
+    assert.equal(east.e.signal.phase, west.e.signal.phase);
+    assert.notEqual(east.e.signal.phase, north.e.signal.phase);
+    const seen = { green: 0, amber: 0, red: 0 };
+    for (let t = 0; t < 200; t += 0.25) {
+      const a = lightAt(east.e.signal, t), b = lightAt(north.e.signal, t);
+      seen[a]++;
+      assert.ok(a === 'red' || b === 'red', 'both axes had ' + a + '/' + b + ' at ' + t + ' s');
+    }
+    assert.ok(seen.green && seen.amber && seen.red);
+  }
+});
+
+test('with no signals mapped, lights go where main roads cross, never at roundabouts or on side streets', () => {
+  assert.equal(grid(3, 100, 'right', []).graph.signals.length, 0);
+  assert.equal(grid(3, 100, 'right', [], { highway: 'secondary' }).graph.signals.length, 4); // only the middle crossing has four arms
+  assert.equal(grid(3, 100, 'right', [], { highway: 'secondary', junction: 'roundabout' }).graph.signals.length, 0);
+  assert.equal(grid(3, 100, 'right', null, { highway: 'secondary' }).graph.signals.length, 0);
+});
+
+test('cars stop at red and go on green, and never cross the stop line on red', () => {
+  const { graph } = grid(3, 100, 'right', [[0, 0]]), sim = createTraffic(graph, { rand: seeded(4) });
+  const ins = graph.signals.map(s => s.e);
+  for (let i = 0; i < 16; i++) { const e = ins[i % 4]; sim.add(e, 0, Math.max(2, e.lanes[0].len - 12 - 9 * Math.floor(i / 4))); }
+  const inside = c => Math.abs(c.x) < 4.5 && Math.abs(c.z) < 4.5, was = new Map(), entered = { red: 0, amber: 0, green: 0 };
+  let t = 0, hits = 0, waited = 0;
+  for (let k = 0; k < 30 * 150; k++) {
+    sim.step(1 / 30, null); t += 1 / 30;
+    waited += sim.cars.filter(c => c.atLight && c.v < 0.1).length;
+    for (const c of sim.cars) {
+      const now = inside(c);
+      if (now && !was.get(c)) { const turn = c.route.find(e => e.p.node && e.at <= c.s + LEN_ && e.at + e.p.len >= c.s - LEN_); entered[lightAt(turn.p.from.signal, t)]++; }
+      was.set(c, now);
+    }
+    for (let i = 0; i < sim.cars.length; i++) for (let j = i + 1; j < sim.cars.length; j++) if (overlap(sim.cars[i], sim.cars[j])) hits++;
+  }
+  assert.equal(hits, 0, 'cars overlapped');
+  assert.equal(entered.red, 0, 'a car entered on red');
+  assert.ok(entered.green > 10, 'cars went through on green: ' + JSON.stringify(entered));
+  assert.ok(waited > 30 * 20, 'and cars waited at red lights');
 });
 
 test('levels set how many cars live around the player, and hit() finds them', () => {

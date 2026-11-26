@@ -60,7 +60,8 @@ On phones and tablets only the driving controls appear on screen: steer on the l
 - **Ground**: residential, commercial and industrial land, parking lots, plazas, parks, forests, farmland, beaches, rivers, lakes, and the **sea**, which is built from coastlines.
 - **Railways** (ballast, sleepers, rails), **tram tracks**, **walls, fences and hedges**, piers and breakwaters, trees (mapped trees, tree rows, parks and forests, scattered garden trees).
 - Parking lots and plazas count as hard ground, so the car keeps its road speed there.
-- **Traffic**: other cars drive the streets around you in their lanes, on the side of the road the place drives on, at each road's speed limit (`maxspeed`, or a typical speed for the road type), slowing for bends. They keep their distance, stop for you if you're in their way, and take junctions in turn without blocking them. One-way streets are respected, and service roads and private roads stay empty. Their lights come on at dusk and their brake lights as they slow. Bumping into one is like hitting a wall. New cars appear out of sight 150 to 260 m away; set the amount in the settings (Esc).
+- **Traffic**: other cars drive the streets around you in their lanes, on the side of the road the place drives on, at each road's speed limit (`maxspeed`, or a typical speed for the road type), slowing for bends. They keep their distance, stop for you if you're in their way, and take junctions in turn without blocking them. One-way streets are respected, and service roads and private roads stay empty. Their lights come on at dusk and their brake lights as they slow. Bumping into one is like hitting a wall. New cars appear out of sight 150 to 260 m away; set the amount in the settings (Esc). They show on the minimap as dots.
+- **Traffic lights** where OpenStreetMap has them (`highway=traffic_signals`), on every road into the junction; the simplified map has none, so there they stand where main roads cross. Traffic stops at red and goes in turns, one direction at a time. Nobody stops you running a red.
 
 ## External services (real-map page)
 
@@ -95,6 +96,7 @@ driving-audio.js      synthesized engine and radio tuning sounds for both drive 
 minimap.js            north-up driving minimap drawn from the loaded world geometry
 traffic.js            traffic: lanes and junctions from the road layout, cars that follow them and take turns at junctions
 traffic-cars.js       the traffic cars on screen (one instanced car body, paint, brake lights, night glows)
+traffic-lights.js     traffic light poles and signal heads on screen
 osm-query.js          the Overpass query, cache key, start-point grid and proxy address (shared with proxy/)
 vector-fallback.js    OpenFreeMap vector tiles → the same element list as an Overpass reply (fallback map data)
 radio.js              car radio: stations near the chosen place from radio-browser.info, Romanian presets on the test track

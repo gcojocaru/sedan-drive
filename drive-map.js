@@ -17,6 +17,7 @@ import { createSky } from './sky.js';
 import { WEATHERS, weatherNow, solarHour } from './weather.js';
 import { laneGraph, createTraffic, LEVELS } from './traffic.js';
 import { trafficCars } from './traffic-cars.js';
+import { trafficLights } from './traffic-lights.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = id => document.getElementById(id);
@@ -152,14 +153,15 @@ async function startGame(lat0, lon0, placeName) {
 
   const sky = createSky(renderer, scene, lat0), { TIMES, NIGHT } = sky;
 
-  const { roads, paths, rivers, polys, seas, blds, trees, nB, layout, roadAt, areaAt, inBuilding, frontMat, wallMat, setLamps, glowTex } = await buildWorld(data.elements, lat0, lon0, scene, say);
+  const { roads, paths, rivers, polys, seas, blds, trees, nB, layout, signalPts, roadAt, areaAt, inBuilding, frontMat, wallMat, setLamps, glowTex } = await buildWorld(data.elements, lat0, lon0, scene, say);
 
   // ---- car ----
   await say('Placing the car…');
   const CAR = localStorage.getItem(LS_CAR) === 'vaz' ? await loadVaz().catch(e => (console.warn('VAZ-2101 did not load, using the sedan', e), buildCar())) : buildCar(), car = CAR.car;
   const rig = rigCar(CAR);
   const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), probe = new THREE.Sphere(V(), 3); // what the camera sees: traffic comes and goes out of sight
-  const traffic = createTraffic(laneGraph(roads, layout.junctions, HALF), { max: matchMedia('(pointer: coarse)').matches ? 45 : 100, seen: (x, z) => frustum.intersectsSphere((probe.center.set(x, 1, z), probe)) });
+  const lanes = laneGraph(roads, layout.junctions, HALF, signalPts), lightsView = trafficLights(scene, lanes.signals, glowTex);
+  const traffic = createTraffic(lanes, { max: matchMedia('(pointer: coarse)').matches ? 45 : 100, seen: (x, z) => frustum.intersectsSphere((probe.center.set(x, 1, z), probe)) });
   const trafficView = trafficCars(scene, 100, glowTex), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
   {
     const blob = (inner, a) => makeTex(128, 128, (x) => { const g = x.createRadialGradient(64, 64, 64 * inner, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); });
@@ -288,7 +290,7 @@ async function startGame(lat0, lon0, placeName) {
   const kmh = $('kmh'), gear = $('gear'), streetEl = $('street');
   let streetT = 0, shownStreet = null;
   function hud(s, dt) {
-    drawMinimap(st.pos.x, st.pos.z, st.h);
+    drawMinimap(st.pos.x, st.pos.z, st.h, traffic.cars);
     speedHud(kmh, gear, st, s);
     if ((streetT -= dt) > 0) return; streetT = 0.25;
     const r = roadAt(st.pos.x, st.pos.z); let label = '';
@@ -360,7 +362,7 @@ async function startGame(lat0, lon0, placeName) {
       frustum.setFromProjectionMatrix(view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
       Object.assign(me, { x: st.pos.x, z: st.pos.z, h: st.h, v: st.v }); traffic.step(dt, me);
     }
-    trafficView.sync(traffic.cars, dim);
+    trafficView.sync(traffic.cars, dim); lightsView.sync(dim);
     syncCar(rig, st, lastS, head); glows(lastS); updateCam(dt); hud(lastS, dt);
     renderer.render(scene, camera);
   });

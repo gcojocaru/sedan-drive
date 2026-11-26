@@ -21,6 +21,7 @@ test('the query covers the playable area plus the margin', () => {
   assert.match(q, /^\[out:json\]/);
   assert.ok(q.includes('(' + [-d, -(HALF + MARGIN) / 111320, d, (HALF + MARGIN) / 111320].map(v => v.toFixed(6)).join(',') + ')'));
   assert.match(q, /out geom qt;$/);
+  assert.ok(q.includes('node["highway"="traffic_signals"]'), 'traffic lights come with the map');
 });
 
 test('only error remarks count as failures', () => {

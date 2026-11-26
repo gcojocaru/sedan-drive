@@ -86,7 +86,7 @@ const isBridge = t => t.bridge && t.bridge !== 'no';
 // elements: an Overpass reply's elements; (lat0, lon0) becomes the origin. say(text) shows progress and waits for a repaint.
 export async function buildWorld(elements, lat0, lon0, scene, say) {
   await say('Building the streets…');
-  const { lines, polys, treePts, crossPts, stopNodes, entranceNodes } = parseElements(elements, lat0, lon0);
+  const { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts } = parseElements(elements, lat0, lon0);
   const G = groundLayers(scene), { LAYERS, BUF } = G;
   for (const p of polys) if (LAYERS[p.kind]) fillPoly(BUF[p.kind], p.outer, p.holes, LAYERS[p.kind][1]); // area fills
   const { roads, paths, rivers, rows, rails, barriers, seas, layout } = layRoads(lines, elements, stopNodes, G);
@@ -107,14 +107,14 @@ export async function buildWorld(elements, lat0, lon0, scene, say) {
   await say('Planting trees…');
   const trees = plantTrees(scene, treePts, rows, polys, G.noise, look, areaAt, inBuilding);
   const { setLamps, glowTex } = streetLamps(scene, roads, look, areaAt, inBuilding);
-  return { roads, paths, rivers, polys, seas, blds, trees, nB, layout, roadAt, areaAt, inBuilding, frontMat, wallMat, setLamps, glowTex };
+  return { roads, paths, rivers, polys, seas, blds, trees, nB, layout, signalPts, roadAt, areaAt, inBuilding, frontMat, wallMat, setLamps, glowTex };
 }
 
 // OSM elements → local metres: lines (ways), polys (closed areas and multipolygons), and the point features we use.
 function parseElements(elements, lat0, lon0) {
   const cosL = Math.cos(lat0 * Math.PI / 180), KX = 111320 * cosL, KZ = 110574;
   const P = (lat, lon) => [(lon - lon0) * KX, -(lat - lat0) * KZ];
-  const lines = [], polys = [], treePts = [], crossPts = [], stopNodes = [];
+  const lines = [], polys = [], treePts = [], crossPts = [], stopNodes = [], signalPts = [];
   const entranceNodes = new Set();
   for (const el of elements) {
     if (el.type === 'node') {
@@ -124,6 +124,7 @@ function parseElements(elements, lat0, lon0) {
         entranceNodes.add(p.join(','));
       }
       if (tags.highway === 'stop') stopNodes.push({ id: el.id, p, tags });
+      else if (tags.highway === 'traffic_signals') signalPts.push(p);
       else if (tags.highway === 'crossing' && tags['crossing:markings'] !== 'no') crossPts.push(p);
       else if (tags.natural === 'tree') treePts.push(p);
       continue;
@@ -141,7 +142,7 @@ function parseElements(elements, lat0, lon0) {
       for (const o of joinRings(outs)) polys.push({ kind, outer: o, holes: I.filter(h => inPoly(h[0][0], h[0][1], o)), t, id: el.id });
     }
   }
-  return { lines, polys, treePts, crossPts, stopNodes, entranceNodes };
+  return { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts };
 }
 
 // Textures, the flat ground layers (each with its own buffer, filled by the builders below) and the base ground plane.
