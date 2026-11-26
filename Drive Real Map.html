@@ -75,6 +75,11 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 #minimap canvas{width:100%;height:auto}
 #minimap .north{position:absolute;top:5px;left:6px;padding:2px 5px;border-radius:3px;background:#172126;color:#f2f5f3;font:bold 11px/1.2 sans-serif}
 @media(max-width:680px){#street{left:14px;bottom:90px;transform:none;max-width:calc(100vw - 184px);font-size:15px;padding:5px 8px}#speed{left:14px}#speed b{font-size:clamp(40px,10vw,64px)}}
+/* on-screen touch controls (touch.js) take both bottom corners: minimap to the top left, street name between or above them */
+.touch-ui #mapHud{right:auto;left:14px;bottom:auto;top:58px;align-items:flex-start}
+.touch-ui #minimap{margin-right:0;width:clamp(88px,23vmin,180px)}
+.touch-ui #street{left:50%;bottom:30px;transform:translateX(-50%);max-width:calc(100vw - 400px)}
+@media (orientation:portrait){.touch-ui #street{left:14px;bottom:186px;transform:none;max-width:calc(100vw - 28px)}}
 #start{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,14,20,.45);backdrop-filter:blur(3px);cursor:pointer;z-index:1500}
 #start .card{max-width:380px}
 #start h1{margin:0;font-size:24px;font-weight:600}
@@ -123,7 +128,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
     <dt>R · M</dt><dd>Back on the road · choose another place</dd>
   </dl>
   <p id="startNote"></p>
-  <p style="opacity:1;font-weight:600">Click or press any key to start</p>
+  <p style="opacity:1;font-weight:600">Tap, click or press any key to start</p>
 </div></div>
 <script type="module" src="drive-map.js"></script>
 </body></html>

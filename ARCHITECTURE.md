@@ -28,6 +28,7 @@ how each part works; this file says how the parts may fit together.
 | `building-fronts.js` | — | Ground-floor facade layout and atlas drawing on a supplied canvas context |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
 | `radio.js` | 53 | Car radio for both drive pages: `stationsNear()` (radio-browser.info, real-map page), Romanian presets (test track), `radio(show, find)` player, `radioHud()` station display |
+| `touch.js` | 57 | On-screen driving buttons for touch screens, both drive pages: `touchControls(extras)` sends the keydown/keyup each button's key would |
 | `osm-query.js` | 37 | Overpass query, cache key, start-point grid, servers; shared with the proxy |
 | `proxy/worker.js` | 69 | Cloudflare Worker that caches map downloads |
 
@@ -56,7 +57,7 @@ root, one copy each. Page URLs don't change.
 | Module | Owns | May import |
 |---|---|---|
 | `drive-map.js` | Real-map page entry: picker, loading screen, time of day, game loop wiring | everything below |
-| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model` |
+| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch` |
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model` |
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD | three |
 | `minimap.js` | Cached raster of real-map geometry and car-centred HUD view | nothing |
@@ -65,6 +66,7 @@ root, one copy each. Page URLs don't change.
 | `sedan-model.js` | `buildCar()` and the axle constants: the procedural car | three |
 | `vaz-model.js` | `loadVaz()`: the VAZ-2101 model file, returned in `buildCar()`'s shape | three (GLTFLoader) |
 | `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find)` → `tune(step)`; the only audio | nothing |
+| `touch.js` | `touchControls(extras)`: on-screen buttons for touch screens that press keys (synthetic keydown/keyup), so pages handle touch and keyboard the same way | nothing |
 | `geom.js` | Pure geometry on plain arrays (`ribbon`, `fillPoly`, `obb`, `clipHalf`, `joinRings`, …) | nothing |
 | `osm-query.js` | Query, cache key, grid, servers, proxy address | nothing |
 | `vector-fallback.js` | Vector tiles → Overpass-shaped elements | `osm-query` |
