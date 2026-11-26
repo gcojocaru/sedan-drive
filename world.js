@@ -7,6 +7,8 @@ import { same, joinRings, inPoly, polyArea, bbox, newBuf, quad, disc, ribbon, of
 import { fillPoly, makeTex, speckle, num, tagColor, matColor, WALL_MAT, weatherLook } from './world-kit.js';
 import { buildBuildings } from './buildings.js';
 import { landmarkName, planSigns } from './sign-layout.js';
+import { furnitureKind, planFurniture } from './street-furniture.js';
+import { addFurniture } from './furniture-mesh.js';
 import { addSignMeshes } from './sign-mesh.js';
 import { drivingSide, prepareRoads, mappedStops } from './road-layout.js';
 import { HALF } from './osm-query.js';
@@ -91,7 +93,7 @@ const isBridge = t => t.bridge && t.bridge !== 'no';
 // reflectLamps(x, z), called as the camera moves, lets the lit street lamps nearest it glint in wet roads.
 export async function buildWorld(elements, lat0, lon0, scene, say) {
   await say('Building the streets…');
-  const { lines, polys, treePts, crossPts, stopNodes, entranceNodes, landmarks } = parseElements(elements, lat0, lon0);
+  const { lines, polys, treePts, crossPts, stopNodes, entranceNodes, landmarks, furniture } = parseElements(elements, lat0, lon0);
   const wx = weatherLook(), { wear } = wx;
   const G = groundLayers(scene, wear), { LAYERS, BUF } = G;
   for (const p of polys) if (LAYERS[p.kind]) fillPoly(BUF[p.kind], p.outer, p.holes, LAYERS[p.kind][1]); // area fills
@@ -114,8 +116,11 @@ export async function buildWorld(elements, lat0, lon0, scene, say) {
   const trees = plantTrees(scene, treePts, rows, polys, G.noise, look, areaAt, inBuilding, wear);
   const { setLamps, glowTex, lamps } = streetLamps(scene, roads, look, areaAt, inBuilding, wx);
   const clear = signClearance(trees, lamps, look, areaAt, inBuilding);
-  addSignMeshes(scene, planSigns(layout.junctions, landmarks, roadAt, clear));
-  return { roads, paths, rivers, polys, seas, blds, trees, nB, layout, roadAt, areaAt, inBuilding, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex };
+  const { objects, hit } = planFurniture(furniture, polys, roadAt, clear);
+  addFurniture(scene, objects);
+  const signFree = (x,z) => clear(x,z) && !hit(x,z,0,0.35,0.35);
+  addSignMeshes(scene, planSigns(layout.junctions, landmarks, roadAt, signFree));
+  return { roads, paths, rivers, polys, seas, blds, trees, nB, layout, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex };
 }
 
 // OSM elements → local metres: lines (ways), polys (closed areas and multipolygons), and the point features we use.
@@ -123,7 +128,7 @@ function parseElements(elements, lat0, lon0) {
   const cosL = Math.cos(lat0 * Math.PI / 180), KX = 111320 * cosL, KZ = 110574;
   const P = (lat, lon) => [(lon - lon0) * KX, -(lat - lat0) * KZ];
   const lines = [], polys = [], treePts = [], crossPts = [], stopNodes = [];
-  const entranceNodes = new Set(), landmarks = [];
+  const entranceNodes = new Set(), landmarks = [], furniture = [];
   function area(kind, outer, holes, t, id, label) {
     if (kind) polys.push({ kind, outer, holes, t, id });
     if (label) landmarks.push({ label, points: outer });
@@ -131,6 +136,8 @@ function parseElements(elements, lat0, lon0) {
   for (const el of elements) {
     if (el.type === 'node') {
       const tags = el.tags || {}, p = P(el.lat, el.lon);
+      const kind = furnitureKind(tags);
+      if (kind) furniture.push({ kind, t: tags, point: p });
       const label = landmarkName(tags);
       if (label) landmarks.push({ label, points: [p] });
       const entrance = tags.entrance || (tags.building === 'entrance' ? 'yes' : '');
@@ -146,6 +153,11 @@ function parseElements(elements, lat0, lon0) {
     if (el.type === 'way') {
       if (!el.geometry || el.geometry.length < 2) continue;
       const g = el.geometry.map(p => P(p.lat, p.lon)), closed = g.length > 3 && same(g[0], g[g.length - 1]);
+      const item = furnitureKind(t);
+      if (item) {
+        const middle = Math.floor((g.length-1)/2), a = g[middle], b = g[middle+1];
+        furniture.push({ kind: item, t, point: [(a[0]+b[0])/2, (a[1]+b[1])/2] });
+      }
       if ((kind || label) && closed) area(kind, g, [], t, el.id, label);
       else lines.push({ t, g, nodes: el.nodes });
     } else if (el.type === 'relation' && (kind || label)) {
@@ -155,7 +167,7 @@ function parseElements(elements, lat0, lon0) {
       for (const o of joinRings(outs)) area(kind, o, I.filter(h => inPoly(h[0][0], h[0][1], o)), t, el.id, label);
     }
   }
-  return { lines, polys, treePts, crossPts, stopNodes, entranceNodes, landmarks };
+  return { lines, polys, treePts, crossPts, stopNodes, entranceNodes, landmarks, furniture };
 }
 
 // Textures, the flat ground layers (each with its own buffer, filled by the builders below) and the base ground plane.

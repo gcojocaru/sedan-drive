@@ -104,6 +104,8 @@ test('fallback emits named, classified POI points once at their mapped location'
     point({ class: 'shop', subclass: 'convenience' }),
     point({ name: 'Label only' }),
     point({ class: 'bus', subclass: 'bus_stop', name: 'Request stop' }),
+    point({ class: 'bench' }),
+    point({ class: 'bollard' }),
     point({ class: 'grocery', subclass: 'marketplace', name: 'Market' }),
     point({ class: 'park', subclass: 'bbq', name: 'Picnic spot' }),
     point({ class: 'shop', name: 'Beyond the area' }, 3500),
@@ -119,6 +121,9 @@ test('fallback emits named, classified POI points once at their mapped location'
     { name: 'Terminal', amenity: 'bus_station' },
     { name: 'Parcul Mare', leisure: 'park' },
     { name: 'Rose Garden', leisure: 'garden' },
+    { name: 'Request stop', highway: 'bus_stop' },
+    { amenity: 'bench' },
+    { barrier: 'bollard' },
   ]);
   for (const node of elements) {
     assert.equal(node.type, 'node');
