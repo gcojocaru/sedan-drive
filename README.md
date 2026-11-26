@@ -41,13 +41,15 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | A D / ← → | Steer |
 | Space | Handbrake |
 | H · C | Headlights · camera |
-| T · N | Next time of day · night on/off (real-map page: the sun is placed where it really is over that place today) |
+| T · N | Next time of day · night on/off (real-map page: starts at the place's real local time, with the sun where it really is; T goes through the presets and back to live) |
+| E | Next weather (real-map page: starts with the real weather there now; then clear, partly cloudy, overcast, fog, rain, snow, thunderstorm, and back to live) |
+| Esc | Settings (real-map page): choose the time of day and the weather. Driving pauses while it is open |
 | V | Mute or unmute engine sound and tuning static. The radio has its own off position. |
 | Q · Shift+Q | Radio: next / previous station, last one is off (real-map page: up to 30 stations from around the chosen place; test track: Romanian stations) |
 | R | Reset / back on the road |
 | M | Choose another place (real-map page) |
 
-On phones and tablets only the driving controls appear on screen: steer on the left, gas and brake/reverse on the right. The ••• button above the brake opens the rest (handbrake, lights, time of day or night, camera, radio, reset).
+On phones and tablets only the driving controls appear on screen: steer on the left, gas and brake/reverse on the right. The ••• button above the brake opens the rest (handbrake, lights, time of day or night, weather, settings, camera, radio, reset).
 
 ## What gets built from the map (real-map page)
 
@@ -64,6 +66,7 @@ On phones and tablets only the driving controls appear on screen: steer on the l
 - Map tiles: OpenStreetMap, Esri World Imagery (satellite toggle)
 - Geocoding: Nominatim. Searches run on submit and are cached in the browser, at most one request a second; a clicked spot is named once, when you press Drive.
 - Map data: The game requests Overpass servers directly, one at a time. The optional shared cache is disabled (`AREA_PROXY` is empty). A server that answers HTTP 429 is left alone for 30 s. Each browser also keeps the places it loaded in IndexedDB (`sedan-map-cache`).
+- Weather: [Open-Meteo](https://open-meteo.com), free and keyless. Asked for the current weather and the local time zone once while the place loads, and again every 15 minutes while live weather is on.
 - Radio: [radio-browser.info](https://www.radio-browser.info), the free community station directory. Asked once, on the first press of Q, for stations near the chosen place; the streams then play straight from each broadcaster.
 - Fallback map data: when every Overpass server (or the proxy) refuses, the place is built from [OpenFreeMap](https://openfreemap.org)'s vector tiles, which have no request limits. That map is simpler (no roof shapes, walls, crossings or single trees), says so on screen, and isn't saved, so the next visit tries for full detail.
 
@@ -75,8 +78,9 @@ Contributing: [ARCHITECTURE.md](ARCHITECTURE.md) has the target module layout an
 
 ```
 Drive Real Map.html   real-map page (markup + styles; logic in drive-map.js)
-drive-map.js          real-map page: map picker, loading screen, time of day, car, game loop, HUD
-sky.js                real-map sky: the sun where it really is, sky canvas, lights, shadows, fog
+drive-map.js          real-map page: map picker, loading screen, time of day and weather choice, car, game loop, HUD
+sky.js                real-map sky: the sun where it really is, sky canvas, lights, shadows, fog, clouds, rain and snow
+weather.js            the weather and local time right now at a place (Open-Meteo), and the weather presets
 map-data.js           map data: browser cache, proxy, Overpass servers, vector-tile fallback
 world.js              buildWorld(): the 3D place from OpenStreetMap elements, one builder per feature, plus road/area lookups
 buildings.js          buildBuildings(): walls and roofs per footprint, building parts, shopfronts, lit windows
