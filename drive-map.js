@@ -14,7 +14,7 @@ import { makeTex } from './world-kit.js';
 import { radio, radioHud, stationsNear } from './radio.js';
 import { touchControls } from './touch.js';
 import { createSky } from './sky.js';
-import { WEATHERS, weatherNow, solarHour } from './weather.js';
+import { WEATHERS, weatherNow, solarHour, groundOf } from './weather.js';
 import { laneGraph, createTraffic, LEVELS } from './traffic.js';
 import { trafficCars } from './traffic-cars.js';
 
@@ -152,7 +152,7 @@ async function startGame(lat0, lon0, placeName) {
 
   const sky = createSky(renderer, scene, lat0), { TIMES, NIGHT } = sky;
 
-  const { roads, paths, rivers, polys, seas, blds, trees, nB, layout, roadAt, areaAt, inBuilding, frontMat, wallMat, setLamps, glowTex } = await buildWorld(data.elements, lat0, lon0, scene, say);
+  const { roads, paths, rivers, polys, seas, blds, trees, nB, layout, roadAt, areaAt, inBuilding, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex } = await buildWorld(data.elements, lat0, lon0, scene, say);
 
   // ---- car ----
   await say('Placing the car…');
@@ -174,10 +174,10 @@ async function startGame(lat0, lon0, placeName) {
   car.updateMatrixWorld(true); car.traverse(o => { if (o.isMesh && o.name === 'tail_brake') tails.push(new THREE.Box3().setFromObject(o).getCenter(V())); });
   for (const c of tails) { const s = new THREE.Sprite(tailGlow); s.position.copy(car.worldToLocal(c)).add(V(-0.1, 0, 0)); s.scale.setScalar(0.6); car.add(s); }
 
-  const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0 };
+  const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0, slip: 0 };
   const cam = chaseCamera(camera, car);
   function place(x, z, h) {
-    st.pos.set(x, 0, z); st.h = h; st.v = 0; st.steer = 0;
+    st.pos.set(x, 0, z); st.h = h; st.v = 0; st.steer = 0; st.slip = 0;
     cam.reset(st);
   }
   const corners = [[2.2, 0.86], [2.2, -0.86], [0, 0.88], [0, -0.88], [-2.18, 0.86], [-2.18, -0.86]];
@@ -207,7 +207,7 @@ async function startGame(lat0, lon0, placeName) {
 
   // ---- time of day and weather ----
   // 'live' follows the clock and the weather at this place right now; otherwise an index into TIMES / WEATHERS.
-  let live = await liveReq, tSel = entry?.time ?? 'live', dayIdx = entry?.day ?? 'live', wSel = entry?.weather ?? 'live', lowLight = false, dim = false;
+  let live = await liveReq, tSel = entry?.time ?? 'live', dayIdx = entry?.day ?? 'live', wSel = entry?.weather ?? 'live', lowLight = false, dim = false, grip = 1;
   const clock = h => { const m = Math.round((((h % 24) + 24) % 24) * 60); return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
   const offset = () => live ? live.offset : Math.round(lon0 / 15) * 3600; // the place's UTC offset (s), guessed from its longitude without live data
   const hourOf = () => tSel === 'live' ? solarHour(Date.now(), lon0) : TIMES[tSel][1];
@@ -223,12 +223,15 @@ async function startGame(lat0, lon0, placeName) {
   trafficSel.onchange = () => { localStorage.setItem(LS_TRAFFIC, trafficSel.value); traffic.setLevel(+trafficSel.value, st.pos.x, st.pos.z); };
   traffic.setLevel(+trafficSel.value, st.pos.x, st.pos.z);
   function showTime(announce) { // local clock time, also for the presets (they are set in solar time)
-    const w = weatherOf(), text = (tSel === 'live' ? '' : TIMES[tSel][0] + ' · ') + clock(hourOf() - lon0 / 15 + offset() / 3600) + ' · ' + w.label + (wSel === 'live' && live ? ', ' + Math.round(live.temp) + '°C' : '');
+    const w = weatherOf(), real = wSel === 'live' && live, lying = !real ? '' : live.snowDepth >= 0.01 ? ', ' + Math.round(live.snowDepth * 100) + ' cm on the ground' : groundOf(w).wet > 0.3 && !['rain', 'storm', 'snow'].includes(w.kind) ? ', wet roads' : '';
+    const text = (tSel === 'live' ? '' : TIMES[tSel][0] + ' · ') + clock(hourOf() - lon0 / 15 + offset() / 3600) + ' · ' + w.label + (real ? ', ' + Math.round(live.temp) + '°C' : '') + lying;
     $('tod').textContent = text; if (announce) flash(text);
   }
   function applyTime(announce) {
     if (tSel !== NIGHT) dayIdx = tSel;
-    let e, murky; ({ night, e, lowLight, murky } = sky.set(hourOf(), tSel === NIGHT, weatherOf()));
+    const w = weatherOf(), ground = groundOf(w); // wet roads, snow on the ground and roofs, and how well the tyres grip
+    let e, murky; ({ night, e, lowLight, murky } = sky.set(hourOf(), tSel === NIGHT, w, ground.snow));
+    setGround(ground.wet, ground.snow); grip = ground.grip;
     if (frontMat) frontMat.emissiveIntensity = night ? 0.60 : e < 0 ? 0.25 : 0;
     wallMat.emissiveIntensity = night ? 1.6 : e < 0 ? 0.9 : 0;
     setLamps(lowLight);
@@ -262,7 +265,7 @@ async function startGame(lat0, lon0, placeName) {
   const TUNE = { power: 7.4, idle: 0.5, vtop: 50 };
   function update(dt) {
     const k = readKeys(keys), ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
-    const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard }, TUNE, (nx, nz, nh) => {
+    const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard, grip }, TUNE, (nx, nz, nh) => {
       const hit = blocked(nx, nz, nh);
       boundary.move(st.pos.x, st.pos.z);
       if (hit === 'bld' || hit === 'car') { const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20); }
@@ -279,7 +282,7 @@ async function startGame(lat0, lon0, placeName) {
     cam.update(st, camMode, dt, inBuilding);
     if (shake > 0.01) { camera.position.x += (Math.random() - 0.5) * shake * 0.25; camera.position.y += (Math.random() - 0.5) * shake * 0.2; shake *= Math.exp(-dt * 7); }
     sky.placeShadow(st.pos.x + Math.cos(st.h) * 45, st.pos.z - Math.sin(st.h) * 45); // the shadow box reaches further ahead of the car
-    sky.update(dt, camera.position);
+    sky.update(dt, camera.position); reflectLamps(camera.position.x, camera.position.z);
   }
 
   // ---- HUD ----

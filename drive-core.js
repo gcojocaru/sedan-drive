@@ -15,24 +15,38 @@ export function rigCar(C) {
   return { C, car, wheels, swFace: car.getObjectByName('steering_wheel_face') };
 }
 
-// One physics step of st = { pos, h, v, steer, spin, roll, pitch } (m, rad, m/s; heading 0 = +x).
-// k: controls from readKeys. surf: the ground under the car, { vmax, drag, rough }. tune: the page's car, { power, idle, vtop }.
+// One physics step of st = { pos, h, v, steer, spin, roll, pitch, slip } (m, rad, m/s; heading 0 = +x; slip: the angle
+// from the heading to the way the car is actually moving, 0 unless it slides).
+// k: controls from readKeys. surf: the ground under the car, { vmax, drag, rough, grip }. tune: the page's car, { power, idle, vtop }.
+// grip (default 1, dry) is the share of dry tyre grip left on wet or snowy ground: brakes and handbrake bite by that share,
+// the engine can't pull harder than 10 * grip m/s², and the tyres hold the car's path to 8 * grip / (1 - grip) m/s²
+// sideways (no limit when dry). Corner harder than that and the car slides wide, scrubbing speed, until its path lines
+// up with where it points again; the body runs at most 0.5 rad ahead of its path.
 // collide(nx, nz, nh), if given, sees the move first; returning true refuses it (the callback handles the hit itself).
 export function step(st, k, dt, surf, tune, collide) {
+  const g = Math.max(0.05, Math.min(1, surf.grip ?? 1)), slip = st.slip || 0;
   let a = 0;
-  if (k.up) a = st.v < -0.2 ? 18 : tune.power * Math.max(0, 1 - Math.max(0, st.v) / surf.vmax) + tune.idle;
-  if (k.dn) a = st.v > 0.2 ? -17 : -5;
+  if (k.up) a = st.v < -0.2 ? 18 * g : Math.min(tune.power * Math.max(0, 1 - Math.max(0, st.v) / surf.vmax) + tune.idle, 10 * g);
+  if (k.dn) a = st.v > 0.2 ? -17 * g : -Math.min(5, 10 * g);
   a -= 0.0011 * st.v * Math.abs(st.v) + surf.drag * st.v + Math.sign(st.v) * 0.3;
-  if (k.hb) a -= Math.sign(st.v) * 9;
+  if (k.hb) a -= Math.sign(st.v) * 9 * g;
+  const hold = 8 * g / (1 - g); // Infinity when dry
+  if (slip) a -= Math.sign(st.v) * Math.min(hold, 12) * Math.abs(Math.sin(slip)); // sliding sideways scrubs speed
   st.v += a * dt;
   if (!k.up && !k.dn && Math.abs(st.v) < 0.4) st.v = 0;
   st.v = Math.max(-9, Math.min(tune.vtop, st.v));
   const target = (k.lf ? 1 : 0) - (k.rt ? 1 : 0), ms = 0.62 / (1 + Math.abs(st.v) / 14);
   st.steer += (target * ms - st.steer) * Math.min(1, dt * (target ? 5 : 8));
   const yaw = st.v * Math.tan(st.steer) / 2.63 * (k.hb && Math.abs(st.v) > 4 ? 1.5 : 1);
-  const nh = st.h + yaw * dt, nx = st.pos.x + Math.cos(nh) * st.v * dt, nz = st.pos.z - Math.sin(nh) * st.v * dt;
-  if (!collide?.(nx, nz, nh)) { st.h = nh; st.pos.x = nx; st.pos.z = nz; }
-  st.roll += (Math.max(-0.045, Math.min(0.045, st.v * yaw * 0.0045)) - st.roll) * Math.min(1, dt * 6);
+  let nh = st.h + yaw * dt, path = nh, turn = yaw; // the body's new heading, the direction it moves in, and how fast that turns
+  if (g < 1 || slip) { // the path follows the body only as fast as the tyres hold it
+    const most = hold / Math.max(0.5, Math.abs(st.v)) * dt;
+    path = st.h + slip + Math.max(-most, Math.min(most, yaw * dt - slip));
+    nh = path + Math.max(-0.5, Math.min(0.5, nh - path)); turn = (path - st.h - slip) / dt;
+  }
+  const nx = st.pos.x + Math.cos(path) * st.v * dt, nz = st.pos.z - Math.sin(path) * st.v * dt;
+  if (!collide?.(nx, nz, nh)) { st.h = nh; st.pos.x = nx; st.pos.z = nz; st.slip = path - nh; }
+  st.roll += (Math.max(-0.045, Math.min(0.045, st.v * turn * 0.0045)) - st.roll) * Math.min(1, dt * 6);
   st.pitch += (Math.max(-0.03, Math.min(0.02, a * 0.0018)) - st.pitch) * Math.min(1, dt * 5);
   if (surf.rough && Math.abs(st.v) > 3) st.pitch += (Math.random() - 0.5) * 0.004;
   st.spin += st.v * dt / 0.308;
