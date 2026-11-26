@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
+export const FA = 1.32, RA = -1.31; // front and rear axle x (m)
 export function buildCar() {
 const car = new THREE.Group(); car.name = 'sedan';
 const name = (m, n) => (m.name = n, m);
@@ -36,7 +37,7 @@ const ext = (shape, depth, bt = 0, bs = 0) => new THREE.ExtrudeGeometry(shape, {
 function strut(n, a, b, r, mat) { const len = a.distanceTo(b); const m = add(n, new THREE.CylinderGeometry(r, r, len, 16), mat); m.position.copy(a).add(b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(V(0, 1, 0), b.clone().sub(a).normalize()); return m; }
 
 // ---------- Lower body ----------
-const FA = 1.32, RA = -1.31, AR = 0.385, AY = 0.31, NOSE = 0.10;
+const AR = 0.385, AY = 0.31, NOSE = 0.10;
 // x of the painted nose surface at height y, lateral z (matches body_lower profile + deformation)
 let FRONT = [];
 function profX(y) { const P = FRONT; if (y <= P[0][1]) return P[0][0];
@@ -520,6 +521,7 @@ for (const s of [1, -1]) {
   lights.fog.push(spot(`fog_beam_${sfx}`, V(faceX(0.36, 0.62) + 0.05, 0.36, s * 0.62), V(6, 0, s * 1.6), 0.85, 0.9));
 }
 // ---------- Front fascia ----------
+let drlMat; // created in the fascia block, returned for the pages' daytime-running-light toggles
 {
   const F = new THREE.Group(); F.name = 'front_fascia'; car.add(F);
   const glossBlack = Std('gloss_black', 0x0d0d0f, 0.22, 0.1);
@@ -527,7 +529,7 @@ for (const s of [1, -1]) {
   const deepBlack = Std('grille_back', 0x040405, 0.95);
   const bumperBlack = Std('bumper_black_textured', 0x1b1c1e, 0.88);
   const lampHousing = Std('lamp_housing', 0x3a3d42, 0.35, 0.6);
-  const drlMat = Lamp('drl_light_guide', 0xdfe6ee, 0xffffff);
+  drlMat = Lamp('drl_light_guide', 0xdfe6ee, 0xffffff);
   const hexTex = (() => { const r = 16, h = r * Math.sqrt(3), c = document.createElement('canvas'); c.width = r * 3 * 5; c.height = Math.round(h * 8); const x = c.getContext('2d');
     x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height); x.strokeStyle = '#5a5c60'; x.lineWidth = 6;
     for (let j = -1; j < 10; j++) for (let i = -1; i < 17; i++) { const cx = i * r * 1.5, cy = j * h + (i % 2 ? h / 2 : 0); x.beginPath(); for (let k = 0; k <= 6; k++) { const a = k * Math.PI / 3; x.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a)); } x.stroke(); }
@@ -647,7 +649,6 @@ for (const s of [1, -1]) {
   fa('hood_shut_line', conform(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([-0.83, -0.5, 0, 0.5, 0.83].map(u => V(u, 0.80 - Math.abs(u) ** 2 * 0.02, 0.0))), 80, 0.0022, 6), 1), deepBlack);
   fa('tow_eye_cover', panel(shape([[-0.66, 0.44], [-0.62, 0.44], [-0.62, 0.47], [-0.66, 0.47]], 0.006), 0.0, 0.002), paint);
   F.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = o.material !== lensClear; });
-  window.__drl = drlMat;
 }
 const ant = add('antenna', new THREE.CylinderGeometry(0.003, 0.005, 0.7, 8), plastic, -0.15, 1.78, 0.25); ant.rotation.z = 0.7;
 add('antenna_base', B(0.06, 0.02, 0.03), plastic, 0.07, 1.51, 0.25);
@@ -657,5 +658,5 @@ const revGlow = P('reverse_glow', 0xffffff, -2.9, 0.6, 0, 8);
 const domeGlow = P('dome_light', 0xffe8c8, -0.35, 1.35, 0, 3);
 const turnGlowL = P('turn_glow_L', 0xff8a00, 0, 0.7, -1.2, 4), turnGlowR = P('turn_glow_R', 0xff8a00, 0, 0.7, 1.2, 4);
 
-return { car, headMat, tailMat, cbrakeMat, revMat, fogMat, lights, extraLights: [rearGlow, revGlow, domeGlow, turnGlowL, turnGlowR, cabinFill], IN, glass, lensClear };
+return { car, headMat, tailMat, cbrakeMat, revMat, fogMat, lights, extraLights: [rearGlow, revGlow, domeGlow, turnGlowL, turnGlowR, cabinFill], IN, glass, lensClear, domeMat, gaugeFace, radioDisp, turnL, turnR, drlMat };
 }
