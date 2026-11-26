@@ -17,7 +17,9 @@ how each part works; this file says how the parts may fit together.
 
 | File | Lines | What it is |
 |---|---|---|
-| `drive-map.js` | 434 | Real-map page: picker, loading screen, sky and time of day, car, game loop, HUD |
+| `drive-map.js` | 348 | Real-map page: picker, loading screen, time of day and weather choice, car, game loop, HUD |
+| `sky.js` | 185 | `createSky()`: the real sun position, sky canvas, sun/moon/sky lights, shadow box, fog and exposure for a time of day and weather; rain, snow and lightning |
+| `weather.js` | 29 | `weatherNow()` (Open-Meteo: current weather and UTC offset, real-map page), WMO code table, `WEATHERS` presets, `solarHour()` |
 | `world.js` | 412 | Road/area tag tables and `buildWorld()`, which runs one builder per feature (`layRoads`, `roadLookup`, `paintCrossings`, `layRailways`, `buildWalls`, `plantTrees`, `streetLamps`, …) |
 | `buildings.js` | 267 | `buildBuildings()`: building tag tables, walls and roofs per footprint, building parts, shopfronts, lit windows, `inBuilding` |
 | `world-kit.js` | 28 | three.js and tag helpers shared by the two above: `fillPoly`, `makeTex`, `tagColor`, `num`, … |
@@ -59,6 +61,7 @@ root, one copy each. Page URLs don't change.
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model` |
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`), the ground under the car (`vmax`, `drag`, `rough`) and collisions | nothing (works on the three.js objects it is given) |
 | `minimap.js` | Cached raster of real-map geometry and car-centred HUD view | nothing |
+| `sky.js` | `createSky(renderer, scene, lat)` → `TIMES`, `sunAt`, `set(h, forceNight, weather)`, `update(dt, cameraPosition)`, `placeShadow(x, z)`: sun, sky, lights, fog, exposure, rain and snow | `world-kit`, `geom`, three |
 | `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, three |
 | `buildings.js` | `buildBuildings(polys, entranceNodes, roadAt, mkMesh)` → `{ blds, inBuilding, frontMat, wallMat }`; building tag tables, `roofPlanes`, shopfronts | `world-kit`, `geom`, `building-fronts`, three |
 | `world-kit.js` | three.js and tag helpers shared by `world.js` and `buildings.js`: `fillPoly`/`eachTri`, `makeTex`, `speckle`, `num`, `tagColor`, `matColor` | `geom`, three |
@@ -68,6 +71,7 @@ root, one copy each. Page URLs don't change.
 | `area-travel.js` | Boundary dialog, projected arrival pose and cooldown | `osm-query` |
 | `driving-audio.js` | Synthesized engine and tuning sounds on both driving pages | nothing |
 | `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find, tuningStatic)` → `tune(step)`; station playback | nothing |
+| `weather.js` | `weatherNow(lat, lon, fetch)` → `{ kind, label, amount, temp, offset }`, `weatherOf(code)`, `WEATHERS`, `solarHour(ms, lon)` | nothing |
 | `touch.js` | `touchControls(extras)`: on-screen buttons for touch screens that press keys (synthetic keydown/keyup), so pages handle touch and keyboard the same way | nothing |
 | `geom.js` | Pure geometry on plain arrays (`ribbon`, `obb`, `clipHalf`, `joinRings`, `seaPolys`, …). Triangulating polygons needs three.js, so `fillPoly` is in `world-kit.js` | nothing |
 | `osm-query.js` | Query, cache key, grid, servers, proxy address | nothing |
@@ -76,7 +80,7 @@ root, one copy each. Page URLs don't change.
 | `proxy/worker.js` | Caching proxy | `osm-query` |
 
 Dependencies point down the table only. Page entries are the only modules that touch the page's DOM at import time.
-`geom.js`, `drive-core.js`, `osm-query.js` and `vector-fallback.js` stay importable in Node: no three, no DOM, no storage, and network
+`geom.js`, `drive-core.js`, `osm-query.js`, `vector-fallback.js` and `weather.js` stay importable in Node: no three, no DOM, no storage, and network
 only through a passed-in `fetch`. `radio.js` follows the same rules, except that calling `radio()` creates an `<audio>` and `radioHud()` its on-screen station display. The travel controller reads browser history and the cooldown at runtime. The driving audio factory reads the tab’s mute preference and initializes Web Audio on a driving gesture.
 
 Tests live in `test/*.test.js` and run with `npm test`. Tests build their own fixtures (the vector-fallback test
@@ -89,7 +93,7 @@ and every `integrity` hash matches its file in `vendor/`.
    import. Where they need slightly different behaviour, pass the difference in (an argument, a callback such as
    `surface(x, z)` or `blocked(x, z, h)`); don't fork the code.
 2. **Respect the dependency table.** No upward imports, no new DOM or three.js use in the Node-importable modules, no
-   network or storage calls outside `map-data.js`, `vector-fallback.js`, `radio.js` (station search through a passed-in
+   network or storage calls outside `map-data.js`, `vector-fallback.js`, `weather.js` (through a passed-in `fetch`), `radio.js` (station search through a passed-in
    `fetch`, and the stream itself), `vaz-model.js` (its own model file), the proxy and the page entries.
 3. **New logic goes in its module, not in a page and not in `startGame()`.** A new world feature is its own function
    in `world.js` that `buildWorld()` calls, not more lines inside `buildWorld()`. No new inline

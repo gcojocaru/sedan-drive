@@ -108,15 +108,18 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 .travel-actions .ghost:hover{background:#364748}
 .travel-actions button:disabled{background:#354548;color:#bac7c5;cursor:default}
 .travel-actions button:focus-visible{outline:2px solid #fff;outline-offset:3px}
-#edgeDialog{position:fixed;inset:0;width:min(27rem,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;color-scheme:dark}
-#edgeDialog::backdrop{background:rgba(7,14,17,.66)}
+#edgeDialog,#settings{position:fixed;inset:0;width:min(27rem,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;color-scheme:dark}
+#edgeDialog::backdrop,#settings::backdrop{background:rgba(7,14,17,.66)}
 #edgeDialog .route-map{height:clamp(58px,12vh,90px)}
 #edgeDialog .route-map::after{
   left:65%;border-left:2px dashed #ccded4aa;background:repeating-linear-gradient(125deg,#17252996 0 8px,#17252973 8px 10px);
 }
 #edgeDialog .route-marker{width:30px;height:30px}
 #edgeDialog .route-marker::before{inset:7px 6px 7px 8px}
-#edgeDialog h2{font-size:clamp(25px,4vw,31px)}
+#edgeDialog h2,#settings h2{font-size:clamp(25px,4vw,31px)}
+.setting{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;font-size:15px;color:#dbe6e2}
+.setting select{font:inherit;padding:9px 10px;border-radius:9px;border:1px solid #516365;background:#293739;color:#eff3ef;min-width:min(13rem,55vw);cursor:pointer}
+.setting select:focus-visible{outline:2px solid #fff;outline-offset:2px}
 #edgeDetail{margin-top:10px}
 @media(max-width:360px){.travel-actions button{flex:1 1 100%}}
 @media(max-height:450px){
@@ -141,7 +144,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 @media (max-width:1000px){#keys{display:none}}
 #msg{left:50%;top:22%;transform:translateX(-50%);font-size:22px;font-weight:600;opacity:0;transition:opacity .4s;text-align:center}
 #mapHud{position:fixed;right:8px;bottom:6px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}
-#attrib{pointer-events:auto;font-size:11px;opacity:.85;background:rgba(0,0,0,.35);padding:3px 7px;border-radius:5px;text-decoration:none}
+#attrib,#wxCredit{pointer-events:auto;font-size:11px;opacity:.85;background:rgba(0,0,0,.35);padding:3px 7px;border-radius:5px;text-decoration:none}
 #minimap{position:relative;margin-right:clamp(0px,1vw,12px);width:clamp(112px,23vmin,180px);overflow:hidden;border:1px solid rgba(235,244,240,.6);border-radius:12px;background:#253237;box-shadow:0 2px 12px rgba(0,0,0,.35)}
 #minimap canvas{width:100%;height:auto}
 #minimap .north{position:absolute;top:5px;left:6px;padding:2px 5px;border-radius:3px;background:#172126;color:#f2f5f3;font:bold 11px/1.2 sans-serif}
@@ -191,16 +194,25 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
     <div class="travel-actions"><button type="button" id="edgeContinue">Load next area</button><button type="button" class="ghost" id="edgeStay" autofocus>Stay here</button></div>
   </div>
 </dialog>
+<dialog id="settings" class="travel-panel" aria-labelledby="settingsTitle">
+  <form method="dialog" class="travel-copy">
+    <h2 id="settingsTitle">Settings</h2>
+    <label class="setting">Time of day<select id="timeSel"></select></label>
+    <label class="setting">Weather<select id="wxSel"></select></label>
+    <div class="travel-actions"><button autofocus>Back to driving</button></div>
+  </form>
+</dialog>
 <div id="hud" style="display:none">
   <a id="back" href="Sedan.html">← Model viewer</a>
   <div class="hud" id="speed"><b id="kmh">0</b><span>km/h</span><span id="gear">N</span></div>
   <div class="hud" id="street"></div>
   <div class="hud" id="where"><span id="place"></span><span id="stats"></span><span id="tod"></span><button id="changePlace">Change place (M)</button></div>
-  <div class="hud" id="keys">W/↑ accelerate · S/↓ brake &amp; reverse · A/D steer · Space handbrake · H lights · T time of day · N night · C camera · V driving sounds · Q radio · R back on road · M map</div>
+  <div class="hud" id="keys">W/↑ accelerate · S/↓ brake &amp; reverse · A/D steer · Space handbrake · H lights · T time of day · E weather · N night · C camera · Esc settings · V driving sounds · Q radio · R back on road · M map</div>
   <div class="hud" id="msg"></div>
   <div id="mapHud">
     <div id="minimap" role="img" aria-label="North-up minimap showing nearby streets and the car’s heading"><canvas width="360" height="360"></canvas><span class="north" aria-hidden="true">N</span></div>
     <a id="attrib" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>
+    <a id="wxCredit" href="https://open-meteo.com/" target="_blank" rel="noopener" hidden>Weather data by Open-Meteo.com</a>
   </div>
 </div>
 <div id="start"><div class="card">
@@ -212,7 +224,8 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
     <dt>A D / ← →</dt><dd>Steer</dd>
     <dt>Space</dt><dd>Handbrake</dd>
     <dt>H · C</dt><dd>Headlights · camera</dd>
-    <dt>T · N</dt><dd>Time of day · night</dd>
+    <dt>T · E · N</dt><dd>Time of day · weather · night</dd>
+    <dt>Esc</dt><dd>Settings: choose the time and weather</dd>
     <dt>V</dt><dd>Toggle driving sounds</dd>
     <dt>Q</dt><dd>Radio: next station (Shift+Q back)</dd>
     <dt>R · M</dt><dd>Back on the road · choose another place</dd>
