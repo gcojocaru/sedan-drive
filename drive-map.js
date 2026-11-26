@@ -14,6 +14,7 @@ import { makeTex } from './world-kit.js';
 import { radio, radioHud, stationsNear } from './radio.js';
 import { touchControls } from './touch.js';
 import { createSky } from './sky.js';
+import { WEATHERS, weatherNow, solarHour } from './weather.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = id => document.getElementById(id);
@@ -127,6 +128,7 @@ async function startGame(lat0, lon0, placeName) {
     }
     startCooldown();
   }
+  const liveReq = weatherNow(lat0, lon0, fetch).catch(e => (console.warn('No live weather', e), null)); // while the map loads
   await say('Checking for a saved map…');
   const { data, err, fallback } = await loadArea(lat0, lon0, say);
   if (!data) {
@@ -197,27 +199,43 @@ async function startGame(lat0, lon0, placeName) {
   const msgEl = $('msg'); let msgTimer;
   function flash(t) { msgEl.textContent = t; msgEl.style.opacity = 1; clearTimeout(msgTimer); msgTimer = setTimeout(() => msgEl.style.opacity = 0, 2200); }
 
-  // ---- time of day ----
-  let tIdx = 0, dayIdx = 0, lowLight = false;
+  // ---- time of day and weather ----
+  // 'live' follows the clock and the weather at this place right now; otherwise an index into TIMES / WEATHERS.
+  let live = await liveReq, tSel = entry?.time ?? 'live', dayIdx = entry?.day ?? 'live', wSel = entry?.weather ?? 'live', lowLight = false, dim = false;
   const clock = h => { const m = Math.round((((h % 24) + 24) % 24) * 60); return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
-  function applyTime(i, announce) {
-    tIdx = i; if (i !== NIGHT) dayIdx = i;
-    const [name, h] = TIMES[i]; let e;
-    ({ night, e, lowLight } = sky.set(h, i === NIGHT));
+  const offset = () => live ? live.offset : Math.round(lon0 / 15) * 3600; // the place's UTC offset (s), guessed from its longitude without live data
+  const hourOf = () => tSel === 'live' ? solarHour(Date.now(), lon0) : TIMES[tSel][1];
+  const weatherOf = () => wSel !== 'live' ? WEATHERS[wSel] : live || { kind: 'clear', label: 'Weather unavailable' };
+  const timeSel = $('timeSel'), wxSel = $('wxSel'), pick = v => v === 'live' ? v : +v;
+  timeSel.append(new Option('Live time', 'live'), ...TIMES.map(([name], i) => new Option(name, i)));
+  wxSel.append(new Option('Live weather', 'live'), ...WEATHERS.map((w, i) => new Option(w.label, i)));
+  timeSel.onchange = () => { tSel = pick(timeSel.value); applyTime(); };
+  wxSel.onchange = () => { wSel = pick(wxSel.value); applyTime(); };
+  function showTime(announce) { // local clock time, also for the presets (they are set in solar time)
+    const w = weatherOf(), text = (tSel === 'live' ? '' : TIMES[tSel][0] + ' · ') + clock(hourOf() - lon0 / 15 + offset() / 3600) + ' · ' + w.label + (wSel === 'live' && live ? ', ' + Math.round(live.temp) + '°C' : '');
+    $('tod').textContent = text; if (announce) flash(text);
+  }
+  function applyTime(announce) {
+    if (tSel !== NIGHT) dayIdx = tSel;
+    let e, murky; ({ night, e, lowLight, murky } = sky.set(hourOf(), tSel === NIGHT, weatherOf()));
     if (frontMat) frontMat.emissiveIntensity = night ? 0.60 : e < 0 ? 0.25 : 0;
     wallMat.emissiveIntensity = night ? 1.6 : e < 0 ? 0.9 : 0;
     setLamps(lowLight);
-    if (lowLight) head = true;
+    if ((lowLight || murky) && !dim) head = true; // headlights come on when it gets dark or murky, and stay off if you switch them off
+    dim = lowLight || murky;
     setLights();
-    $('tod').textContent = name + ' · ' + clock(h);
-    if (announce) flash(name + ' · ' + clock(h));
+    timeSel.value = tSel; wxSel.value = wSel; $('wxCredit').hidden = !(wSel === 'live' && live);
+    showTime(announce);
   }
-  { // start in daylight: whichever of morning / midday / afternoon has the sun nearest 32° up (low winter sun, high summer sun)
-    const el = i => Math.asin(sky.sunAt(TIMES[i][1]).y) * 180 / Math.PI;
-    dayIdx = entry?.day ?? dayIdx;
-    applyTime(entry?.time ?? [2, 1, 0].reduce((b, i) => Math.abs(el(i) - 32) < Math.abs(el(b) - 32) ? i : b));
-    if (entry) { head = entry.headlights; setLights(); }
-  }
+  applyTime();
+  if (entry) { head = entry.headlights; setLights(); }
+  let minutes = 0;
+  setInterval(() => { // live: the sun moves every 5 minutes, the weather is asked again every 15 (Open-Meteo updates every 15)
+    minutes++;
+    if (wSel === 'live' && minutes % 15 === 0) weatherNow(lat0, lon0, fetch).then(w => { live = w; applyTime(); }, () => { });
+    else if (tSel === 'live' && minutes % 5 === 0) applyTime();
+    else showTime();
+  }, 60000);
   function blocked(x, z, h) {
     const c = Math.cos(h), s = Math.sin(h);
     for (const [lx, lz] of corners) {
@@ -239,7 +257,7 @@ async function startGame(lat0, lon0, placeName) {
       else if (hit) { const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20); }
       return !!hit;
     });
-    sound.update(st.v, !dialog.open && k.up, !dialog.open && k.dn);
+    sound.update(st.v, !paused() && k.up, !paused() && k.dn);
     return s;
   }
   function glows(s) {
@@ -249,6 +267,7 @@ async function startGame(lat0, lon0, placeName) {
     cam.update(st, camMode, dt, inBuilding);
     if (shake > 0.01) { camera.position.x += (Math.random() - 0.5) * shake * 0.25; camera.position.y += (Math.random() - 0.5) * shake * 0.2; shake *= Math.exp(-dt * 7); }
     sky.placeShadow(st.pos.x + Math.cos(st.h) * 45, st.pos.z - Math.sin(st.h) * 45); // the shadow box reaches further ahead of the car
+    sky.update(dt, camera.position);
   }
 
   // ---- HUD ----
@@ -275,10 +294,10 @@ async function startGame(lat0, lon0, placeName) {
     $('stats').textContent += ' · simplified map'; $('attrib').textContent += ' · ' + FALLBACK_CREDIT;
   }
 
-  const dialog = $('edgeDialog');
+  const dialog = $('edgeDialog'), settings = $('settings'), paused = () => dialog.open || settings.open;
   const sound = drivingAudio();
   const clearKeys = () => { for (const k in keys) keys[k] = false; };
-  const pose = () => ({ x: st.pos.x, z: st.pos.z, h: st.h, camera: camMode, day: dayIdx, time: tIdx, headlights: head });
+  const pose = () => ({ x: st.pos.x, z: st.pos.z, h: st.h, camera: camMode, day: dayIdx, time: tSel, weather: wSel, headlights: head });
   const boundary = edgePrompt({
     dialog, title: $('edgeTitle'), detail: $('edgeDetail'), proceed: $('edgeContinue'), stay: $('edgeStay'),
     destination(direction) {
@@ -292,7 +311,7 @@ async function startGame(lat0, lon0, placeName) {
   load.style.display = 'none';
   $('hud').style.display = 'block';
   const startEl = $('start'); startEl.style.display = started ? 'none' : 'flex';
-  const touch = () => touchControls([['Lights', 'KeyH'], ['Time', 'KeyT'], ['Camera', 'KeyC'], ['Radio', 'KeyQ'], ['Sound', 'KeyV'], ['Reset', 'KeyR']]);
+  const touch = () => touchControls([['Lights', 'KeyH'], ['Time', 'KeyT'], ['Weather', 'KeyE'], ['Settings', 'Escape'], ['Camera', 'KeyC'], ['Radio', 'KeyQ'], ['Sound', 'KeyV'], ['Reset', 'KeyR']]);
   if (started) { $('keys').style.opacity = 0; touch(); } // arrived from the next area: no start screen
   function begin() {
     sound.activate(); if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => $('keys').style.opacity = 0, 7000);
@@ -302,14 +321,17 @@ async function startGame(lat0, lon0, placeName) {
   $('changePlace').addEventListener('click', backToMap);
   const tune = radio(radioHud(), () => stationsNear(lat0, lon0, fetch), sound.tuningStatic);
   addEventListener('keydown', e => {
-    if (dialog.open) return;
+    if (paused()) return; // a dialog has the keys (Esc closes the settings again)
+    if (e.code === 'Escape') { e.preventDefault(); clearKeys(); settings.showModal(); return; } // preventDefault: the same press would close it again
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     if (e.code === 'KeyM') { backToMap(); return; }
     if (!e.repeat) begin();
     keys[e.code] = true; if (e.repeat) return;
     if (e.code === 'KeyH') { head = !head; setLights(); }
-    if (e.code === 'KeyN') applyTime(tIdx === NIGHT ? dayIdx : NIGHT, true);
-    if (e.code === 'KeyT') applyTime((tIdx + 1) % TIMES.length, true);
+    const next = (i, n) => i === 'live' ? 0 : i + 1 < n ? i + 1 : 'live'; // live, then each preset in turn
+    if (e.code === 'KeyN') { tSel = tSel === NIGHT ? dayIdx : NIGHT; applyTime(true); }
+    if (e.code === 'KeyT') { tSel = next(tSel, TIMES.length); applyTime(true); }
+    if (e.code === 'KeyE') { wSel = next(wSel, WEATHERS.length); applyTime(true); }
     if (e.code === 'KeyC') camMode = 1 - camMode;
     if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on');
     if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);
@@ -321,7 +343,7 @@ async function startGame(lat0, lon0, placeName) {
   let last = performance.now(), lastS = { braking: false, reversing: false };
   renderer.setAnimationLoop(now => {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    if (started && !dialog.open) lastS = update(dt);
+    if (started && !paused()) lastS = update(dt);
     syncCar(rig, st, lastS, head); glows(lastS); updateCam(dt); hud(lastS, dt);
     renderer.render(scene, camera);
   });

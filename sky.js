@@ -1,6 +1,6 @@
-// Sun, sky and time of day for the real-map page. The sun sits where it really is over this place on today's date at
-// the chosen local solar time, and the sky is redrawn around it, so the sun you see is the one casting the shadows.
-// A cool moon takes over at night.
+// Sun, sky, time of day and weather for the real-map page. The sun sits where it really is over this place on today's
+// date at the chosen local solar time, and the sky is redrawn around it, so the sun you see is the one casting the
+// shadows. A cool moon takes over at night. Clouds dim and soften the light, haze closes the fog in, rain and snow fall.
 import * as THREE from 'three';
 import { seeded } from './geom.js';
 import { makeTex } from './world-kit.js';
@@ -13,25 +13,30 @@ const SKYK = [[-14, '#03050a', '#0e1420', '#0e1420', '#050605'], [-5, '#141f3d',
   [4, '#3d63a3', '#e6b590', '#ffae68', '#4d4f3f'], [12, '#3567ad', '#cfdbe4', '#ffdcae', '#6a6f52'], [35, '#2c5fa6', '#dfe9ef', '#fff4e0', '#737a58']];
 const skyCols = e => { let i = 0; while (i < SKYK.length - 2 && e > SKYK[i + 1][0]) i++; const a = SKYK[i], b = SKYK[i + 1], f = THREE.MathUtils.clamp((e - a[0]) / (b[0] - a[0]), 0, 1); return [1, 2, 3, 4].map(k => new THREE.Color(a[k]).lerp(new THREE.Color(b[k]), f)); };
 const rgba = (c, a) => { const h = c.getHex(); return 'rgba(' + (h >> 16 & 255) + ',' + (h >> 8 & 255) + ',' + (h & 255) + ',' + a + ')'; };
+// per kind of weather (weather.js): cloud cover, haze (0 clear air … 1 thick fog), gloom (how much darker the light gets)
+const LOOK = { clear: [0, 0, 0], partly: [0.45, 0, 0], overcast: [1, 0.12, 0.3], fog: [0.85, 1, 0.15], rain: [1, 0.5, 0.45], snow: [1, 0.45, 0.2], storm: [1, 0.6, 0.65] };
+const grey = c => new THREE.Color().setScalar((c.r + c.g + c.b) / 3);
 const SW = 2048, SH = 1024, dirPx = d => [(Math.atan2(d.z, d.x) / (2 * Math.PI) + 0.5) * SW, (0.5 - Math.asin(THREE.MathUtils.clamp(d.y, -1, 1)) / Math.PI) * SH]; // equirect pixel for a direction
 
-function drawSky(sd, e, dark) {
-  const [zen, hor, glow, gnd] = skyCols(e), warm = 1 - ss(e, 2, 30);
+function drawSky(sd, e, dark, [zen, hor, glow, gnd], cover, haze) {
+  const warm = 1 - ss(e, 2, 30), clear = 1 - cover;
   const t = makeTex(SW, SH, (x) => {
     let g = x.createLinearGradient(0, 0, 0, SH / 2); g.addColorStop(0, rgba(zen, 1)); g.addColorStop(0.62, rgba(zen.clone().lerp(hor, 0.45), 1)); g.addColorStop(1, rgba(hor, 1));
     x.fillStyle = g; x.fillRect(0, 0, SW, SH / 2);
     g = x.createLinearGradient(0, SH / 2, 0, SH); g.addColorStop(0, rgba(hor, 1)); g.addColorStop(0.05, rgba(hor.clone().lerp(gnd, 0.6), 1)); g.addColorStop(1, rgba(gnd, 1));
     x.fillStyle = g; x.fillRect(0, SH / 2, SW, SH / 2);
-    const rs = seeded(11), sa = dark ? 1 : 1 - ss(e, -10, -3); // stars
+    const rs = seeded(11), sa = (dark ? 1 : 1 - ss(e, -10, -3)) * clear; // stars
     if (sa > 0.02) for (let i = 0; i < 1600; i++) { x.fillStyle = 'rgba(255,255,255,' + (rs() * 0.85 * sa).toFixed(3) + ')'; const z = rs() < 0.08 ? 2 : 1; x.fillRect(rs() * SW, rs() * SH * 0.46, z, z); }
-    const [sx, sy] = dirPx(sd), ga = dark ? 0 : (1 - ss(e, 2, 25)) * ss(e, -7, -2);
+    const [sx, sy] = dirPx(sd), ga = dark ? 0 : (1 - ss(e, 2, 25)) * ss(e, -7, -2) * clear;
     for (const ox of [-SW, 0, SW]) if (ga > 0.01) { // warm band on the horizon around the sun (drawn on both sides of the seam)
       x.save(); x.translate(sx + ox, SH / 2); x.scale(1, 0.28); const r = x.createRadialGradient(0, 0, 0, 0, 0, SW * 0.28);
       r.addColorStop(0, rgba(glow, 0.9 * ga)); r.addColorStop(1, rgba(glow, 0)); x.fillStyle = r; x.fillRect(-SW * 0.28, -SW * 0.28, SW * 0.56, SW * 0.56); x.restore();
     }
-    const rc = seeded(7), cc = dark ? new THREE.Color('#2a3140') : new THREE.Color('#ffffff').lerp(glow, warm * 0.55).multiplyScalar(0.35 + 0.65 * ss(e, -6, 6));
-    for (let i = 0; i < 46; i++) { // clouds
-      const cx = rc() * SW, cy = SH * (0.29 + rc() * 0.16), n = 3 + Math.floor(rc() * 5); x.fillStyle = rgba(cc, ((0.18 + rc() * 0.2) * (dark ? 0.5 : 1)).toFixed(3));
+    const deck = Math.max(2 * cover - 1, haze); // overcast cloud deck or fog: the sky turns one grey towards the horizon
+    if (deck > 0) { g = x.createLinearGradient(0, 0, 0, SH / 2); g.addColorStop(0, rgba(zen, deck * 0.9)); g.addColorStop(1, rgba(hor, deck)); x.fillStyle = g; x.fillRect(0, 0, SW, SH / 2); }
+    const rc = seeded(7), cc = (dark ? new THREE.Color('#2a3140') : new THREE.Color('#ffffff').lerp(glow, warm * 0.55).multiplyScalar(0.35 + 0.65 * ss(e, -6, 6))).lerp(grey(hor).multiplyScalar(0.8), cover * 0.7);
+    for (let i = 0; i < 46 + cover * 150; i++) { // clouds
+      const cx = rc() * SW, cy = SH * (0.29 + rc() * 0.16), n = 3 + Math.floor(rc() * 5); x.fillStyle = rgba(cc, ((0.18 + rc() * 0.2) * (dark ? 0.5 : 1) * (1 + cover)).toFixed(3));
       for (let k = 0; k < n; k++) { x.beginPath(); x.ellipse(cx + k * 26, cy + rc() * 12, 40 + rc() * 20, 12 + rc() * 5, 0, 0, Math.PI * 2); x.fill(); }
     }
     const disc = (d, core, halo, hr, cr) => { // sun or moon, stretched like everything else near the top of an equirect image
@@ -43,6 +48,7 @@ function drawSky(sd, e, dark) {
         x.restore();
       }
     };
+    x.globalAlpha = 1 - ss(cover, 0.5, 1); // the sun or moon fades behind thick cloud (a pale disc still shows through fog)
     if (dark) disc(MOON, 'rgba(236,240,255,1)', 'rgba(150,170,220,.25)', 70, 10);
     else if (e > -3) disc(sd, 'rgba(255,253,244,1)', rgba(glow, 0.6), 120, 14);
   });
@@ -70,8 +76,44 @@ function createSkyReflections(renderer) {
   };
 }
 
+// Rain streaks or snowflakes in a box that follows the camera. Drops keep world positions, so you drive through them.
+function precipitation(scene) {
+  const N = 9000, R = 20, H = 16, drops = new Float32Array(N * 3), rainAt = new Float32Array(N * 6), snowAt = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) { drops[i * 3] = (Math.random() - 0.5) * 2 * R; drops[i * 3 + 1] = Math.random() * H; drops[i * 3 + 2] = (Math.random() - 0.5) * 2 * R; }
+  const geo = a => new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(a, 3).setUsage(THREE.DynamicDrawUsage));
+  const flake = makeTex(32, 32, x => { const g = x.createRadialGradient(16, 16, 0, 16, 16, 16); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 32, 32); });
+  const rain = new THREE.LineSegments(geo(rainAt), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.5, depthWrite: false }));
+  const snow = new THREE.Points(geo(snowAt), new THREE.PointsMaterial({ size: 0.22, map: flake, transparent: true, depthWrite: false }));
+  for (const o of [rain, snow]) { o.frustumCulled = false; o.visible = false; scene.add(o); }
+  let n = 0, t = 0;
+  const wrap = d => d - 2 * R * Math.floor((d + R) / (2 * R)); // offset folded into [-R, R)
+  return {
+    set(kind, amount, color) {
+      rain.visible = kind === 'rain'; snow.visible = kind === 'snow'; n = rain.visible || snow.visible ? Math.round(N * amount) : 0;
+      rain.material.color.copy(color); snow.material.color.copy(color);
+      rain.geometry.setDrawRange(0, n * 2); snow.geometry.setDrawRange(0, n);
+    },
+    update(dt, cam) {
+      if (!n) return; t += dt;
+      const isRain = rain.visible, v = isRain ? 15 : 1.4;
+      for (let i = 0; i < n; i++) {
+        const k = i * 3; let x = drops[k], y = drops[k + 1] - v * dt, z = drops[k + 2];
+        if (y < 0) y += H;
+        if (!isRain) { x += Math.sin(t * 0.7 + i) * 0.5 * dt; z += Math.cos(t * 0.5 + i * 1.3) * 0.5 * dt; } // flakes drift
+        const dx = wrap(x - cam.x), dz = wrap(z - cam.z); x = cam.x + dx; z = cam.z + dz; // keep every drop in the box around the camera
+        drops[k] = x; drops[k + 1] = y; drops[k + 2] = z;
+        if (dx * dx + dz * dz < 2.2) y = -50; // none right at the lens, or inside the car from the driver's seat
+        if (isRain) { const j = i * 6; rainAt[j] = rainAt[j + 3] = x; rainAt[j + 1] = y; rainAt[j + 4] = y + 0.8; rainAt[j + 2] = rainAt[j + 5] = z; rainAt[j + 3] += 0.04; }
+        else { snowAt[k] = x; snowAt[k + 1] = y; snowAt[k + 2] = z; }
+      }
+      (isRain ? rain : snow).geometry.attributes.position.needsUpdate = true;
+    }
+  };
+}
+
 // Adds the sun (with its shadow map), the sky light and fog to the scene.
-// set(h, forceNight) lights the scene for local solar hour h; placeShadow(x, z) centres the shadow box on a point.
+// set(h, forceNight, weather) lights the scene for local solar hour h and a weather from weather.js ({ kind, amount });
+// update(dt, cameraPosition) moves the rain or snow each frame; placeShadow(x, z) centres the shadow box on a point.
 export function createSky(renderer, scene, lat, now = new Date()) {
   const DOY = Math.round((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - Date.UTC(now.getUTCFullYear(), 0, 0)) / 864e5);
   const DEC = 23.44 * Math.PI / 180 * Math.sin(2 * Math.PI * (284 + DOY) / 365), PHI = lat * Math.PI / 180;
@@ -90,10 +132,14 @@ export function createSky(renderer, scene, lat, now = new Date()) {
   scene.fog = new THREE.Fog(0xdfe9ef, 160, 950);
   let skyT = null;
 
-  function set(h, forceNight) {
+  const fall = precipitation(scene); let kind = 'clear', exposure = 1, flash = 0, nextFlash = 3;
+  function set(h, forceNight, w = { kind: 'clear' }) {
     const sd = sunAt(h); let e = Math.asin(sd.y) * 180 / Math.PI;
     const night = forceNight || e < -7; if (night) e = Math.min(e, -14);
-    const [zen, hor, glow, gnd] = skyCols(e), warm = 1 - ss(e, 2, 30);
+    const [cover, haze0, gloom] = LOOK[w.kind] || LOOK.clear, haze = haze0 * (w.amount ? 0.5 + 0.5 * w.amount : 1), warm = 1 - ss(e, 2, 30);
+    const cols = skyCols(e), [zen, hor, glow, gnd] = cols, hg = grey(hor); // clouds grey the sky and gloom darkens it
+    zen.lerp(hg.clone().multiplyScalar(0.85), cover * 0.85); hor.lerp(hg, cover * 0.8); glow.lerp(hg, cover * 0.9);
+    for (const c of cols) c.multiplyScalar(1 - 0.5 * gloom);
     // direct light: the sun by day, soft light from the whole sky at dusk, the moon at night
     if (night) { lightDir.copy(MOON); sun.color.set(0x9fb3ff); sun.intensity = 0.14; }
     else if (e < -1) { lightDir.set(0.25, 1, 0.3).normalize(); sun.color.copy(zen).lerp(new THREE.Color(0xffffff), 0.6); sun.intensity = 0.3; }
@@ -108,12 +154,23 @@ export function createSky(renderer, scene, lat, now = new Date()) {
       hemi.groundColor.copy(gnd);
       hemi.intensity = 0.22 + 0.33 * ss(e, -6, 15);
     }
+    sun.intensity *= 1 - 0.85 * cover * cover; sun.shadow.intensity = 1 - 0.8 * cover * cover; // light through cloud is soft
+    hemi.intensity *= (1 + 0.6 * cover) * (1 - 0.5 * gloom);
     if (skyT) skyT.dispose();
-    skyT = drawSky(sd, e, night);
-    scene.background = skyT; scene.environment = reflectSky(skyT); scene.environmentIntensity = night ? 0.3 : 0.35 + 0.45 * ss(e, -6, 12);
-    scene.fog.color.copy(hor); scene.fog.near = night ? 80 : 110 + 50 * ss(e, -3, 10); scene.fog.far = night ? 650 : 760 + 190 * ss(e, -3, 10);
-    renderer.toneMappingExposure = night ? 1.1 : e < 0 ? 1.25 : 1 + 0.08 * warm;
-    return { night, e, lowLight: night || e < -0.5 };
+    skyT = drawSky(sd, e, night, cols, cover, haze);
+    scene.background = skyT; scene.environment = reflectSky(skyT); scene.environmentIntensity = (night ? 0.3 : 0.35 + 0.45 * ss(e, -6, 12)) * (1 - 0.35 * gloom);
+    scene.fog.color.copy(hor); scene.fog.near = THREE.MathUtils.lerp(night ? 80 : 110 + 50 * ss(e, -3, 10), 5, haze); scene.fog.far = THREE.MathUtils.lerp(night ? 650 : 760 + 190 * ss(e, -3, 10), 140, haze);
+    renderer.toneMappingExposure = exposure = (night ? 1.1 : e < 0 ? 1.25 : 1 + 0.08 * warm) * (1 - 0.2 * gloom);
+    kind = w.kind; fall.set(kind === 'storm' ? 'rain' : kind, w.amount || 0, hor.clone().lerp(new THREE.Color(1, 1, 1), night ? 0.1 : 0.45));
+    return { night, e, lowLight: night || e < -0.5, murky: haze > 0.4 };
+  }
+
+  function update(dt, cam) {
+    fall.update(dt, cam);
+    if (kind !== 'storm' && !flash) return;
+    if ((nextFlash -= dt) < 0 && kind === 'storm') { flash = 1; nextFlash = 4 + Math.random() * 12; } // lightning, now and then
+    flash = flash > 0.02 ? flash * Math.exp(-dt * 7) : 0;
+    renderer.toneMappingExposure = exposure * (1 + 2.5 * flash * (0.6 + 0.4 * Math.sin(flash * 40))); // with a flicker
   }
 
   const shC = V(), lx = V(), ly = V();
@@ -125,5 +182,5 @@ export function createSky(renderer, scene, lat, now = new Date()) {
     sun.target.position.copy(shC); sun.position.copy(shC).addScaledVector(lightDir, 400);
   }
 
-  return { TIMES, NIGHT: 5, sunAt, set, placeShadow };
+  return { TIMES, NIGHT: 5, sunAt, set, update, placeShadow };
 }
