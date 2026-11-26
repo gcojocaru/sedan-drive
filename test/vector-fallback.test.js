@@ -131,3 +131,10 @@ test('fallback emits named, classified POI points once at their mapped location'
     assert.ok(node.lon > 0.00026 && node.lon < 0.00027);
   }
 });
+
+test('fallback keeps house-number point labels and ignores the adjacent tile buffer', async () => {
+  const feature=(x,number)=>({type:1,rings:[[[x,50]]],props:{housenumber:number}});
+  const tile=new Uint8Array(layer('housenumber',[feature(50,'12B'),feature(70,14),feature(-1,'outside')])).buffer;
+  const {elements}=await fetchAtOrigin({'/14/8192/8192.pbf':tile});
+  assert.deepEqual(elements.map(e=>e.tags['addr:housenumber']),['12B','14']);
+});

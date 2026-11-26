@@ -52,7 +52,7 @@ The public game version lives in `package.json`. All three game pages use `app-v
 - `sedan-lights-v1` — viewer light toggles (Sedan.html)
 - `sedan-map-car-v1` — chosen car on the real-map page (`sedan` or `vaz`)
 - `sedan-map-traffic-v1` — traffic level on the real-map page, an index into `LEVELS` in `traffic.js` (0 off … 3 heavy; normal when unset)
-- IndexedDB `sedan-map-cache` / store `osm` — cached Overpass responses, keyed `areaKey()` = `osm7:<lat>,<lon>:<HALF>` (4 decimals, snapped). Bump `CACHE_V` in `osm-query.js` whenever the query changes; entries with an older prefix are pruned after the next download.
+- IndexedDB `sedan-map-cache` / store `osm` — cached Overpass responses, keyed `areaKey()` = `osm8:<lat>,<lon>:<HALF>` (4 decimals, snapped). Bump `CACHE_V` in `osm-query.js` whenever the query changes; entries with an older prefix are pruned after the next download.
 - `sedan-geocode-cache-v1` — Nominatim results (last 60 searches / reverse lookups)
 - `sedan-overpass-rest-v1` — Overpass servers to leave alone until a time (after HTTP 429/406)
 

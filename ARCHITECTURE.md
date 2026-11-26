@@ -45,6 +45,7 @@ how each part works; this file says how the parts may fit together.
 | `app-version.js` | — | Shared release label from the local package manifest |
 | `delivery.js` | — | Parcel stops on connected, directed lanes and pickup/drop-off state |
 | `delivery-hud.js` | — | Current job prompt and road marker |
+| `minimap-labels.js` | — | Nearby street and address labels, footprint anchors and label spacing |
 | `minimap.js` | — | North-up driving minimap and car marker, drawn on supplied canvases |
 | `building-fronts.js` | — | Facade layout (style, storeys, window bays, doors, shop windows) and atlas drawing on a supplied canvas context |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
@@ -74,7 +75,8 @@ root, one copy each. Page URLs don't change.
 | `app-version.js` | Show the current release on the three game pages | nothing |
 | `delivery.js` | Select reachable stops and advance an area-local parcel job | nothing |
 | `delivery-hud.js` | Drive the HUD and place the active stop in the scene | `delivery`, three |
-| `minimap.js` | Cached raster of real-map geometry and car-centred HUD view | nothing |
+| `minimap.js` | Cached raster of real-map geometry, car and goal markers | `minimap-labels`, `delivery` |
+| `minimap-labels.js` | Nearby names and address numbers on the supplied canvas | `geom` |
 | `traffic-cars.js` | `trafficCars(scene, max, glowTex)` → `sync(cars, lit)`: instanced car bodies posed from `traffic.js` cars | three |
 | `traffic.js` | `laneGraph(roads, junctions, half)`, `createTraffic(graph, { rand, max, seen })` → `step`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
 | `sky.js` | `createSky(renderer, scene, lat)` → `TIMES`, `sunAt`, `set(h, forceNight, weather, snow)`, `update(dt, cameraPosition)`, `placeShadow(x, z)`: sun, sky, lights, fog, exposure, rain and snow | `world-kit`, `geom`, three |

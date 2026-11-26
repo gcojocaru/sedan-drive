@@ -24,7 +24,7 @@ python3 -m http.server 5173
 
 Then open http://localhost:5173 — it redirects to the real-map drive.
 
-While driving on a real map, the minimap shows 240 metres across with north at the top. The amber arrow shows where your car is and which way it faces. A dashed line marks the edge of the playable area. When you reach it, choose **Load next area** to continue in that direction or **Stay here** to turn back. Neighboring map loads have a 30-second cooldown. The car resumes at rest, facing the same way.
+While driving on a real map, the minimap shows 240 metres across with north at the top. Nearby streets and mapped house numbers are labeled as space allows. The amber arrow shows where your car is and which way it faces. During a delivery, the mint marker points toward the stop, including when it is beyond the map edge. A dashed line marks the edge of the playable area. When you reach it, choose **Load next area** to continue in that direction or **Stay here** to turn back. Neighboring map loads have a 30-second cooldown. The car resumes at rest, facing the same way.
 
 ## Release version
 
