@@ -17,7 +17,10 @@ how each part works; this file says how the parts may fit together.
 
 | File | Lines | What it is |
 |---|---|---|
-| `drive-map.js` | 1085 | Real-map page: picker, IndexedDB cache, map download, geometry helpers, OSM tag tables, and `startGame()`, one ~690-line closure holding world build, physics, camera, time of day and HUD |
+| `drive-map.js` | 434 | Real-map page: picker, loading screen, sky and time of day, car, game loop, HUD |
+| `world.js` | 650 | OSM tag tables and `buildWorld()`: the 3D place and its lookups (`roadAt`, `areaAt`, `inBuilding`) |
+| `map-data.js` | 55 | `loadArea()`: IndexedDB cache, proxy, Overpass servers, vector fallback |
+| `geom.js` | 195 | Pure geometry: strips, polygons, oriented boxes, roof clipping, coastline → sea |
 | `drive-track.js` | 215 | Test-track page (`Drive.html`): track, surface, lap timing, sky |
 | `drive-core.js` | 80 | Driving shared by both drive pages: `readKeys`, `rigCar`, physics `step`, `syncCar`, `chaseCamera`, `speedHud` |
 | `sedan-viewer.js` | 108 | Viewer page (`Sedan.html`): studio lights, contact shadows, light toggles, views |
@@ -41,8 +44,9 @@ in (`fetchVectorArea(lat, lon, fetchFn)`); named meshes; versioned storage keys.
 
 What has to change:
 
-1. **`startGame()` does everything.** World building and the game loop share one closure, so nothing in it can be
-   tested or reused, and every feature makes it longer.
+1. **`buildWorld()` is one ~420-line function.** It reads top to bottom (parse, ground, roads, crossings, railways,
+   walls, buildings, trees, lamps) but shares one closure. Split it per feature (`buildRoads`, `buildBuildings`, …),
+   with buildings and their tag tables moving to their own module; that also brings `world.js` back under ~600 lines.
 
 ## Target
 
@@ -56,7 +60,7 @@ root, one copy each. Page URLs don't change.
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model` |
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`), the ground under the car (`vmax`, `drag`, `rough`) and collisions | nothing (works on the three.js objects it is given) |
 | `minimap.js` | Cached raster of real-map geometry and car-centred HUD view | nothing |
-| `world.js` | `buildWorld(elements, origin, scene)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`, `snapToRoad`, lamps, lit windows) | `geom`, three |
+| `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`); OSM tag tables; `makeTex` | `geom`, `building-fronts`, `road-layout`, three |
 | `map-data.js` | `loadArea(lat, lon, status)`: IndexedDB cache → proxy → Overpass → vector fallback; returns `{ data, fallback, err }` | `osm-query`, `vector-fallback` |
 | `sedan-model.js` | `buildCar()` and the axle constants: the procedural car | three |
 | `vaz-model.js` | `loadVaz()`: the VAZ-2101 model file, returned in `buildCar()`'s shape | three (GLTFLoader) |
@@ -64,7 +68,7 @@ root, one copy each. Page URLs don't change.
 | `driving-audio.js` | Synthesized engine and tuning sounds on both driving pages | nothing |
 | `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find, tuningStatic)` → `tune(step)`; station playback | nothing |
 | `touch.js` | `touchControls(extras)`: on-screen buttons for touch screens that press keys (synthetic keydown/keyup), so pages handle touch and keyboard the same way | nothing |
-| `geom.js` | Pure geometry on plain arrays (`ribbon`, `fillPoly`, `obb`, `clipHalf`, `joinRings`, …) | nothing |
+| `geom.js` | Pure geometry on plain arrays (`ribbon`, `obb`, `clipHalf`, `joinRings`, `seaPolys`, …). Triangulating polygons needs three.js, so `fillPoly` stays in `world.js` | nothing |
 | `osm-query.js` | Query, cache key, grid, servers, proxy address | nothing |
 | `vector-fallback.js` | Vector tiles → Overpass-shaped elements | `osm-query` |
 | `three-d-stage.js` | Viewer component | three |
@@ -87,7 +91,7 @@ and every `integrity` hash matches its file in `vendor/`.
    network or storage calls outside `map-data.js`, `vector-fallback.js`, `radio.js` (station search through a passed-in
    `fetch`, and the stream itself), `vaz-model.js` (its own model file), the proxy and the page entries.
 3. **New logic goes in its module, not in a page and not in `startGame()`.** A new world feature is its own function
-   in `world.js` (until it exists, a function outside `startGame()` that takes what it needs). No new inline
+   in `world.js` that `buildWorld()` calls, not more lines inside `buildWorld()`. No new inline
    `<script type="module">` logic in pages.
 4. **Map data enters through the elements contract.** A new map source converts its data into Overpass-shaped
    `elements` (nodes with `lat`/`lon`, ways with `geometry`, relations with `members`). The world builder never
@@ -121,7 +125,7 @@ Behaviour-neutral PRs, in this order. Tick them off here as they merge.
   copies.
 - [x] **3. Shared driving.** Extract `drive-core.js` from the two drive pages. Per-page differences (top speed by
   surface, collisions, lap logic) become parameters or callbacks. Keep each page's current feel. Test the physics step.
-- [ ] **4. Split `drive-map.js`.** Move the cache and download into `map-data.js`, the pure helpers into `geom.js`
+- [x] **4. Split `drive-map.js`.** Move the cache and download into `map-data.js`, the pure helpers into `geom.js`
   (with tests), and the world build into `world.js`. `drive-map.js` keeps the picker, loading screen, time of day and
   game loop.
 - [ ] **5. Cleanup.** Drop `notifyExport()` from `three-d-stage.js`; drop anything the steps above left unused.
