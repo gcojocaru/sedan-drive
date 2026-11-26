@@ -77,7 +77,9 @@ Contributing: [ARCHITECTURE.md](ARCHITECTURE.md) has the target module layout an
 Drive Real Map.html   real-map page (markup + styles; logic in drive-map.js)
 drive-map.js          real-map page: map picker, loading screen, sky and time of day, car, game loop, HUD
 map-data.js           map data: browser cache, proxy, Overpass servers, vector-tile fallback
-world.js              buildWorld(): the 3D place from OpenStreetMap elements, plus road/area/building lookups
+world.js              buildWorld(): the 3D place from OpenStreetMap elements, one builder per feature, plus road/area lookups
+buildings.js          buildBuildings(): walls and roofs per footprint, building parts, shopfronts, lit windows
+world-kit.js          three.js and tag helpers shared by world.js and buildings.js
 geom.js               pure geometry helpers (strips, polygons, roofs, coastline → sea)
 drive-core.js         driving shared by both drive pages: physics, car posing, chase camera, speed HUD
 building-fronts.js    ground-floor entrance placement and retail window layouts

@@ -10,7 +10,8 @@ import { HALF, snap } from './osm-query.js';
 import { FALLBACK_CREDIT } from './vector-fallback.js';
 import { loadArea } from './map-data.js';
 import { seeded } from './geom.js';
-import { buildWorld, makeTex, TYPE_LABEL, HARD } from './world.js';
+import { buildWorld, TYPE_LABEL, HARD } from './world.js';
+import { makeTex } from './world-kit.js';
 import { radio, radioHud, stationsNear } from './radio.js';
 import { touchControls } from './touch.js';
 

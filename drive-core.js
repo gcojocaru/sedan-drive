@@ -26,7 +26,7 @@ export function step(st, k, dt, surf, tune, collide) {
   if (k.hb) a -= Math.sign(st.v) * 9;
   st.v += a * dt;
   if (!k.up && !k.dn && Math.abs(st.v) < 0.4) st.v = 0;
-  st.v = Math.max(-9, Math.min(tune.vtop, st.v)); st.a = a;
+  st.v = Math.max(-9, Math.min(tune.vtop, st.v));
   const target = (k.lf ? 1 : 0) - (k.rt ? 1 : 0), ms = 0.62 / (1 + Math.abs(st.v) / 14);
   st.steer += (target * ms - st.steer) * Math.min(1, dt * (target ? 5 : 8));
   const yaw = st.v * Math.tan(st.steer) / 2.63 * (k.hb && Math.abs(st.v) > 4 ? 1.5 : 1);
