@@ -47,9 +47,6 @@ What has to change:
    and `drive-map.js`, with drifted tuning (top speeds, off-road drag, collision only on the map page).
 3. **`startGame()` does everything.** World building and the game loop share one closure, so nothing in it can be
    tested or reused, and every feature makes it longer.
-4. **No tests.** The import maps and SRI hashes are copied into three pages and checked by nothing but a browser
-   refusing to load.
-5. **`npm run build` lists files by name**, so a new module is silently missing from `dist/`.
 
 ## Target
 
@@ -81,8 +78,9 @@ Dependencies point down the table only. Page entries are the only modules that t
 `geom.js`, `osm-query.js` and `vector-fallback.js` stay importable in Node: no three, no DOM, no storage, and network
 only through a passed-in `fetch`. `radio.js` follows the same rules, except that calling `radio()` creates an `<audio>` and `radioHud()` its on-screen station display. The travel controller reads browser history and the cooldown at runtime. The driving audio factory reads the tab’s mute preference and initializes Web Audio on a driving gesture.
 
-Tests live in `test/*.test.js` and run with `npm test`. Fixtures (a small Overpass reply, one vector tile) live in
-`test/fixtures/`; tests never touch the network.
+Tests live in `test/*.test.js` and run with `npm test`. Tests build their own fixtures (the vector-fallback test
+encodes its own tile) and never touch the network. `test/pages.test.js` checks that the three import maps are identical
+and every `integrity` hash matches its file in `vendor/`.
 
 ## Rules for every PR
 
@@ -118,10 +116,10 @@ Tests live in `test/*.test.js` and run with `npm test`. Fixtures (a small Overpa
 
 Behaviour-neutral PRs, in this order. Tick them off here as they merge.
 
-- [ ] **1. Test harness.** `npm test` runs `node --test`. First tests: `osm-query.js` (`snap`, `onGrid`, `areaKey`),
+- [x] **1. Test harness.** `npm test` runs `node --test`. First tests: `osm-query.js` (`snap`, `onGrid`, `areaKey`),
   `vector-fallback.js` (`decodeTile` and the tag mapping on a fixture tile), and a check that the three pages' import
-  maps are identical and every `integrity` hash matches the file in `vendor/`. `npm run build` copies `*.html`, `*.js`
-  and `vendor/` instead of a list.
+  maps are identical and every `integrity` hash matches the file in `vendor/`. `npm run build` copies `*.html`, `*.js`,
+  `vendor/` and `models/` instead of a list.
 - [ ] **2. One car.** `Drive.html` and `Sedan.html` import `buildCar` from `sedan-model.js` (export `FA`, `RA` for the
   viewer's contact shadows) and their inline scripts move to `drive-track.js` and `sedan-viewer.js`. Delete the inline
   copies.
