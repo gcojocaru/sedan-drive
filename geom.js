@@ -69,6 +69,15 @@ export function runs(g, ok) { // split a polyline into the pieces whose segment 
 }
 export function openRing(r) { const o = []; for (const p of r) if (!o.length || !same(o[o.length - 1], p)) o.push(p); if (o.length > 1 && same(o[0], o[o.length - 1])) o.pop(); return o; }
 export function signedArea(r) { let s = 0; for (let i = 0, j = r.length - 1; i < r.length; j = i++) s += r[j][0] * r[i][1] - r[i][0] * r[j][1]; return s / 2; }
+// an open ring with every edge moved outward by d (inward when d < 0); corners are mitred, the mitre capped at 2|d|
+export function offsetRing(r, d) {
+  const n = r.length, k = signedArea(r) > 0 ? 1 : -1, N = r.map((a, i) => { const b = r[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) || 1; return [k * dz / L, -k * dx / L]; });
+  return r.map((p, i) => {
+    const A = N[(i + n - 1) % n], B = N[i], mx = A[0] + B[0], mz = A[1] + B[1], c = 1 + A[0] * B[0] + A[1] * B[1]; // c = |m|² / 2
+    const s = c < 0.5 ? 2 * d / Math.sqrt(2 * c || 1) : d / c;
+    return [p[0] + mx * s, p[1] + mz * s];
+  });
+}
 export function obb(r) { // minimum-area oriented box: centre, long axis (ux,uz), half length hl >= half width hw
   let b = null;
   for (let i = 0; i < r.length; i++) {

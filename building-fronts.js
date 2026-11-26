@@ -1,3 +1,135 @@
+export const HOUSE_T = new Set(['house', 'detached', 'semidetached_house', 'terrace', 'bungalow', 'farm', 'farm_auxiliary', 'barn', 'cabin', 'hut', 'villa', 'chapel', 'stable', 'cowshed', 'shed', 'static_caravan', 'allotment_house']);
+export const PLAIN_T = new Set(['garage', 'garages', 'shed', 'carport', 'hut', 'roof', 'service', 'storage_tank', 'silo', 'barn', 'farm_auxiliary', 'cowshed', 'stable', 'bunker', 'transformer_tower', 'greenhouse', 'ruins', 'column', 'steps']);
+const OFFICE_T = new Set(['office', 'commercial', 'retail', 'supermarket', 'hotel', 'hospital', 'government', 'public', 'civic', 'bank', 'train_station', 'transportation', 'university', 'college']);
+const INDUSTRY_T = new Set(['industrial', 'warehouse', 'factory', 'manufacture', 'hangar', 'storage', 'depot']);
+const OLD_T = new Set(['church', 'cathedral', 'chapel', 'mosque', 'synagogue', 'temple', 'monastery', 'school', 'kindergarten', 'museum', 'palace', 'castle', 'theatre']);
+
+// Photo surfaces in textures/ (CC0, Poly Haven, 512 px): [file, metres per repeat, contrast boost after levelling]
+export const SURFACES = { plaster: ['plastered_wall_02', 2.23, 4.5], brick: ['red_bricks_04', 2.5, 1], concrete: ['concrete_wall_008', 2.71, 2.2],
+  metal: ['corrugated_iron_02', 2.7, 1.3], tiles: ['clay_roof_tiles_02', 2.5, 1], gravel: ['tarred_gravel', 2.2, 1.2] };
+export const WALL_SURFACES = ['plaster', 'brick', 'concrete', 'metal']; // the wall texture array's layers
+// Facade styles, one column of the wall atlas each: [name, storey height (m), window bay (m), share of windows lit at night,
+// WALL_SURFACES layer]
+export const FACADES = [['house', 2.9, 3, 0.4, 0], ['panel', 2.75, 6.2, 0.5, 2], ['classic', 3.6, 2.7, 0.45, 0], ['office', 3.7, 1.8, 0.3, 2],
+  ['glass', 3.8, 1.5, 0.35, 2], ['industrial', 4.5, 4.5, 0.15, 3], ['brick', 3, 3, 0.4, 1], ['blank', 3, 4, 0, 0]];
+export const FACADE = Object.fromEntries(FACADES.map((f, i) => [f[0], i]));
+
+// t: the building's tags; top: its height (m); rnd: its seeded random. Tags decide first, then type, then height.
+export function facadeStyle(t, type, top, rnd) {
+  const mat = String(t['building:material'] || '').toLowerCase();
+  if (PLAIN_T.has(type)) return FACADE.blank;
+  if (mat === 'glass' || mat === 'mirror' || top > 60 || (OFFICE_T.has(type) && top > 30 && rnd() < 0.6)) return FACADE.glass;
+  if (mat === 'metal' || INDUSTRY_T.has(type)) return FACADE.industrial;
+  if (mat === 'brick') return FACADE.brick;
+  if (HOUSE_T.has(type) || mat === 'wood' || mat === 'timber_framing') return FACADE.house;
+  if (OFFICE_T.has(type)) return FACADE.office;
+  if (OLD_T.has(type) || t.heritage || t.historic || t['building:architecture']) return FACADE.classic;
+  if (mat === 'concrete') return FACADE.panel;
+  if (top < 9) return rnd() < 0.75 ? FACADE.house : FACADE.brick;
+  if (top >= 14) return rnd() < 0.65 ? FACADE.panel : FACADE.classic;
+  return rnd() < 0.55 ? FACADE.classic : rnd() < 0.5 ? FACADE.panel : FACADE.brick;
+}
+
+// Storeys of window rows between y0 and top: tagged levels set the storey height, otherwise the style does.
+export function floorGrid(style, top, y0, levels) {
+  const floors = Math.max(1, Math.round((top - y0) / (levels ? top / levels : FACADES[style][1])));
+  return { floors, floorH: (top - y0) / floors };
+}
+
+// Window bays along a ring: edges meeting at under ~25° form one run, and every run holds a whole number of bays, so a
+// corner never cuts a window. Runs shorter than 0.6 bay get none (u stays put). Returns [u at start, u at end] per edge.
+export function bayCoords(ring, bay, u = 0) {
+  const n = ring.length, L = [], D = [];
+  for (let i = 0; i < n; i++) { const a = ring[i], b = ring[(i + 1) % n], l = Math.hypot(b[0] - a[0], b[1] - a[1]); L.push(l); D.push(l > 1e-6 ? [(b[0] - a[0]) / l, (b[1] - a[1]) / l] : null); }
+  const corner = i => { if (!D[i]) return false; let p = (i + n - 1) % n; while (!D[p] && p !== i) p = (p + n - 1) % n; return D[p][0] * D[i][0] + D[p][1] * D[i][1] < 0.9; };
+  let s = 0; while (s < n && !corner(s)) s++; if (s === n) s = 0; // a ring without corners (a round tower) is one run
+  const out = [];
+  for (let k = 0; k < n;) {
+    let m = 0, len = 0; do len += L[(s + k + m++) % n]; while (k + m < n && !corner((s + k + m) % n));
+    const f = len < 0.6 * bay ? 0 : Math.max(1, Math.round(len / bay)) / len;
+    for (let j = 0; j < m; j++) { const i = (s + k + j) % n; out[i] = [u, u += L[i] * f]; }
+    u = Math.round(u); k += m;
+  }
+  return out;
+}
+
+// Levels photo pixels (RGBA bytes, in place) so each channel averages target (0–1), with the spread around it scaled by
+// contrast: the building colour then gives the hue and the photo only the surface.
+export function levelPhoto(d, target, contrast = 1) {
+  const m = [0, 0, 0], n = d.length / 4;
+  for (let i = 0; i < d.length; i += 4) { m[0] += d[i]; m[1] += d[i + 1]; m[2] += d[i + 2]; }
+  for (let c = 0; c < 3; c++) m[c] = m[c] / n || 1;
+  for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) d[i + c] = Math.max(0, Math.min(255, Math.round(target * 255 * (1 + contrast * (d[i + c] / m[c] - 1)))));
+  return d;
+}
+
+// The wall atlas: one 256 px column per FACADES style, the ground floor in the bottom row and upper floors above it. Drawn
+// twice: layer 'color' (wall areas light grey, multiplied by the building colour and the photo surface) and layer 'mask'
+// (R: keeps its own colour, G: window glass, B: the style's share of lit windows).
+export const ATLAS_CELL = 256;
+export function wallAtlas(ctx, layer) {
+  const S = ATLAS_CELL, color = layer === 'color';
+  FACADES.forEach(([name, floor, bay, lit], col) => [true, false].forEach(ground => {
+    ctx.save(); ctx.translate(col * S, ground ? S : 0);
+    const sx = S / bay, sy = S / floor, B = Math.round(lit * 255);
+    // kind 0: wall (grey level g, takes the building colour), 1: trim with its own colour, 2: glass. Metres, y down from the ceiling.
+    const R = (kind, c, x, y, w, h) => { ctx.fillStyle = color ? (typeof c === 'number' ? `rgb(${c * 255},${c * 255},${c * 255})` : c) : `rgb(${kind ? 255 : 0},${kind === 2 ? 255 : 0},${B})`; ctx.fillRect(x * sx, y * sy, w * sx, h * sy); };
+    const shade = (a, x, y, w, h) => { if (color) { ctx.fillStyle = `rgba(0,0,0,${a})`; ctx.fillRect(x * sx, y * sy, w * sx, h * sy); } };
+    const fade = (a, x, y, w, h) => { if (!color) return; const g = ctx.createLinearGradient(0, y * sy, 0, (y + h) * sy); g.addColorStop(0, `rgba(0,0,0,${a})`); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(x * sx, y * sy, w * sx, h * sy); };
+    const glass = (x, y, w, h, top = '#8ea3b0', bottom = '#2c3942') => {
+      if (!color) return R(2, 0, x, y, w, h);
+      const g = ctx.createLinearGradient(0, y * sy, 0, (y + h) * sy); g.addColorStop(0, top); g.addColorStop(0.45, '#4d5f6b'); g.addColorStop(1, bottom);
+      R(2, g, x, y, w, h); shade(0.25, x, y, w, 0.06);
+    };
+    // a framed window with mullions (cols lights across, a transom tr metres below its top) and a sill that streaks the wall below
+    const win = (x, y, w, h, { frame = '#e9e8e3', f = 0.07, cols = 2, tr = 0, sill = '#cfcac0', streaks = true } = {}) => {
+      R(0, 0.5, x, y, w, h); x += 0.06; y += 0.07; w -= 0.09; h -= 0.08; // the reveal: the frame sits back in a shaded opening
+      R(1, frame, x, y, w, h); glass(x + f, y + f, w - 2 * f, h - 2 * f);
+      for (let i = 1; i < cols; i++) R(1, frame, x + w * i / cols - f / 2, y, f, h);
+      if (tr) R(1, frame, x, y + tr, w, f);
+      if (sill) { R(typeof sill === 'number' ? 0 : 1, sill, x - 0.08, y + h, w + 0.16, 0.06); shade(0.18, x - 0.06, y + h + 0.06, w + 0.12, 0.04); }
+      if (streaks) for (const sx0 of [x - 0.04, x + w - 0.02]) fade(0.13, sx0, y + h + 0.06, 0.07, floor - y - h);
+    };
+    const plinth = (h, c = 0.6, kind = 0) => { R(kind, c, 0, floor - h, bay, h); R(kind, typeof c === 'number' ? Math.min(1, c + 0.15) : c, 0, floor - h, bay, 0.04); fade(0.2, 0, floor - h - 0.7, bay, 0.7); };
+    R(0, 0.93, 0, 0, bay, floor);
+    if (name === 'house') { win(0.95, 0.55, 1.1, 1.4, { tr: 0.38 }); if (ground) plinth(0.45); }
+    else if (name === 'brick') {
+      R(0, 0.97, 0, 0, bay, floor); R(0, 0.68, 0.85, 0.32, 1.3, 0.22); // soldier course over the window
+      win(0.95, 0.55, 1.1, 1.45, { frame: '#efeee9', tr: 0.38, sill: '#bfb9ae' }); if (ground) plinth(0.4, '#8f8b84', 1);
+    } else if (name === 'panel') {
+      R(0, 0.72, 0, 0, bay, 0.03); R(0, 0.75, 0, 0, 0.03, floor); R(0, 0.75, 3.1, 0, 0.03, floor); // panel joints
+      win(0.8, 0.6, 1.5, 1.45, { cols: 3, f: 0.06 });
+      if (ground) { plinth(0.6, '#9d9a94', 1); }
+      else { // loggia: a dark recess, the balcony door and window behind a parapet panel
+        R(0, 0.42, 3.35, 0.12, 2.6, 2.63); R(1, '#e4e3de', 3.6, 0.42, 0.85, 2.0); glass(3.66, 0.48, 0.73, 1.9); R(1, '#e4e3de', 4.6, 0.42, 1.15, 1.25); glass(4.66, 0.48, 1.03, 1.13);
+        R(0, 0.86, 3.25, 1.6, 2.8, 1.15); R(0, 1, 3.25, 1.6, 2.8, 0.05); shade(0.12, 3.25, 2.7, 2.8, 0.05);
+      }
+    } else if (name === 'classic') {
+      R(0, 0.86, 0, 0, bay, floor);
+      if (ground) { for (let y = 0.4; y < floor - 0.5; y += 0.42) { R(0, 0.68, 0, y, bay, 0.035); R(0, 0.97, 0, y + 0.035, bay, 0.02); } win(0.78, 0.6, 1.14, 2.25, { frame: '#d8d3c8', f: 0.08, tr: 0.55, sill: 0.98 }); plinth(0.5, '#9b968c', 1); }
+      else {
+        R(0, 1, 0, 0, bay, 0.16); shade(0.25, 0, 0.16, bay, 0.035); // string course
+        R(0, 0.98, 0.66, 0.63, 1.38, 2.36); shade(0.12, 0.66, 0.63, 0.06, 2.36); // surround
+        R(0, 1, 0.56, 0.42, 1.58, 0.18); shade(0.3, 0.56, 0.6, 1.58, 0.04); // cornice over the window
+        win(0.78, 0.75, 1.14, 2.1, { frame: '#d8d3c8', f: 0.08, tr: 0.5, sill: 0.98 });
+      }
+    } else if (name === 'office') {
+      R(0, 0.9, 0, 0, bay, floor);
+      const top = ground ? 0.25 : 0.4, h = ground ? floor - 0.45 : 2.45;
+      glass(0, top, bay, h, '#97abb6', '#26323a'); R(1, '#54595c', 0, top, 0.045, h); R(1, '#54595c', bay - 0.045, top, 0.045, h); R(1, '#54595c', 0, top + h - 0.05, bay, 0.05);
+      if (ground) plinth(0.2, '#3d3d3f', 1); else shade(0.2, 0, top + h, bay, 0.04);
+    } else if (name === 'glass') {
+      glass(0, 0, bay, ground ? floor : floor - 0.4, '#7f9cab', '#2a3d49'); if (!ground) R(1, '#34414b', 0, floor - 0.4, bay, 0.4);
+      R(1, '#8a9197', 0, 0, 0.04, floor); R(1, '#8a9197', bay - 0.04, 0, 0.04, floor); R(1, '#8a9197', 0, 0, bay, 0.03);
+      if (ground) { R(1, '#8a9197', 0, 2.6, bay, 0.05); plinth(0.12, '#2f3133', 1); }
+    } else if (name === 'industrial') {
+      if (ground) plinth(0.9, '#a09d97', 1);
+      else { R(1, '#7d8287', 0.3, 0.4, 3.9, 0.8); for (let x = 0.36; x < 4.1; x += 0.63) glass(x, 0.46, 0.57, 0.68, '#b9c4c8', '#7d8a90'); fade(0.15, 0.3, 1.2, 3.9, 1.5); }
+    } else if (ground) plinth(0.35);
+    ctx.restore();
+  }));
+}
+
 // One face spans a straight run of the footprint, including nodes inserted to mark entrances.
 export function facadeWalls(ring, winding, courtyard = false) {
   const corners = ring.filter((p, i) => {

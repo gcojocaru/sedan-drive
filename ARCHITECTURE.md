@@ -8,6 +8,8 @@ how each part works; this file says how the parts may fit together.
 - **No build step.** Plain HTML + native ES modules, libraries vendored under `vendor/<name>-<version>/` and loaded
   through each page's import map with SRI hashes. GitHub Pages serves the repo root as it is. No bundler, no
   TypeScript, no runtime CDN, no npm dependencies.
+- **Assets are files in the repo.** Models in `models/`, photo textures in `textures/` (CC0, each credited in
+  `textures/README.md`), loaded by the module that uses them. Nothing third-party that isn't freely licensed.
 - **Tests run on Node's built-in runner** (`node --test`, Node 22+), with no test dependencies. They cover pure code;
   rendering is checked in the browser.
 - **Refactor first, in short PRs.** The steps under [Migration](#migration) land as behaviour-neutral PRs, in order.
@@ -21,10 +23,10 @@ how each part works; this file says how the parts may fit together.
 | `sky.js` | 185 | `createSky()`: the real sun position, sky canvas, sun/moon/sky lights, shadow box, fog and exposure for a time of day and weather; rain, snow and lightning |
 | `weather.js` | 29 | `weatherNow()` (Open-Meteo: current weather and UTC offset, real-map page), WMO code table, `WEATHERS` presets, `solarHour()` |
 | `world.js` | 412 | Road/area tag tables and `buildWorld()`, which runs one builder per feature (`layRoads`, `roadLookup`, `paintCrossings`, `layRailways`, `buildWalls`, `plantTrees`, `streetLamps`, …) |
-| `buildings.js` | 267 | `buildBuildings()`: building tag tables, walls and roofs per footprint, building parts, shopfronts, lit windows, `inBuilding` |
+| `buildings.js` | 363 | `buildBuildings()`: building tag tables, walls and roofs per footprint (parapets, eaves), building parts, shopfronts, the facade shader and roof textures, `inBuilding` |
 | `world-kit.js` | 28 | three.js and tag helpers shared by the two above: `fillPoly`, `makeTex`, `tagColor`, `num`, … |
 | `map-data.js` | 55 | `loadArea()`: IndexedDB cache, proxy, Overpass servers, vector fallback |
-| `geom.js` | 195 | Pure geometry: strips, polygons, oriented boxes, roof clipping, coastline → sea |
+| `geom.js` | 204 | Pure geometry: strips, polygons, oriented boxes, roof clipping, coastline → sea |
 | `drive-track.js` | 215 | Test-track page (`Drive.html`): track, surface, lap timing, sky |
 | `drive-core.js` | 80 | Driving shared by both drive pages: `readKeys`, `rigCar`, physics `step`, `syncCar`, `chaseCamera`, `speedHud` |
 | `sedan-viewer.js` | 108 | Viewer page (`Sedan.html`): studio lights, contact shadows, light toggles, views |
@@ -35,7 +37,7 @@ how each part works; this file says how the parts may fit together.
 | `driving-audio.js` | — | Shared engine and tuning synthesis and per-tab mute |
 | `road-layout.js` | — | Pure lane, junction and spawn geometry |
 | `minimap.js` | — | North-up driving minimap and car marker, drawn on supplied canvases |
-| `building-fronts.js` | — | Ground-floor facade layout and atlas drawing on a supplied canvas context |
+| `building-fronts.js` | — | Facade layout (style, storeys, window bays, doors, shop windows) and atlas drawing on a supplied canvas context |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
 | `radio.js` | 53 | Car radio for both drive pages: `stationsNear()` (radio-browser.info, real-map page), Romanian presets (test track), `radio(show, find, tuningStatic)` player, `radioHud()` station display |
 | `touch.js` | 57 | On-screen driving buttons for touch screens, both drive pages: `touchControls(extras)` sends the keydown/keyup each button's key would |
@@ -63,7 +65,7 @@ root, one copy each. Page URLs don't change.
 | `minimap.js` | Cached raster of real-map geometry and car-centred HUD view | nothing |
 | `sky.js` | `createSky(renderer, scene, lat)` → `TIMES`, `sunAt`, `set(h, forceNight, weather)`, `update(dt, cameraPosition)`, `placeShadow(x, z)`: sun, sky, lights, fog, exposure, rain and snow | `world-kit`, `geom`, three |
 | `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, three |
-| `buildings.js` | `buildBuildings(polys, entranceNodes, roadAt, mkMesh)` → `{ blds, inBuilding, frontMat, wallMat }`; building tag tables, `roofPlanes`, shopfronts | `world-kit`, `geom`, `building-fronts`, three |
+| `buildings.js` | `buildBuildings(polys, entranceNodes, roadAt, mkMesh)` → `{ blds, inBuilding, frontMat, wallMat }`; building tag tables, `roofPlanes`, parapets and eaves, shopfronts, the facade material | `world-kit`, `geom`, `building-fronts`, three |
 | `world-kit.js` | three.js and tag helpers shared by `world.js` and `buildings.js`: `fillPoly`/`eachTri`, `makeTex`, `speckle`, `num`, `tagColor`, `matColor` | `geom`, three |
 | `map-data.js` | `loadArea(lat, lon, status)`: IndexedDB cache → proxy → Overpass → vector fallback; returns `{ data, fallback, err }` | `osm-query`, `vector-fallback` |
 | `sedan-model.js` | `buildCar()` and the axle constants: the procedural car | three |
@@ -73,7 +75,7 @@ root, one copy each. Page URLs don't change.
 | `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find, tuningStatic)` → `tune(step)`; station playback | nothing |
 | `weather.js` | `weatherNow(lat, lon, fetch)` → `{ kind, label, amount, temp, offset }`, `weatherOf(code)`, `WEATHERS`, `solarHour(ms, lon)` | nothing |
 | `touch.js` | `touchControls(extras)`: on-screen buttons for touch screens that press keys (synthetic keydown/keyup), so pages handle touch and keyboard the same way | nothing |
-| `geom.js` | Pure geometry on plain arrays (`ribbon`, `obb`, `clipHalf`, `joinRings`, `seaPolys`, …). Triangulating polygons needs three.js, so `fillPoly` is in `world-kit.js` | nothing |
+| `geom.js` | Pure geometry on plain arrays (`ribbon`, `obb`, `clipHalf`, `offsetRing`, `joinRings`, `seaPolys`, …). Triangulating polygons needs three.js, so `fillPoly` is in `world-kit.js` | nothing |
 | `osm-query.js` | Query, cache key, grid, servers, proxy address | nothing |
 | `vector-fallback.js` | Vector tiles → Overpass-shaped elements | `osm-query` |
 | `three-d-stage.js` | Viewer component | three |
@@ -94,7 +96,7 @@ and every `integrity` hash matches its file in `vendor/`.
    `surface(x, z)` or `blocked(x, z, h)`); don't fork the code.
 2. **Respect the dependency table.** No upward imports, no new DOM or three.js use in the Node-importable modules, no
    network or storage calls outside `map-data.js`, `vector-fallback.js`, `weather.js` (through a passed-in `fetch`), `radio.js` (station search through a passed-in
-   `fetch`, and the stream itself), `vaz-model.js` (its own model file), the proxy and the page entries.
+   `fetch`, and the stream itself), `vaz-model.js` (its own model file), `buildings.js` (its own photo textures in `textures/`), the proxy and the page entries.
 3. **New logic goes in its module, not in a page and not in `startGame()`.** A new world feature is its own function
    in `world.js` that `buildWorld()` calls, not more lines inside `buildWorld()`. No new inline
    `<script type="module">` logic in pages.
