@@ -26,6 +26,10 @@ Then open http://localhost:5173 — it redirects to the real-map drive.
 
 While driving on a real map, the minimap shows 240 metres across with north at the top. The amber arrow shows where your car is and which way it faces. A dashed line marks the edge of the playable area. When you reach it, choose **Load next area** to continue in that direction or **Stay here** to turn back. Neighboring map loads have a 30-second cooldown. The car resumes at rest, facing the same way.
 
+## Release version
+
+On the real map, open **Settings** with Esc or the touch menu and look for **Game version**. The test track and model viewer also display the version from `package.json`. Use `npm version patch --no-git-tag-version` for a fix, or replace `patch` with `minor` for a feature or `major` for a breaking change. Commit the manifest with the release. Both the repository-root site and the production build read the same file.
+
 ## Deploy
 
 It's a static site. GitHub Pages publishes the repo root from `main` (Settings → Pages → Deploy from a branch: `main`, `/ (root)`); `.nojekyll` makes it serve the files as they are. Any other static host works too: `npm run build` copies just the site files into `dist/` (`npm run preview` builds and serves it on :5174).
@@ -47,9 +51,12 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | V | Mute or unmute engine sound and tuning static. The radio has its own off position. |
 | Q · Shift+Q | Radio: next / previous station, last one is off (real-map page: up to 30 stations from around the chosen place; test track: Romanian stations) |
 | R | Reset / back on the road |
+| J | Start or cancel a parcel delivery (real-map page). You can also use the Start delivery button. |
 | M | Choose another place (real-map page) |
 
 On phones and tablets only the driving controls appear on screen: steer on the left, gas and brake/reverse on the right. The ••• button above the brake opens the rest (handbrake, lights, time of day or night, weather, settings, camera, radio, reset).
+
+In a delivery job, follow the mint minimap marker and stop inside the road ring to collect the parcel. The marker then moves to the drop-off. Each job stays in the current area.
 
 ## What gets built from the map (real-map page)
 

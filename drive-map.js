@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { laneSpawn } from './road-layout.js';
+import { deliveryHud } from './delivery-hud.js';
 import { createMinimap } from './minimap.js';
 import { drivingAudio } from './driving-audio.js';
 import { crossedEdge, nextArea, cooldownSeconds, startCooldown, visitArea, cooldownButton, edgePrompt } from './area-travel.js';
@@ -17,6 +18,9 @@ import { createSky } from './sky.js';
 import { WEATHERS, weatherNow, solarHour, groundOf } from './weather.js';
 import { laneGraph, createTraffic, LEVELS } from './traffic.js';
 import { trafficCars } from './traffic-cars.js';
+import { showAppVersion } from './app-version.js';
+
+showAppVersion();
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = id => document.getElementById(id);
@@ -159,7 +163,8 @@ async function startGame(lat0, lon0, placeName) {
   const CAR = localStorage.getItem(LS_CAR) === 'vaz' ? await loadVaz().catch(e => (console.warn('VAZ-2101 did not load, using the sedan', e), buildCar())) : buildCar(), car = CAR.car;
   const rig = rigCar(CAR);
   const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), probe = new THREE.Sphere(V(), 3); // what the camera sees: traffic comes and goes out of sight
-  const traffic = createTraffic(laneGraph(roads, layout.junctions, HALF), { max: matchMedia('(pointer: coarse)').matches ? 45 : 100, seen: (x, z) => frustum.intersectsSphere((probe.center.set(x, 1, z), probe)) });
+  const graph = laneGraph(roads, layout.junctions, HALF);
+  const traffic = createTraffic(graph, { max: matchMedia('(pointer: coarse)').matches ? 45 : 100, seen: (x, z) => frustum.intersectsSphere((probe.center.set(x, 1, z), probe)) });
   const trafficView = trafficCars(scene, 100, glowTex), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
   {
     const blob = (inner, a) => makeTex(128, 128, (x) => { const g = x.createRadialGradient(64, 64, 64 * inner, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); });
@@ -269,6 +274,11 @@ async function startGame(lat0, lon0, placeName) {
     return object === 'car' ? 'car' : object ? 'bld' : null;
   }
 
+  const delivery = deliveryHud(scene, graph, furnitureHit, $('jobButton'), $('jobStage'), $('jobDistance'), flash);
+  function toggleDelivery() {
+    if (started && !paused()) delivery.toggle(st.pos.x,st.pos.z);
+  }
+  $('jobButton').onclick = () => { toggleDelivery(); $('jobButton').blur(); };
   const TUNE = { power: 7.4, idle: 0.5, vtop: 50 };
   function update(dt) {
     const k = readKeys(keys), ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
@@ -279,6 +289,7 @@ async function startGame(lat0, lon0, placeName) {
       else if (hit) { st.v = 0; boundary.offer(hit); } // the edge of the area
       return !!hit;
     });
+    if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v);
     sound.update(st.v, !paused() && k.up, !paused() && k.dn);
     return s;
   }
@@ -298,7 +309,7 @@ async function startGame(lat0, lon0, placeName) {
   const kmh = $('kmh'), gear = $('gear'), streetEl = $('street');
   let streetT = 0, shownStreet = null;
   function hud(s, dt) {
-    drawMinimap(st.pos.x, st.pos.z, st.h);
+    drawMinimap(st.pos.x, st.pos.z, st.h, delivery.target);
     speedHud(kmh, gear, st, s);
     if ((streetT -= dt) > 0) return; streetT = 0.25;
     const r = roadAt(st.pos.x, st.pos.z); let label = '';
@@ -327,6 +338,7 @@ async function startGame(lat0, lon0, placeName) {
       const next = nextArea(lat0, lon0, direction, pose());
       return next && { ...next, direction, from: { lat: lat0, lon: lon0, name: placeName, entry: pose() } };
     },
+    departureNote: () => delivery.target ? ' Leaving this area ends your delivery.' : '',
     depart: visitArea
   });
   if (visit?.from) history.replaceState({ ...history.state, visit: { lat: lat0, lon: lon0, entry } }, '');
@@ -345,10 +357,12 @@ async function startGame(lat0, lon0, placeName) {
   addEventListener('keydown', e => {
     if (paused()) return; // a dialog has the keys (Esc closes the settings again)
     if (e.code === 'Escape') { e.preventDefault(); clearKeys(); settings.showModal(); return; } // preventDefault: the same press would close it again
+    if (e.target === $('jobButton') && ['Space','Enter'].includes(e.code)) return;
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     if (e.code === 'KeyM') { backToMap(); return; }
     if (!e.repeat) begin();
     keys[e.code] = true; if (e.repeat) return;
+    if (e.code === 'KeyJ') toggleDelivery();
     if (e.code === 'KeyH') { head = !head; setLights(); }
     const next = (i, n) => i === 'live' ? 0 : i + 1 < n ? i + 1 : 'live'; // live, then each preset in turn
     if (e.code === 'KeyN') { tSel = tSel === NIGHT ? dayIdx : NIGHT; applyTime(true); }

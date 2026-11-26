@@ -4,6 +4,9 @@ import { readKeys, rigCar, step, syncCar, chaseCamera, speedHud } from './drive-
 import { radio, radioHud } from './radio.js';
 import { drivingAudio } from './driving-audio.js';
 import { touchControls } from './touch.js';
+import { showAppVersion } from './app-version.js';
+
+showAppVersion();
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
 const C = buildCar(), rig = rigCar(C), car = C.car;

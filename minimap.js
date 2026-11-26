@@ -58,14 +58,37 @@ export function createMinimap(canvas, base, half, geometry) {
   const ctx = canvas.getContext('2d');
   const size = 180; // drawing units, independent of the display's CSS size
   ctx.scale(canvas.width / size, canvas.height / size);
-  let lastX, lastZ, lastHeading;
-  return (x, z, heading) => {
-    if (x === lastX && z === lastZ && heading === lastHeading) return;
-    lastX = x; lastZ = z; lastHeading = heading;
+  let lastX, lastZ, lastHeading, lastTarget;
+  return (x, z, heading, target = null) => {
+    if (x === lastX && z === lastZ && heading === lastHeading && target === lastTarget) return;
+    lastX = x; lastZ = z; lastHeading = heading; lastTarget = target;
     const { left, top, span, rotation } = minimapView(x, z, heading, half);
     ctx.fillStyle = '#151d21';
     ctx.fillRect(0, 0, size, size);
     ctx.drawImage(base, left, top, span, span, 0, 0, size, size);
+
+    const bar = 50 * size / span;
+    ctx.fillStyle = '#172126';
+    ctx.fillRect(6, size - 19, bar + 36, 15);
+    ctx.fillStyle = '#e6edeb';
+    ctx.fillRect(10, size - 10, bar, 2);
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText('50 m', 15 + bar, size - 8);
+
+    if (target) {
+      const dx = (target.x-x)*size/span, dz = (target.z-z)*size/span;
+      const scale = Math.min(1, (size/2-13)/(Math.max(Math.abs(dx),Math.abs(dz)) || 1));
+      ctx.save();
+      ctx.translate(size/2 + dx*scale, size/2 + dz*scale);
+      ctx.beginPath();
+      if (scale < 1) {
+        ctx.rotate(Math.atan2(dz,dx));
+        ctx.moveTo(8,0); ctx.lineTo(-5,-6); ctx.lineTo(-5,6); ctx.closePath();
+      } else ctx.arc(0,0,7,0,Math.PI*2);
+      ctx.fillStyle = '#68e6d3'; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = '#102d2c'; ctx.stroke();
+      ctx.restore();
+    }
 
     ctx.save();
     ctx.translate(size / 2, size / 2);
@@ -80,12 +103,6 @@ export function createMinimap(canvas, base, half, geometry) {
     ctx.fill();
     ctx.restore();
 
-    const bar = 50 * size / span;
-    ctx.fillStyle = '#172126';
-    ctx.fillRect(6, size - 19, bar + 36, 15);
-    ctx.fillStyle = '#e6edeb';
-    ctx.fillRect(10, size - 10, bar, 2);
-    ctx.font = 'bold 10px sans-serif';
-    ctx.fillText('50 m', 15 + bar, size - 8);
+
   };
 }
