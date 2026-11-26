@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { prepareRoads } from '../road-layout.js';
-import { laneGraph, createTraffic, lightAt, LEVELS } from '../traffic.js';
+import { laneGraph, createTraffic, lightAt, ranRed, LEVELS } from '../traffic.js';
 import { seeded } from '../geom.js';
 
 const LEN_ = 2.2; // a car's half length
@@ -156,6 +156,22 @@ test('a mapped signal puts a light on every road into its junction, in two phase
     }
     assert.ok(seen.green && seen.amber && seen.red);
   }
+});
+
+test('running a red light is crossing a stop line into the junction while it shows red', () => {
+  const { graph } = grid(3, 100, 'right', [[0, 0]]), east = graph.signals.find(s => s.e.dirA[0] > 0.99);
+  const others = graph.signals.filter(s => s !== east);
+  for (const s of graph.signals) s.state = 'green';
+  const line = east.cx, lane = east.cz; // eastbound: the stop line runs north–south at x = line, its lane at z = lane
+  assert.equal(ranRed(graph.signals, line - 2, lane, line + 1, lane), null, 'green');
+  east.state = 'amber';
+  assert.equal(ranRed(graph.signals, line - 2, lane, line + 1, lane), null, 'amber is allowed');
+  east.state = 'red';
+  assert.equal(ranRed(graph.signals, line - 2, lane, line + 1, lane), east);
+  assert.equal(ranRed(graph.signals, line - 2, lane, line - 0.5, lane), null, 'stopping short');
+  assert.equal(ranRed(graph.signals, line + 1, lane, line - 2, lane), null, 'leaving the junction the other way');
+  assert.equal(ranRed(graph.signals, line - 2, lane - 8, line + 1, lane - 8), null, 'in the lanes going the other way');
+  assert.ok(Math.abs(lane - 1.575) < 1e-6 && others.every(s => s.state === 'green'));
 });
 
 test('with no signals mapped, lights go where main roads cross, never at roundabouts or on side streets', () => {

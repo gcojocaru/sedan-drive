@@ -43,8 +43,8 @@ how each part works; this file says how the parts may fit together.
 | `traffic.js` | — | Traffic on the real map: lane graph, traffic lights, car following, junction claims, spawning around the player |
 | `traffic-cars.js` | — | The traffic cars on screen: instanced bodies, paint, brake lights and night glows |
 | `app-version.js` | — | Shared release label from the local package manifest |
-| `delivery.js` | — | Parcel stops on connected, directed lanes and pickup/drop-off state |
-| `delivery-hud.js` | — | Current job prompt and road marker |
+| `delivery.js` | — | Parcel stops on connected, directed lanes, pickup/drop-off state, the clock, damage, fines and pay |
+| `delivery-hud.js` | — | Current job prompt, countdown, receipt and road marker |
 | `minimap-labels.js` | — | Nearby street and address labels, footprint anchors and label spacing |
 | `traffic-lights.js` | — | Traffic light poles and signal heads on screen, the lamp that's on |
 | `minimap.js` | — | North-up driving minimap and car marker, drawn on supplied canvases |
@@ -74,13 +74,13 @@ root, one copy each. Page URLs don't change.
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model`, `app-version` |
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`), the ground under the car (`vmax`, `drag`, `rough`, `grip`) and collisions | nothing (works on the three.js objects it is given) |
 | `app-version.js` | Show the current release on the three game pages | nothing |
-| `delivery.js` | Select reachable stops and advance an area-local parcel job | nothing |
-| `delivery-hud.js` | Drive the HUD and place the active stop in the scene | `delivery`, three |
+| `delivery.js` | Select reachable stops and advance an area-local parcel job; `allowedTime`, `afterCrash`, `deliveryPay`, `receiptText` | nothing |
+| `delivery-hud.js` | Drive the HUD (countdown, damage and fines, receipt) and place the active stop in the scene; `paid(receipt)` hands the pay to the page | `delivery`, three |
 | `minimap.js` | Cached raster of real-map geometry, car and goal markers, traffic as dots | `minimap-labels`, `delivery` |
 | `minimap-labels.js` | Nearby names and address numbers on the supplied canvas | `geom` |
 | `traffic-cars.js` | `trafficCars(scene, max, glowTex)` → `sync(cars, lit)`: instanced car bodies posed from `traffic.js` cars | three |
 | `traffic-lights.js` | `trafficLights(scene, signals, glowTex)` → `sync(lit)`: the signal heads in `graph.signals`, showing their `state` | three |
-| `traffic.js` | `laneGraph(roads, junctions, half, signals)` → lanes, nodes and `signals` (light heads), `lightAt(signal, t)`, `createTraffic(graph, { rand, max, seen })` → `step`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
+| `traffic.js` | `laneGraph(roads, junctions, half, signals)` → lanes, nodes and `signals` (light heads), `lightAt(signal, t)`, `ranRed(signals, ax, az, bx, bz)`, `createTraffic(graph, { rand, max, seen })` → `step`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
 | `sky.js` | `createSky(renderer, scene, lat)` → `TIMES`, `sunAt`, `set(h, forceNight, weather, snow)`, `update(dt, cameraPosition)`, `placeShadow(x, z)`: sun, sky, lights, fog, exposure, rain and snow | `world-kit`, `geom`, three |
 | `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`), mapped traffic signals (`signalPts`), wet and snowy surfaces (`setGround(wet, snow)`, `reflectLamps(x, z)`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, `sign-layout`, `sign-mesh`, `street-furniture`, `furniture-mesh`, three |
 | `street-furniture.js` | Plan parked cars and mapped furnishings and provide the player collision lookup | `geom`, `osm-query` |

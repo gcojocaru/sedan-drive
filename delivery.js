@@ -2,6 +2,24 @@
 export const STOP_RADIUS = 7;
 const separation = (a,b) => Math.hypot(a.x-b.x, a.z-b.z);
 
+// What's at stake once the parcel is aboard: the clock, the parcel's condition and the fines.
+export const FINE = 10; // for running a red light
+// Seconds allowed from pickup to drop-off `metres` apart: by road about 1.5 times as far, at 9 m/s (town driving,
+// junctions and lights), plus 25 s to find the way.
+export const allowedTime = metres => Math.round(25 + 1.5 * metres / 9);
+// The parcel's condition (1 = perfect, 0 = ruined) after a crash at `speed` m/s: a knock under 1.5 m/s does nothing,
+// one at 30 km/h takes about a third off, and a crash at 75 km/h ruins it.
+export const afterCrash = (condition, speed) => Math.max(0, condition - Math.max(0, Math.abs(speed) - 1.5) / 19.3);
+// The pay for a delivery, in whole money: base for the distance, a bonus of up to 40% for arriving early, less for
+// arriving late (down to a fifth of the base a minute late), less for the damage, minus the fines. Never below 0.
+export function deliveryPay({ metres, allowed, taken, condition = 1, fines = 0 }) {
+  const base = Math.round(5 + 0.03 * metres), spare = allowed - taken;
+  const bonus = spare > 0 ? Math.round(0.4 * base * spare / allowed) : 0;
+  const late = spare < 0 ? -Math.round(base * Math.min(0.8, -spare / 75)) : 0;
+  const damage = -Math.round((base + bonus + late) * (1 - condition));
+  return { base, bonus, late, damage, fines: -fines, total: Math.max(0, base + bonus + late + damage - fines) };
+}
+
 // Clip a segment before sampling. A road can leave the playable square and come back.
 function clip(ax, az, dx, dz, bound) {
   let lo = 0, hi = 1;
@@ -58,8 +76,20 @@ function reachable(start) {
   return stops;
 }
 
+// Money and time as the HUD shows them: $12 or −$10; m:ss (of a duration either side of zero)
+export const money = n => (n < 0 ? '−$' : '$') + Math.abs(n);
+export const minutes = s => { s = Math.round(Math.abs(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+// A delivery's receipt for the HUD: what it paid and how long it took, then the pay and each adjustment there was
+export function receiptText(r) {
+  const parts = [[r.base, 'pay'], [r.bonus, 'early'], [r.late, 'late'], [r.damage, 'damage'], [r.fines, r.fines === -FINE ? 'red light' : 'red lights']];
+  return { title: 'Delivered in ' + minutes(r.taken) + ' · ' + money(r.total), detail: parts.filter(([n]) => n).map(([n, what], i) => (i && n > 0 ? '+' : '') + money(n) + ' ' + what).join(' · ') };
+}
+
+// A job: pick the parcel up, then drop it off. Once it's aboard (`load`: { metres, allowed, since, condition,
+// fines }), crash() damages it and ranRed() fines the driver; delivering it leaves the pay in `receipt`. Times are
+// in seconds of driving, passed in as t.
 export function createDelivery(stops, random = Math.random) {
-  let phase = 'idle', pickup, dropoff;
+  let phase = 'idle', pickup, dropoff, load = null, receipt = null;
   const pick = list => list[Math.floor(random()*list.length)];
   function start(x,z) {
     if (phase !== 'idle' || !stops.length) return false;
@@ -82,10 +112,19 @@ export function createDelivery(stops, random = Math.random) {
     start,
     get phase() { return phase; },
     get target() { return phase === 'pickup' ? pickup : phase === 'dropoff' ? dropoff : null; },
-    cancel() { phase = 'idle'; pickup = dropoff = null; },
-    arrive(x,z,speed) {
+    get load() { return load; },
+    get receipt() { return receipt; },
+    cancel() { phase = 'idle'; pickup = dropoff = load = null; },
+    crash(speed) { if (load) load.condition = afterCrash(load.condition, speed); },
+    ranRed() { if (load) load.fines += FINE; },
+    arrive(x,z,speed,t = 0) {
       if (!this.target || Math.abs(speed) > 0.5 || separation(this.target,{x,z}) > STOP_RADIUS) return null;
-      if (phase === 'pickup') { phase = 'dropoff'; return 'collected'; }
+      if (phase === 'pickup') {
+        const metres = separation(pickup, dropoff);
+        phase = 'dropoff'; load = { metres, allowed: allowedTime(metres), since: t, condition: 1, fines: 0 };
+        return 'collected';
+      }
+      receipt = { ...deliveryPay({ ...load, taken: t - load.since }), taken: t - load.since, condition: load.condition };
       this.cancel();
       return 'delivered';
     }
