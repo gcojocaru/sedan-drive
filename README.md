@@ -54,11 +54,13 @@ On phones and tablets only the driving controls appear on screen: steer on the l
 ## What gets built from the map (real-map page)
 
 - **Roads** at their tagged width, sidewalks, lane markings (centre line, edge lines, lane dividers from `lanes=*`), zebra crossings, railings on bridges.
+- Teal street signs mark junctions where named roads meet. Brown roadside signs identify nearby mapped parks, stations and shops by name.
 - Cars start and reset in a travel lane. Connected junctions have rounded corners, gaps in the lane markings and stop lines at mapped stops.
 - **Buildings** from footprints and height/level tags, with `roof:shape` roofs (gabled, hipped, pyramidal, skillion, dome, onion). Untagged houses get a pitched roof unless mappers in the area mostly tag flat roofs. `building:part` pieces replace their outline, so landmarks with 3D tagging come out properly. `building:colour`/`material` and `roof:colour`/`material` are used.
 - Ground-floor doors follow mapped entrances, with a street-facing doorway inferred when a building has none mapped. Retail frontages have framed display windows and a few softly lit bays at night.
 - **Ground**: residential, commercial and industrial land, parking lots, plazas, parks, forests, farmland, beaches, rivers, lakes, and the **sea**, which is built from coastlines.
 - **Railways** (ballast, sleepers, rails), **tram tracks**, **walls, fences and hedges**, piers and breakwaters, trees (mapped trees, tree rows, parks and forests, scattered garden trees).
+- Outdoor parking lots contain parked cars with gaps for driving aisles. Benches, bollards and bus-stop poles appear at mapped locations.
 - Parking lots and plazas count as hard ground, so the car keeps its road speed there.
 - **Weather on the ground**: in rain the roads, sidewalks and roofs turn dark and glossy, with puddles, and at night the street lamps glint in the wet asphalt. Snow whitens the ground, roofs, wall tops and tree crowns, and leaves grey slush on the roads. Live weather goes by the real snow depth and the last few hours of rain, so snow stays after it stops falling and roads stay wet after a shower (the clock line then says e.g. "20 cm on the ground" or "wet roads"). Wet roads cost about a third of the grip and full snow over half: braking from 50 km/h takes about 8 m wet and 12 m on snow instead of 5, the car pulls away slower on snow, and corners taken too fast make it slide wide until its path lines up with where it points again.
 - **Traffic**: other cars drive the streets around you in their lanes, on the side of the road the place drives on, at each road's speed limit (`maxspeed`, or a typical speed for the road type), slowing for bends. They keep their distance, stop for you if you're in their way, and take junctions in turn without blocking them. One-way streets are respected, and service roads and private roads stay empty. Their lights come on at dusk and their brake lights as they slow. Bumping into one is like hitting a wall. New cars appear out of sight 150 to 260 m away; set the amount in the settings (Esc).
@@ -90,6 +92,10 @@ world-kit.js          three.js and tag helpers shared by world.js and buildings.
 geom.js               pure geometry helpers (strips, polygons, roofs, coastline → sea)
 drive-core.js         driving shared by both drive pages: physics (with grip and sliding), car posing, chase camera, speed HUD
 building-fronts.js    ground-floor entrance placement and retail window layouts
+street-furniture.js   outdoor parking rows, furniture placement and collision footprints
+furniture-mesh.js     instanced benches, bollards and bus-stop poles
+sign-layout.js        curbside placement of named street and landmark signs
+sign-mesh.js          sign lettering, two-sided boards and posts
 road-layout.js        directional lanes, junction corners, stop lines and spawn positions
 area-travel.js        adjacent map areas, boundary prompts and load cooldown
 driving-audio.js      synthesized engine and radio tuning sounds for both drive pages

@@ -6,6 +6,10 @@ import * as THREE from 'three';
 import { same, joinRings, inPoly, polyArea, bbox, newBuf, quad, disc, ribbon, offsetLine, cumLen, densify, runs, wallStrip, fenceStrip, seaPolys, gkey, segDist } from './geom.js';
 import { fillPoly, makeTex, speckle, num, tagColor, matColor, WALL_MAT, weatherLook } from './world-kit.js';
 import { buildBuildings } from './buildings.js';
+import { landmarkName, planSigns } from './sign-layout.js';
+import { furnitureKind, planFurniture } from './street-furniture.js';
+import { addFurniture } from './furniture-mesh.js';
+import { addSignMeshes } from './sign-mesh.js';
 import { drivingSide, prepareRoads, mappedStops } from './road-layout.js';
 import { HALF } from './osm-query.js';
 
@@ -89,7 +93,7 @@ const isBridge = t => t.bridge && t.bridge !== 'no';
 // reflectLamps(x, z), called as the camera moves, lets the lit street lamps nearest it glint in wet roads.
 export async function buildWorld(elements, lat0, lon0, scene, say) {
   await say('Building the streets…');
-  const { lines, polys, treePts, crossPts, stopNodes, entranceNodes } = parseElements(elements, lat0, lon0);
+  const { lines, polys, treePts, crossPts, stopNodes, entranceNodes, landmarks, furniture } = parseElements(elements, lat0, lon0);
   const wx = weatherLook(), { wear } = wx;
   const G = groundLayers(scene, wear), { LAYERS, BUF } = G;
   for (const p of polys) if (LAYERS[p.kind]) fillPoly(BUF[p.kind], p.outer, p.holes, LAYERS[p.kind][1]); // area fills
@@ -110,8 +114,13 @@ export async function buildWorld(elements, lat0, lon0, scene, say) {
   const { blds, inBuilding, frontMat, wallMat } = buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear);
   await say('Planting trees…');
   const trees = plantTrees(scene, treePts, rows, polys, G.noise, look, areaAt, inBuilding, wear);
-  const { setLamps, glowTex } = streetLamps(scene, roads, look, areaAt, inBuilding, wx);
-  return { roads, paths, rivers, polys, seas, blds, trees, nB, layout, roadAt, areaAt, inBuilding, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex };
+  const { setLamps, glowTex, lamps } = streetLamps(scene, roads, look, areaAt, inBuilding, wx);
+  const clear = signClearance(trees, lamps, look, areaAt, inBuilding);
+  const { objects, hit } = planFurniture(furniture, polys, roadAt, clear);
+  addFurniture(scene, objects);
+  const signFree = (x,z) => clear(x,z) && !hit(x,z,0,0.35,0.35);
+  addSignMeshes(scene, planSigns(layout.junctions, landmarks, roadAt, signFree));
+  return { roads, paths, rivers, polys, seas, blds, trees, nB, layout, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex };
 }
 
 // OSM elements → local metres: lines (ways), polys (closed areas and multipolygons), and the point features we use.
@@ -119,10 +128,18 @@ function parseElements(elements, lat0, lon0) {
   const cosL = Math.cos(lat0 * Math.PI / 180), KX = 111320 * cosL, KZ = 110574;
   const P = (lat, lon) => [(lon - lon0) * KX, -(lat - lat0) * KZ];
   const lines = [], polys = [], treePts = [], crossPts = [], stopNodes = [];
-  const entranceNodes = new Set();
+  const entranceNodes = new Set(), landmarks = [], furniture = [];
+  function area(kind, outer, holes, t, id, label) {
+    if (kind) polys.push({ kind, outer, holes, t, id });
+    if (label) landmarks.push({ label, points: outer });
+  }
   for (const el of elements) {
     if (el.type === 'node') {
       const tags = el.tags || {}, p = P(el.lat, el.lon);
+      const kind = furnitureKind(tags);
+      if (kind) furniture.push({ kind, t: tags, point: p });
+      const label = landmarkName(tags);
+      if (label) landmarks.push({ label, points: [p] });
       const entrance = tags.entrance || (tags.building === 'entrance' ? 'yes' : '');
       if (entrance && entrance !== 'no' && (!tags.level || tags.level.split(';').some(level => Number(level) === 0))) {
         entranceNodes.add(p.join(','));
@@ -132,20 +149,25 @@ function parseElements(elements, lat0, lon0) {
       else if (tags.natural === 'tree') treePts.push(p);
       continue;
     }
-    const t = el.tags || {}, kind = areaKind(t);
+    const t = el.tags || {}, kind = areaKind(t), label = landmarkName(t);
     if (el.type === 'way') {
       if (!el.geometry || el.geometry.length < 2) continue;
       const g = el.geometry.map(p => P(p.lat, p.lon)), closed = g.length > 3 && same(g[0], g[g.length - 1]);
-      if (kind && closed) polys.push({ kind, outer: g, holes: [], t, id: el.id });
+      const item = furnitureKind(t);
+      if (item) {
+        const middle = Math.floor((g.length-1)/2), a = g[middle], b = g[middle+1];
+        furniture.push({ kind: item, t, point: [(a[0]+b[0])/2, (a[1]+b[1])/2] });
+      }
+      if ((kind || label) && closed) area(kind, g, [], t, el.id, label);
       else lines.push({ t, g, nodes: el.nodes });
-    } else if (el.type === 'relation' && kind) {
+    } else if (el.type === 'relation' && (kind || label)) {
       const outs = [], ins = [];
       for (const m of el.members || []) { if (m.type !== 'way' || !m.geometry) continue; const g = m.geometry.filter(Boolean).map(p => P(p.lat, p.lon)); if (g.length > 1) (m.role === 'inner' ? ins : outs).push(g); }
       const I = joinRings(ins);
-      for (const o of joinRings(outs)) polys.push({ kind, outer: o, holes: I.filter(h => inPoly(h[0][0], h[0][1], o)), t, id: el.id });
+      for (const o of joinRings(outs)) area(kind, o, I.filter(h => inPoly(h[0][0], h[0][1], o)), t, el.id, label);
     }
   }
-  return { lines, polys, treePts, crossPts, stopNodes, entranceNodes };
+  return { lines, polys, treePts, crossPts, stopNodes, entranceNodes, landmarks, furniture };
 }
 
 // Textures, the flat ground layers (each with its own buffer, filled by the builders below) and the base ground plane.
@@ -417,5 +439,25 @@ function streetLamps(scene, roads, { onDrive }, areaAt, inBuilding, wx) {
     setLamps = on => { lampHead.emissiveIntensity = on ? 3.5 : 0; pools.visible = glows.visible = on; wx.lit(on); };
     wx.lamps(gp);
   }
-  return { setLamps, glowTex };
+  return { setLamps, glowTex, lamps };
+}
+
+
+// Test a proposed sign against nearby tree trunks and lamp posts as well as the terrain.
+function signClearance(trees, lamps, { roadAt, nearRail }, areaAt, inBuilding) {
+  const grid = new Map(), cell = 5;
+  for (const p of [...trees, ...lamps]) {
+    const key = gkey(Math.floor(p[0] / cell), Math.floor(p[1] / cell));
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(p);
+  }
+  return (x, z) => {
+    if (roadAt(x, z).ae < 0.3 || inBuilding(x, z, 1) || inBuilding(x, z, 2.6) ||
+        areaAt(x, z, ['water']) || nearRail(x, z)) return false;
+    const ix = Math.floor(x / cell), iz = Math.floor(z / cell);
+    for (let i = ix-1; i <= ix+1; i++) for (let j = iz-1; j <= iz+1; j++) {
+      for (const p of grid.get(gkey(i,j)) || []) if ((p[0]-x)**2 + (p[1]-z)**2 < 1.5**2) return false;
+    }
+    return true;
+  };
 }
