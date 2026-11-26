@@ -167,6 +167,9 @@ async function startGame(lat0, lon0, placeName) {
   const graph = laneGraph(roads, layout.junctions, HALF, signalPts), lightsView = trafficLights(scene, graph.signals, glowTex);
   const traffic = createTraffic(graph, { max: matchMedia('(pointer: coarse)').matches ? 45 : 100, seen: (x, z) => frustum.intersectsSphere((probe.center.set(x, 1, z), probe)) });
   const trafficView = trafficCars(scene, 100, glowTex), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
+  const ear = { x: 0, z: 0, fx: 1, fz: 0, vx: 0, vz: 0, wet: 0, snow: 0, me }, look = V(0, 0, 0); // the camera, listening to the traffic
+  const SOLID = { bld: 'wall', car: 'car', traffic: 'car', post: 'post' }; // what blocked() hits → its crash sound
+  let hitCar = null; // the traffic car blocked() last found
   {
     const blob = (inner, a) => makeTex(128, 128, (x) => { const g = x.createRadialGradient(64, 64, 64 * inner, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); });
     const mk = (tex, w, d, x, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.07, z); m.renderOrder = 2; car.add(m); };
@@ -243,7 +246,7 @@ async function startGame(lat0, lon0, placeName) {
     if (tSel !== NIGHT) dayIdx = tSel;
     const w = weatherOf(), ground = groundOf(w); // wet roads, snow on the ground and roofs, and how well the tyres grip
     let e, murky; ({ night, e, lowLight, murky } = sky.set(hourOf(), tSel === NIGHT, w, ground.snow));
-    setGround(ground.wet, ground.snow); grip = ground.grip;
+    setGround(ground.wet, ground.snow); grip = ground.grip; ear.wet = ground.wet; ear.snow = ground.snow;
     if (frontMat) frontMat.emissiveIntensity = night ? 0.60 : e < 0 ? 0.25 : 0;
     wallMat.emissiveIntensity = night ? 1.6 : e < 0 ? 0.9 : 0;
     setLamps(lowLight);
@@ -269,10 +272,10 @@ async function startGame(lat0, lon0, placeName) {
       const edge = crossedEdge(wx, wz);
       if (edge) return edge;
       if (inBuilding(wx, wz, 0.6)) return 'bld';
-      if (traffic.hit(wx, wz)) return 'car';
+      if ((hitCar = traffic.hit(wx, wz))) return 'traffic';
     }
     const object = furnitureHit(x,z,h);
-    return object === 'car' ? 'car' : object ? 'bld' : null;
+    return object === 'car' ? 'car' : object ? 'post' : null;
   }
 
   const delivery = deliveryHud(scene, graph, furnitureHit, $('jobButton'), $('jobStage'), $('jobDistance'), flash);
@@ -286,12 +289,15 @@ async function startGame(lat0, lon0, placeName) {
     const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard, grip }, TUNE, (nx, nz, nh) => {
       const hit = blocked(nx, nz, nh);
       boundary.move(st.pos.x, st.pos.z);
-      if (hit === 'bld' || hit === 'car') { const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20); }
+      if (SOLID[hit]) {
+        const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20);
+        sound.impact(imp, SOLID[hit]); if (hit === 'traffic' && imp > 2) sound.honkAt(hitCar, ear); // and the other driver lets you know
+      }
       else if (hit) { st.v = 0; boundary.offer(hit); } // the edge of the area
       return !!hit;
     });
     if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v);
-    sound.update(st.v, !paused() && k.up, !paused() && k.dn);
+    sound.update(st.v, !paused() && k.up, !paused() && k.dn, { hb: !paused() && k.hb, steer: st.steer, slip: st.slip, rough: !onHard, wet: ear.wet, snow: ear.snow, grip });
     return s;
   }
   function glows(s) {
@@ -346,7 +352,7 @@ async function startGame(lat0, lon0, placeName) {
   load.style.display = 'none';
   $('hud').style.display = 'block';
   const startEl = $('start'); startEl.style.display = started ? 'none' : 'flex';
-  const touch = () => touchControls([['Lights', 'KeyH'], ['Time', 'KeyT'], ['Weather', 'KeyE'], ['Settings', 'Escape'], ['Camera', 'KeyC'], ['Radio', 'KeyQ'], ['Sound', 'KeyV'], ['Reset', 'KeyR']]);
+  const touch = () => touchControls([['Lights', 'KeyH'], ['Time', 'KeyT'], ['Weather', 'KeyE'], ['Settings', 'Escape'], ['Camera', 'KeyC'], ['Horn', 'KeyB'], ['Radio', 'KeyQ'], ['Sound', 'KeyV'], ['Reset', 'KeyR']]);
   if (started) { $('keys').style.opacity = 0; touch(); } // arrived from the next area: no start screen
   function begin() {
     sound.activate(); if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => $('keys').style.opacity = 0, 7000);
@@ -362,6 +368,7 @@ async function startGame(lat0, lon0, placeName) {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     if (e.code === 'KeyM') { backToMap(); return; }
     if (!e.repeat) begin();
+    if (e.code === 'KeyB') sound.horn(true);
     keys[e.code] = true; if (e.repeat) return;
     if (e.code === 'KeyJ') toggleDelivery();
     if (e.code === 'KeyH') { head = !head; setLights(); }
@@ -374,8 +381,8 @@ async function startGame(lat0, lon0, placeName) {
     if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);
     if (e.code === 'KeyR') { const s = laneSpawn(layout.spawnSegments, st.pos.x, st.pos.z, st.h, HALF, furnitureHit); if (s) { traffic.clear(s.x, s.z, 8); place(s.x, s.z, s.h); } }
   });
-  addEventListener('keyup', e => keys[e.code] = false);
-  addEventListener('blur', clearKeys);
+  addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyB') sound.horn(false); });
+  addEventListener('blur', () => { clearKeys(); sound.horn(false); });
   addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
   let last = performance.now(), lastS = { braking: false, reversing: false };
   renderer.setAnimationLoop(now => {
@@ -386,6 +393,9 @@ async function startGame(lat0, lon0, placeName) {
       Object.assign(me, { x: st.pos.x, z: st.pos.z, h: st.h, v: st.v }); traffic.step(dt, me);
     }
     trafficView.sync(traffic.cars, dim); lightsView.sync(dim);
+    camera.getWorldDirection(look); const flat = Math.hypot(look.x, look.z) || 1;
+    Object.assign(ear, { x: camera.position.x, z: camera.position.z, fx: look.x / flat, fz: look.z / flat, vx: Math.cos(st.h) * st.v, vz: -Math.sin(st.h) * st.v });
+    sound.traffic(traffic.cars, ear);
     syncCar(rig, st, lastS, head); glows(lastS); updateCam(dt); hud(lastS, dt);
     renderer.render(scene, camera);
   });

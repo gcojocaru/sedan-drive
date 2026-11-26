@@ -159,7 +159,7 @@ const TUNE = { power: 7.8, idle: 0.6, vtop: 60 };
 function update(dt) {
   const k = readKeys(keys), rough = nearest(st.pos).d > HW + 1.6, prev = st.idx;
   const s = step(st, k, dt, { vmax: rough ? 15 : 52, drag: rough ? 0.9 : 0.02, rough }, TUNE);
-  sound.update(st.v, k.up, k.dn);
+  sound.update(st.v, k.up, k.dn, { hb: k.hb, steer: st.steer, slip: st.slip, rough });
   st.idx = nearest(st.pos).i; lapLogic(prev, st.idx);
   if (k.dn && st.v <= 0.2 && Math.abs(st.v) < 0.5) s.reversing = true; // reverse lamp on while holding brake at a standstill
   return s;
@@ -190,7 +190,7 @@ const startEl = el('start');
 const sound = drivingAudio();
 function begin() {
   sound.activate(); if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => el('keys').style.opacity = 0, 6000);
-  touchControls([['Lights', 'KeyH'], ['Night', 'KeyN'], ['Camera', 'KeyC'], ['Radio', 'KeyQ'], ['Sound', 'KeyV'], ['Reset', 'KeyR']]);
+  touchControls([['Lights', 'KeyH'], ['Night', 'KeyN'], ['Camera', 'KeyC'], ['Horn', 'KeyB'], ['Radio', 'KeyQ'], ['Sound', 'KeyV'], ['Reset', 'KeyR']]);
 }
 startEl.addEventListener('click', begin);
 const tune = radio(radioHud(), undefined, sound.tuningStatic);
@@ -198,6 +198,7 @@ addEventListener('keydown', e => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   keys[e.code] = true; if (e.repeat) return;
   begin();
+  if (e.code === 'KeyB') sound.horn(true);
   if (e.code === 'KeyH') { head = !head; setLights(); }
   if (e.code === 'KeyN') setNight(!night);
   if (e.code === 'KeyC') camMode = 1 - camMode;
@@ -205,8 +206,8 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on');
   if (e.code === 'KeyR') { const n = nearest(st.pos, true); st.idx = n.i; placeOnTrack(n.i); }
 });
-addEventListener('keyup', e => keys[e.code] = false);
-addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyB') sound.horn(false); });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; sound.horn(false); });
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
 let last = performance.now(), lastS = { braking: false, reversing: false };
 renderer.setAnimationLoop(now => {

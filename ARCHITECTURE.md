@@ -34,7 +34,7 @@ how each part works; this file says how the parts may fit together.
 | `vaz-model.js` | 46 | `loadVaz()`: VAZ-2101 from `models/vaz-2101.glb` in `buildCar()`'s shape, the second car on the real-map page |
 | `three-d-stage.js` | 412 | Viewer web component (renderer, orbit, GLB/OBJ export) |
 | `area-travel.js` | — | Neighboring-area geometry, boundary confirmation and cooldown |
-| `driving-audio.js` | — | Shared engine and tuning synthesis and per-tab mute |
+| `driving-audio.js` | — | Shared engine, tyre, crash, horn, traffic and tuning synthesis and per-tab mute |
 | `street-furniture.js` | — | Outdoor parking rows, mapped furniture and static collision geometry |
 | `furniture-mesh.js` | — | Instanced street furniture and parked cars |
 | `sign-layout.js` | — | Street and landmark names and curbside placement |
@@ -94,7 +94,7 @@ root, one copy each. Page URLs don't change.
 | `sedan-model.js` | `buildCar()` and the axle constants: the procedural car | three |
 | `vaz-model.js` | `loadVaz()`: the VAZ-2101 model file, returned in `buildCar()`'s shape | three (GLTFLoader) |
 | `area-travel.js` | Boundary dialog, projected arrival pose and cooldown | `osm-query` |
-| `driving-audio.js` | Synthesized engine and tuning sounds on both driving pages | nothing |
+| `driving-audio.js` | Synthesized engine, tyre (`tyreSound`), crash (`impactSound`, `impact`), horn and tuning sounds on both driving pages, and the traffic around the camera (`trafficVoices`, `traffic(cars, ear)`, `honkAt`) | nothing |
 | `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find, tuningStatic)` → `tune(step)`; station playback | nothing |
 | `weather.js` | `weatherNow(lat, lon, fetch)` → `{ kind, label, amount, temp, offset, snowDepth?, recent? }`, `weatherOf(code)`, `WEATHERS`, `groundOf(w)` → `{ wet, snow, grip }`, `solarHour(ms, lon)` | nothing |
 | `touch.js` | `touchControls(extras)`: on-screen buttons for touch screens that press keys (synthetic keydown/keyup), so pages handle touch and keyboard the same way | nothing |
