@@ -40,3 +40,8 @@ test('only error remarks count as failures', () => {
   assert.equal(overpassError('some note'), null);
   assert.equal(overpassError(undefined), null);
 });
+
+test('area requests include standalone house numbers and invalidate pre-address downloads', () => {
+  assert.ok(overpassQuery(0,0).includes('node["addr:housenumber"]('));
+  assert.ok(!areaKey(0,0).startsWith('osm7:'));
+});

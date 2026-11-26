@@ -36,7 +36,9 @@ export function deliveryHud(scene, graph, occupied, button, stage, detail, flash
     }
     if (target) {
       const metres = Math.hypot(target.x-x,target.z-z);
-      const instruction = metres <= STOP_RADIUS ? 'Stop here' : Math.ceil(metres) + ' m to stop';
+      const bearing = Math.atan2(target.x-x, z-target.z);
+      const direction = ['N','NE','E','SE','S','SW','W','NW'][(Math.round(bearing/(Math.PI/4))+8)%8];
+      const instruction = metres <= STOP_RADIUS ? 'Stop here' : Math.ceil(metres) + ' m ' + direction;
       if (detail.textContent !== instruction) detail.textContent = instruction;
     }
   }

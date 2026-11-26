@@ -126,18 +126,25 @@ let nextId = 1;
 function toElements(layers, tx, ty, z, box, out) {
   const n = 2 ** z, ll = (e, [px, py]) => ({ lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * (ty + py / e) / n))) * 180 / Math.PI, lon: (tx + px / e) / n * 360 - 180 });
   const inBox = p => p.lat > box[0] && p.lat < box[2] && p.lon > box[1] && p.lon < box[3];
-  const poi = layers.poi;
-  if (poi) for (const f of poi.feats) {
-    if (f.type !== 1) continue;
-    const tags = poiTags(props(poi, f));
-    if (!tags) continue;
-    for (const [[x, y]] of parts(f.geom)) {
-      // A buffered POI can occur in adjacent tiles. Its own tile supplies the node.
-      if (x < 0 || y < 0 || x >= poi.extent || y >= poi.extent) continue;
-      const pos = ll(poi.extent, [x, y]);
-      if (inBox(pos)) out.push({ type: 'node', id: nextId++, tags, ...pos });
+  function pointFeatures(layer, tagsForPoint) {
+    if (!layer) return;
+    for (const f of layer.feats) {
+      if (f.type !== 1) continue;
+      const tags = tagsForPoint(props(layer, f));
+      if (!tags) continue;
+      for (const [[x,y]] of parts(f.geom)) {
+        // Buffered points belong to the tile containing their anchor.
+        if (x<0 || y<0 || x>=layer.extent || y>=layer.extent) continue;
+        const pos = ll(layer.extent,[x,y]);
+        if (inBox(pos)) out.push({type:'node', id:nextId++, tags, ...pos});
+      }
     }
   }
+  pointFeatures(layers.poi, poiTags);
+  pointFeatures(layers.housenumber, p => {
+    const number = String(p.housenumber ?? '').trim();
+    return number ? {'addr:housenumber':number} : null;
+  });
   const names = nameIndex(layers.transportation_name);
   for (const name of ['water', 'waterway', 'landcover', 'landuse', 'park', 'transportation', 'building']) {
     const L = layers[name]; if (!L) continue;

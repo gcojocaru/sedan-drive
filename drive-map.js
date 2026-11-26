@@ -156,7 +156,7 @@ async function startGame(lat0, lon0, placeName) {
 
   const sky = createSky(renderer, scene, lat0), { TIMES, NIGHT } = sky;
 
-  const { roads, paths, rivers, polys, seas, blds, trees, nB, layout, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex } = await buildWorld(data.elements, lat0, lon0, scene, say);
+  const { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex } = await buildWorld(data.elements, lat0, lon0, scene, say);
 
   // ---- car ----
   await say('Placing the car…');
@@ -305,7 +305,7 @@ async function startGame(lat0, lon0, placeName) {
 
   // ---- HUD ----
   const drawMinimap = createMinimap($('minimap').querySelector('canvas'), document.createElement('canvas'), HALF,
-    { polys, seas, rivers, buildings: blds, paths, roads });
+    { polys, seas, rivers, buildings: blds, paths, roads, addressPoints });
   const kmh = $('kmh'), gear = $('gear'), streetEl = $('street');
   let streetT = 0, shownStreet = null;
   function hud(s, dt) {
