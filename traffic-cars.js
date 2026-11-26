@@ -30,7 +30,7 @@ function parts() {
   return { body, glass, trim, head: lamp(0.06, 0.12, 0.34, HEADS), tail: lamp(0.06, 0.15, 0.32, TAILS) };
 }
 
-export function trafficCars(scene, max, glowTex) {
+function carMeshes(scene, max) {
   const G = parts(), meshes = [];
   const mk = (geo, mat, shadow, colored) => {
     const m = new THREE.InstancedMesh(geo, mat, max); m.count = 0; m.castShadow = m.receiveShadow = shadow; m.frustumCulled = false; // lamps neither cast nor take shadows
@@ -41,24 +41,44 @@ export function trafficCars(scene, max, glowTex) {
   mk(G.glass, new THREE.MeshStandardMaterial({ color: '#1b252d', roughness: 0.12, metalness: 0.6 }), true, false);
   mk(G.trim, new THREE.MeshStandardMaterial({ color: '#17181a', roughness: 0.85 }), true, false);
   const head = mk(G.head, new THREE.MeshBasicMaterial(), false, true), tail = mk(G.tail, new THREE.MeshBasicMaterial(), false, true);
+  const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1);
+
+  return function paintCars(cars, lit) {
+    const n = Math.min(cars.length, max);
+    for (let i = 0; i < n; i++) {
+      const c = cars[i];
+      Q.setFromAxisAngle(Y, c.h); M.compose(P.set(c.x, 0, c.z), Q, ONE);
+      for (const m of meshes) m.setMatrixAt(i, M);
+      body.setColorAt(i, PAINT[c.paint % PAINT.length]);
+      head.setColorAt(i, lit ? HEAD_ON : HEAD_OFF);
+      tail.setColorAt(i, c.braking ? BRAKE : lit ? TAIL : TAIL_OFF);
+    }
+    for (const m of meshes) { m.count = n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+  };
+}
+
+export function parkedCars(scene, cars) {
+  if (!cars.length) return;
+  const group = new THREE.Group();
+  group.name = 'parked_cars';
+  scene.add(group);
+  carMeshes(group, cars.length)(cars, false);
+}
+
+export function trafficCars(scene, max, glowTex) {
+  const paintCars = carMeshes(scene, max);
   // night glows round the lamps: one point per lamp, brightness in its vertex colour
   const glows = [0xfff1dc, 0xff2a1a].map((color, i) => {
     const g = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(max * 6), 3)).setAttribute('color', new THREE.BufferAttribute(new Float32Array(max * 6), 3));
     const p = new THREE.Points(g, new THREE.PointsMaterial({ map: glowTex, color, size: i ? 0.9 : 1.5, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     p.frustumCulled = false; scene.add(p); return p;
   });
-  const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1);
-
   // cars: traffic.js cars; lit: whether their lamps are on (dusk, night, murky weather)
   function sync(cars, lit) {
+    paintCars(cars, lit);
     const n = Math.min(cars.length, max), [hp, hc] = ['position', 'color'].map(a => glows[0].geometry.attributes[a]), [tp, tc] = ['position', 'color'].map(a => glows[1].geometry.attributes[a]);
     for (let i = 0; i < n; i++) {
       const c = cars[i], cs = Math.cos(c.h), sn = Math.sin(c.h);
-      Q.setFromAxisAngle(Y, c.h); M.compose(P.set(c.x, 0, c.z), Q, ONE);
-      for (const m of meshes) m.setMatrixAt(i, M);
-      body.setColorAt(i, PAINT[c.paint % PAINT.length]);
-      head.setColorAt(i, lit ? HEAD_ON : HEAD_OFF);
-      tail.setColorAt(i, c.braking ? BRAKE : lit ? TAIL : TAIL_OFF);
       const tailGlow = c.braking ? (lit ? 1 : 0.35) : lit ? 0.45 : 0;
       for (let k = 0; k < 2; k++) {
         const [hx, hy, hz] = HEADS[k], [tx, ty, tz] = TAILS[k], j = i * 2 + k;
@@ -66,7 +86,6 @@ export function trafficCars(scene, max, glowTex) {
         tp.setXYZ(j, c.x + tx * cs + tz * sn, ty, c.z - tx * sn + tz * cs); tc.setXYZ(j, tailGlow, tailGlow, tailGlow);
       }
     }
-    for (const m of meshes) { m.count = n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
     for (const p of glows) { p.geometry.setDrawRange(0, n * 2); p.geometry.attributes.position.needsUpdate = p.geometry.attributes.color.needsUpdate = true; }
   }
   return { sync };

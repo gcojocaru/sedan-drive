@@ -3,7 +3,7 @@
 
 export const HALF = 500;        // metres each side of the start point (the playable area is a 1 km square)
 export const MARGIN = 60;       // extra metres of map data around it
-export const CACHE_V = 'osm6:'; // bump whenever the query changes; browser and proxy caches then start afresh
+export const CACHE_V = 'osm7:'; // bump whenever the query changes; browser and proxy caches then start afresh
 export const SNAP = 0.0005;     // start points snap to this grid (degrees, about 55 m) so nearby picks share one download
 
 // The deployed caching proxy (see proxy/README.md), e.g. 'https://sedan-drive-osm.<your-subdomain>.workers.dev'.
@@ -14,6 +14,8 @@ export const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://ov
 
 const NAMED_LANDMARKS = ['["shop"]', '["railway"~"^(station|halt)$"]', '["public_transport"="station"]', '["amenity"="bus_station"]'];
 const PARTS = ['way["highway"]', 'node["highway"="stop"]', 'node["highway"="crossing"]["crossing"!~"^(unmarked|no)$"]',
+  'node["barrier"="bollard"]', 'node["highway"="bus_stop"]', 'node["amenity"="bench"]', 'way["amenity"="bench"]',
+  'node["public_transport"="platform"]["bus"="yes"]', 'way["public_transport"="platform"]["bus"="yes"]',
   'node["entrance"]["entrance"!="no"]', 'node["building"="entrance"]',
   ...NAMED_LANDMARKS.flatMap(tags => ['node', 'way', 'relation["type"="multipolygon"]'].map(type => type + tags + '["name"]')),
   'node["leisure"~"^(park|garden)$"]["name"]',

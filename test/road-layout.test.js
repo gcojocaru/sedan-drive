@@ -86,3 +86,11 @@ test('spawn clips to the playable boundary and handles an empty road network', (
   near(laneSpawn(spawnSegments,600,0,0,500).x, 497.5);
   assert.equal(laneSpawn([],0,0,0,500), null);
 });
+
+test('a blocked spawn finds a clear pose on the same lane', () => {
+  const {spawnSegments} = prepareRoads([street([[-50,0],[50,0]])],'right');
+  const occupied = x => Math.abs(x) < 6;
+  const s = laneSpawn(spawnSegments,0,0,0,500,occupied);
+  assert.ok(s && !occupied(s.x) && Math.abs(s.x) <= 8);
+  assert.equal(laneSpawn(spawnSegments,0,0,0,500,()=>true),null);
+});

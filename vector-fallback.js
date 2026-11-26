@@ -78,7 +78,7 @@ function clipRing(r, e) { // to the tile's own square, so pieces from neighbouri
 // ---- OpenMapTiles layers → OSM-style tags ----
 const HW = { motorway: 'motorway', trunk: 'trunk', primary: 'primary', secondary: 'secondary', tertiary: 'tertiary', minor: 'residential', service: 'service', track: 'track', raceway: 'raceway', busway: 'busway' };
 const PATHS = new Set(['footway', 'cycleway', 'path', 'steps', 'pedestrian', 'bridleway']), RAIL = new Set(['rail', 'narrow_gauge', 'light_rail', 'subway', 'tram', 'monorail', 'funicular', 'preserved']);
-const LANDUSE = { residential: { landuse: 'residential' }, commercial: { landuse: 'commercial' }, retail: { landuse: 'retail' }, industrial: { landuse: 'industrial' }, railway: { landuse: 'railway' }, cemetery: { landuse: 'cemetery' }, military: { landuse: 'military' }, garages: { landuse: 'garages' }, quarry: { landuse: 'construction' }, school: { landuse: 'residential' }, college: { landuse: 'residential' }, university: { landuse: 'residential' }, kindergarten: { landuse: 'residential' }, hospital: { landuse: 'residential' }, pitch: { leisure: 'pitch' }, stadium: { leisure: 'pitch' }, playground: { leisure: 'playground' }, park: { leisure: 'park' }, zoo: { leisure: 'park' }, theme_park: { leisure: 'park' } };
+const LANDUSE = { parking: { amenity: 'parking' }, residential: { landuse: 'residential' }, commercial: { landuse: 'commercial' }, retail: { landuse: 'retail' }, industrial: { landuse: 'industrial' }, railway: { landuse: 'railway' }, cemetery: { landuse: 'cemetery' }, military: { landuse: 'military' }, garages: { landuse: 'garages' }, quarry: { landuse: 'construction' }, school: { landuse: 'residential' }, college: { landuse: 'residential' }, university: { landuse: 'residential' }, kindergarten: { landuse: 'residential' }, hospital: { landuse: 'residential' }, pitch: { leisure: 'pitch' }, stadium: { leisure: 'pitch' }, playground: { leisure: 'playground' }, park: { leisure: 'park' }, zoo: { leisure: 'park' }, theme_park: { leisure: 'park' } };
 const COVER = { wood: { natural: 'wood' }, grass: { landuse: 'grass' }, farmland: { landuse: 'farmland' }, wetland: { natural: 'wetland' }, rock: { natural: 'bare_rock' }, sand: { natural: 'sand' } };
 // OpenMapTiles groups these shop subclasses into other classes such as grocery and library.
 // Mixed classes also contain amenities (e.g. grocery/marketplace), so only use known shop values.
@@ -87,6 +87,10 @@ const SHOP_SUBCLASSES = new Set(['alcohol', 'art', 'bag', 'bakery', 'beverages',
   'hairdresser', 'laundry', 'music', 'musical_instrument', 'supermarket', 'wine']);
 function poiTags(p) {
   const name = typeof p.name === 'string' && p.name.trim(), sub = p.subclass;
+  const label = name ? {name} : {};
+  if (p.class === 'bus' && sub === 'bus_stop') return { ...label, highway: 'bus_stop' };
+  if (sub === 'bench' || p.class === 'bench') return { ...label, amenity: 'bench' };
+  if (sub === 'bollard' || p.class === 'bollard') return { ...label, barrier: 'bollard' };
   if (!name) return null;
   if (p.class === 'shop' || SHOP_SUBCLASSES.has(sub)) return { name, shop: sub || 'yes' };
   if (p.class === 'railway') {

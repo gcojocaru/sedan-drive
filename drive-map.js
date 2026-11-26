@@ -152,7 +152,7 @@ async function startGame(lat0, lon0, placeName) {
 
   const sky = createSky(renderer, scene, lat0), { TIMES, NIGHT } = sky;
 
-  const { roads, paths, rivers, polys, seas, blds, trees, nB, layout, roadAt, areaAt, inBuilding, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex } = await buildWorld(data.elements, lat0, lon0, scene, say);
+  const { roads, paths, rivers, polys, seas, blds, trees, nB, layout, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex } = await buildWorld(data.elements, lat0, lon0, scene, say);
 
   // ---- car ----
   await say('Placing the car…');
@@ -181,10 +181,16 @@ async function startGame(lat0, lon0, placeName) {
     cam.reset(st);
   }
   const corners = [[2.2, 0.86], [2.2, -0.86], [0, 0.88], [0, -0.88], [-2.18, 0.86], [-2.18, -0.86]];
-  const start = laneSpawn(layout.spawnSegments, entry?.x ?? 0, entry?.z ?? 0, entry?.h, HALF);
+  const start = laneSpawn(layout.spawnSegments, entry?.x ?? 0, entry?.z ?? 0, entry?.h, HALF, furnitureHit);
   if (entry && !blocked(entry.x, entry.z, entry.h)) place(entry.x, entry.z, entry.h);
   else if (start) place(start.x, start.z, start.h);
-  else place(0, 0, entry?.h ?? 0);
+  else {
+    // On a car park with no mapped lanes the origin can be an occupied bay.
+    const h = entry?.h ?? 0;
+    let x = 0;
+    while (x < HALF-6 && blocked(x,0,h)) x += 5;
+    place(x,0,h);
+  }
 
   // ---- state / lights ----
   const keys = {}; let started = !!entry, camMode = entry?.camera ?? 0, head = false, night = false, shake = 0;
@@ -259,7 +265,8 @@ async function startGame(lat0, lon0, placeName) {
       if (inBuilding(wx, wz, 0.6)) return 'bld';
       if (traffic.hit(wx, wz)) return 'car';
     }
-    return null;
+    const object = furnitureHit(x,z,h);
+    return object === 'car' ? 'car' : object ? 'bld' : null;
   }
 
   const TUNE = { power: 7.4, idle: 0.5, vtop: 50 };
@@ -350,7 +357,7 @@ async function startGame(lat0, lon0, placeName) {
     if (e.code === 'KeyC') camMode = 1 - camMode;
     if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on');
     if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);
-    if (e.code === 'KeyR') { const s = laneSpawn(layout.spawnSegments, st.pos.x, st.pos.z, st.h, HALF); if (s) { traffic.clear(s.x, s.z, 8); place(s.x, s.z, s.h); } }
+    if (e.code === 'KeyR') { const s = laneSpawn(layout.spawnSegments, st.pos.x, st.pos.z, st.h, HALF, furnitureHit); if (s) { traffic.clear(s.x, s.z, 8); place(s.x, s.z, s.h); } }
   });
   addEventListener('keyup', e => keys[e.code] = false);
   addEventListener('blur', clearKeys);
