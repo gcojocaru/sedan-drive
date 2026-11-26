@@ -54,6 +54,7 @@ On phones and tablets only the driving controls appear on screen: steer on the l
 ## What gets built from the map (real-map page)
 
 - **Roads** at their tagged width, sidewalks, lane markings (centre line, edge lines, lane dividers from `lanes=*`), zebra crossings, railings on bridges.
+- Teal street signs mark junctions where named roads meet. Brown roadside signs identify nearby mapped parks, stations and shops by name.
 - Cars start and reset in a travel lane. Connected junctions have rounded corners, gaps in the lane markings and stop lines at mapped stops.
 - **Buildings** from footprints and height/level tags, with `roof:shape` roofs (gabled, hipped, pyramidal, skillion, dome, onion). Untagged houses get a pitched roof unless mappers in the area mostly tag flat roofs. `building:part` pieces replace their outline, so landmarks with 3D tagging come out properly. `building:colour`/`material` and `roof:colour`/`material` are used.
 - Ground-floor doors follow mapped entrances, with a street-facing doorway inferred when a building has none mapped. Retail frontages have framed display windows and a few softly lit bays at night.
@@ -90,6 +91,8 @@ world-kit.js          three.js and tag helpers shared by world.js and buildings.
 geom.js               pure geometry helpers (strips, polygons, roofs, coastline → sea)
 drive-core.js         driving shared by both drive pages: physics (with grip and sliding), car posing, chase camera, speed HUD
 building-fronts.js    ground-floor entrance placement and retail window layouts
+sign-layout.js        curbside placement of named street and landmark signs
+sign-mesh.js          sign lettering, two-sided boards and posts
 road-layout.js        directional lanes, junction corners, stop lines and spawn positions
 area-travel.js        adjacent map areas, boundary prompts and load cooldown
 driving-audio.js      synthesized engine and radio tuning sounds for both drive pages

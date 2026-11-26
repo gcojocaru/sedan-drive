@@ -80,6 +80,23 @@ const HW = { motorway: 'motorway', trunk: 'trunk', primary: 'primary', secondary
 const PATHS = new Set(['footway', 'cycleway', 'path', 'steps', 'pedestrian', 'bridleway']), RAIL = new Set(['rail', 'narrow_gauge', 'light_rail', 'subway', 'tram', 'monorail', 'funicular', 'preserved']);
 const LANDUSE = { residential: { landuse: 'residential' }, commercial: { landuse: 'commercial' }, retail: { landuse: 'retail' }, industrial: { landuse: 'industrial' }, railway: { landuse: 'railway' }, cemetery: { landuse: 'cemetery' }, military: { landuse: 'military' }, garages: { landuse: 'garages' }, quarry: { landuse: 'construction' }, school: { landuse: 'residential' }, college: { landuse: 'residential' }, university: { landuse: 'residential' }, kindergarten: { landuse: 'residential' }, hospital: { landuse: 'residential' }, pitch: { leisure: 'pitch' }, stadium: { leisure: 'pitch' }, playground: { leisure: 'playground' }, park: { leisure: 'park' }, zoo: { leisure: 'park' }, theme_park: { leisure: 'park' } };
 const COVER = { wood: { natural: 'wood' }, grass: { landuse: 'grass' }, farmland: { landuse: 'farmland' }, wetland: { natural: 'wetland' }, rock: { natural: 'bare_rock' }, sand: { natural: 'sand' } };
+// OpenMapTiles groups these shop subclasses into other classes such as grocery and library.
+// Mixed classes also contain amenities (e.g. grocery/marketplace), so only use known shop values.
+const SHOP_SUBCLASSES = new Set(['alcohol', 'art', 'bag', 'bakery', 'beverages', 'bicycle', 'books', 'butcher', 'car',
+  'car_parts', 'car_repair', 'clothes', 'deli', 'delicatessen', 'department_store', 'dry_cleaning', 'greengrocer',
+  'hairdresser', 'laundry', 'music', 'musical_instrument', 'supermarket', 'wine']);
+function poiTags(p) {
+  const name = typeof p.name === 'string' && p.name.trim(), sub = p.subclass;
+  if (!name) return null;
+  if (p.class === 'shop' || SHOP_SUBCLASSES.has(sub)) return { name, shop: sub || 'yes' };
+  if (p.class === 'railway') {
+    if (sub === 'subway') return { name, railway: 'station', station: 'subway' };
+    if (sub === 'station' || sub === 'halt') return { name, railway: sub };
+  }
+  if (p.class === 'bus' && sub === 'bus_station') return { name, amenity: sub };
+  if ((sub === 'park' || sub === 'garden') && p.class === sub) return { name, leisure: sub };
+  return null;
+}
 function tagsFor(layer, p, poly) {
   if (layer === 'building') { if (p.hide_3d) return null; const t = { building: 'yes' }; if (p.render_height >= 13 || p.render_min_height > 0) t.height = String(p.render_height); if (p.render_min_height > 0) t.min_height = String(p.render_min_height); if (p.colour) t['building:colour'] = p.colour; return t; }
   if (layer === 'water') return poly && p.brunnel !== 'tunnel' ? { natural: 'water' } : null;
@@ -104,24 +121,40 @@ function tagsFor(layer, p, poly) {
 let nextId = 1;
 function toElements(layers, tx, ty, z, box, out) {
   const n = 2 ** z, ll = (e, [px, py]) => ({ lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * (ty + py / e) / n))) * 180 / Math.PI, lon: (tx + px / e) / n * 360 - 180 });
-  const inBox = g => g.some(p => p.lat > box[0] && p.lat < box[2] && p.lon > box[1] && p.lon < box[3]);
+  const inBox = p => p.lat > box[0] && p.lat < box[2] && p.lon > box[1] && p.lon < box[3];
+  const poi = layers.poi;
+  if (poi) for (const f of poi.feats) {
+    if (f.type !== 1) continue;
+    const tags = poiTags(props(poi, f));
+    if (!tags) continue;
+    for (const [[x, y]] of parts(f.geom)) {
+      // A buffered POI can occur in adjacent tiles. Its own tile supplies the node.
+      if (x < 0 || y < 0 || x >= poi.extent || y >= poi.extent) continue;
+      const pos = ll(poi.extent, [x, y]);
+      if (inBox(pos)) out.push({ type: 'node', id: nextId++, tags, ...pos });
+    }
+  }
   const names = nameIndex(layers.transportation_name);
   for (const name of ['water', 'waterway', 'landcover', 'landuse', 'park', 'transportation', 'building']) {
     const L = layers[name]; if (!L) continue;
     for (const f of L.feats) {
       const poly = f.type === 3; if (f.type !== 2 && !poly) continue;
-      const p = props(L, f), tags = tagsFor(name, p, poly); if (!tags) continue;
+      const p = props(L, f);
+      let tags = tagsFor(name, p, poly); if (!tags) continue;
+      if (typeof p.name === 'string' && p.name.trim() && (tags.building || tags.highway || (tags.leisure === 'park' && p.class === 'park'))) {
+        tags = { ...tags, name: p.name.trim() };
+      }
       const rings = parts(f.geom);
       if (!poly) {
-        if (name === 'transportation' && tags.highway) { const nm = names(rings, p.class); if (nm) tags.name = nm; }
-        for (const r of rings) { const g = r.map(q => ll(L.extent, q)); if (g.length > 1 && inBox(g)) out.push({ type: 'way', id: nextId++, tags, geometry: g }); }
+        if (name === 'transportation' && tags.highway && !tags.name) { const nm = names(rings, p.class); if (nm) tags.name = nm; }
+        for (const r of rings) { const g = r.map(q => ll(L.extent, q)); if (g.length > 1 && g.some(inBox)) out.push({ type: 'way', id: nextId++, tags, geometry: g }); }
         continue;
       }
       // polygons: an exterior ring (positive area in tile pixels) starts a polygon, negative rings are its holes
       const polys = [];
       for (const r of rings) { const c = clipRing(r, L.extent); if (!c) continue; if (ringArea(r) > 0 || !polys.length) polys.push([c]); else polys[polys.length - 1].push(c); }
       for (const [outer, ...holes] of polys) {
-        const g = outer.map(q => ll(L.extent, q)); if (!inBox(g)) continue;
+        const g = outer.map(q => ll(L.extent, q)); if (!g.some(inBox)) continue;
         if (!holes.length) out.push({ type: 'way', id: nextId++, tags, geometry: g });
         else out.push({ type: 'relation', id: nextId++, tags, members: [{ type: 'way', role: 'outer', geometry: g }, ...holes.map(h => ({ type: 'way', role: 'inner', geometry: h.map(q => ll(L.extent, q)) }))] });
       }

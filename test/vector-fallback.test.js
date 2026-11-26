@@ -43,14 +43,17 @@ test('decodeTile reads layers, keys, values and geometry', () => {
   assert.deepEqual(decodeTile(new ArrayBuffer(0)), {});
 });
 
-test('fetchVectorArea turns tiles into Overpass-shaped elements', async () => {
-  const urls = [];
-  const fakeFetch = async url => {
+async function fetchAtOrigin(tiles, urls = []) {
+  return fetchVectorArea(0, 0, async url => {
     urls.push(url);
     if (!url.endsWith('.pbf')) return { ok: true, json: async () => ({ tiles: ['https://tiles.test/{z}/{x}/{y}.pbf'], maxzoom: 14 }) };
-    return { ok: true, arrayBuffer: async () => url.endsWith('/14/8192/8192.pbf') ? tile : new ArrayBuffer(0) };
-  };
-  const { elements, fallback } = await fetchVectorArea(0, 0, fakeFetch);
+    return { ok: true, arrayBuffer: async () => tiles[new URL(url).pathname] || new ArrayBuffer(0) };
+  });
+}
+
+test('fetchVectorArea turns tiles into Overpass-shaped elements', async () => {
+  const urls = [];
+  const { elements, fallback } = await fetchAtOrigin({ '/14/8192/8192.pbf': tile }, urls);
   assert.equal(fallback, true);
   assert.equal(urls.length, 1 + 4, 'TileJSON plus the 2×2 tiles around the equator/meridian');
 
@@ -68,4 +71,58 @@ test('fetchVectorArea turns tiles into Overpass-shaped elements', async () => {
   const land = elements.find(e => e.tags.landuse);
   assert.equal(land.type, 'relation');
   assert.deepEqual(land.members.map(m => m.role), ['outer', 'inner']);
+});
+
+test('fallback keeps names attached to roads, buildings and park polygons', async () => {
+  const fixture = new Uint8Array([
+    ...layer('transportation', [{ type: 2, rings: [[[10, 50], [400, 50]]], props: { class: 'minor', name: 'Oak Lane' } }]),
+    ...layer('transportation_name', [{ type: 2, rings: [[[10, 52], [400, 52]]], props: { class: 'minor', name: 'Nearby Lane' } }]),
+    ...layer('building', [{ type: 3, rings: [square(80, 110)], props: { name: 'Old Mill' } }]),
+    ...layer('landuse', [
+      { type: 3, rings: [square(150, 250)], props: { class: 'park', name: 'Parcul Mic' } },
+      { type: 3, rings: [square(300, 400)], props: { class: 'park' } }
+    ]),
+  ]).buffer;
+  const { elements } = await fetchAtOrigin({ '/14/8192/8192.pbf': fixture });
+  assert.equal(elements.find(e => e.tags.highway).tags.name, 'Oak Lane');
+  assert.equal(elements.find(e => e.tags.building).tags.name, 'Old Mill');
+  assert.deepEqual(elements.filter(e => e.tags.leisure === 'park').map(e => e.tags.name), ['Parcul Mic', undefined]);
+});
+
+test('fallback emits named, classified POI points once at their mapped location', async () => {
+  const point = (props, x = 50) => ({ type: 1, rings: [[[x, 50]]], props });
+  const store = { class: 'shop', subclass: 'florist', name: 'Flori' };
+  const fixture = new Uint8Array(layer('poi', [
+    point(store),
+    point({ class: 'grocery', subclass: 'supermarket', name: 'Co-op' }),
+    point({ class: 'railway', subclass: 'station', name: 'Gara Nord' }),
+    point({ class: 'railway', subclass: 'halt', name: 'Brook' }),
+    point({ class: 'railway', subclass: 'subway', name: '地下鉄' }),
+    point({ class: 'bus', subclass: 'bus_station', name: 'Terminal' }),
+    point({ class: 'park', subclass: 'park', name: 'Parcul Mare' }),
+    point({ class: 'garden', subclass: 'garden', name: 'Rose Garden' }),
+    point({ class: 'shop', subclass: 'convenience' }),
+    point({ name: 'Label only' }),
+    point({ class: 'bus', subclass: 'bus_stop', name: 'Request stop' }),
+    point({ class: 'grocery', subclass: 'marketplace', name: 'Market' }),
+    point({ class: 'park', subclass: 'bbq', name: 'Picnic spot' }),
+    point({ class: 'shop', name: 'Beyond the area' }, 3500),
+  ])).buffer;
+  const west = new Uint8Array(layer('poi', [point(store, 4096 + 50)])).buffer;
+  const { elements } = await fetchAtOrigin({ '/14/8192/8192.pbf': fixture, '/14/8191/8192.pbf': west });
+  assert.deepEqual(elements.map(e => e.tags), [
+    { name: 'Flori', shop: 'florist' },
+    { name: 'Co-op', shop: 'supermarket' },
+    { name: 'Gara Nord', railway: 'station' },
+    { name: 'Brook', railway: 'halt' },
+    { name: '地下鉄', railway: 'station', station: 'subway' },
+    { name: 'Terminal', amenity: 'bus_station' },
+    { name: 'Parcul Mare', leisure: 'park' },
+    { name: 'Rose Garden', leisure: 'garden' },
+  ]);
+  for (const node of elements) {
+    assert.equal(node.type, 'node');
+    assert.ok(node.lat < -0.00026 && node.lat > -0.00027);
+    assert.ok(node.lon > 0.00026 && node.lon < 0.00027);
+  }
 });

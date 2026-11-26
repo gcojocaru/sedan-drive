@@ -23,6 +23,18 @@ test('the query covers the playable area plus the margin', () => {
   assert.match(q, /out geom qt;$/);
 });
 
+test('the area query includes named landmarks and limits new relation searches to multipolygons', () => {
+  const q = overpassQuery(0, 0);
+  for (const tags of ['["shop"]', '["railway"~"^(station|halt)$"]', '["public_transport"="station"]', '["amenity"="bus_station"]']) {
+    for (const type of ['node', 'way', 'relation["type"="multipolygon"]']) {
+      assert.ok(q.includes(type + tags + '["name"]('), type + tags);
+    }
+    assert.ok(!q.includes('relation' + tags), tags + ' must exclude route and stop-area relations');
+  }
+  assert.ok(q.includes('node["leisure"~"^(park|garden)$"]["name"]('));
+  assert.ok(!areaKey(0, 0).startsWith('osm5:'), 'old cached areas have no landmark nodes');
+});
+
 test('only error remarks count as failures', () => {
   assert.equal(overpassError('runtime error: Query timed out'), 'runtime error: Query timed out');
   assert.equal(overpassError('some note'), null);

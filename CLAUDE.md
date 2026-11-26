@@ -18,6 +18,7 @@ Context for working on this repo. See README.md for what the pages do and how to
 - **One car model:** `sedan-model.js` → `buildCar()` (plus the axle constants `FA`, `RA`), imported by all three pages (`drive-map.js`, `drive-track.js`, `sedan-viewer.js`). Page setup around it (studio environment, contact shadows, light controls, driving) lives in the page's own module.
 - Units are metres; the car's long axis is +X (front axle at x≈1.32, rear at x≈-1.31), y up.
 - Meshes and groups are named (`car.getObjectByName('underbody')`, `steering_wheel`, `front_seat_L`, …). Other code looks parts up by name, so keep names stable when renaming things.
+- `sign-layout.js` places named street and landmark signs using mapped roads, nearby features and ground clearance. `sign-mesh.js` builds their shared texture atlas and meshes.
 - `road-layout.js` computes directional lanes, junction geometry and spawn/reset positions. `building-fronts.js` lays out facades: the style per building (`facadeStyle`: house, panel block, classic, office, glass, industrial, brick, blank), storeys (`floorGrid`), whole window bays per straight run of wall (`bayCoords`), mapped and inferred doors and retail display windows, draws the wall atlas (`wallAtlas`) and shopfront atlas on a supplied canvas context, and holds the photo surface table (`SURFACES`) and `levelPhoto`. Both modules are importable by the Node tests.
 - `minimap.js` draws the real-map HUD from projected world geometry. It rasterizes the area once, then samples a north-up view around the car using its world position and heading.
 - `osm-query.js` holds the Overpass query (`overpassQuery`), the cache key (`areaKey`, `CACHE_V`), the ~55 m start-point grid (`snap`), the server list and `AREA_PROXY`. It is imported by both `drive-map.js` and `proxy/worker.js` (Cloudflare Worker, bundled by wrangler), so the proxy only ever runs the game's own query. Change the query there, bump `CACHE_V`, and redeploy the Worker with the site.
@@ -47,7 +48,7 @@ Context for working on this repo. See README.md for what the pages do and how to
 - `sedan-lights-v1` — viewer light toggles (Sedan.html)
 - `sedan-map-car-v1` — chosen car on the real-map page (`sedan` or `vaz`)
 - `sedan-map-traffic-v1` — traffic level on the real-map page, an index into `LEVELS` in `traffic.js` (0 off … 3 heavy; normal when unset)
-- IndexedDB `sedan-map-cache` / store `osm` — cached Overpass responses, keyed `areaKey()` = `osm5:<lat>,<lon>:<HALF>` (4 decimals, snapped). Bump `CACHE_V` in `osm-query.js` whenever the query changes; entries with an older prefix are pruned after the next download.
+- IndexedDB `sedan-map-cache` / store `osm` — cached Overpass responses, keyed `areaKey()` = `osm6:<lat>,<lon>:<HALF>` (4 decimals, snapped). Bump `CACHE_V` in `osm-query.js` whenever the query changes; entries with an older prefix are pruned after the next download.
 - `sedan-geocode-cache-v1` — Nominatim results (last 60 searches / reverse lookups)
 - `sedan-overpass-rest-v1` — Overpass servers to leave alone until a time (after HTTP 429/406)
 
