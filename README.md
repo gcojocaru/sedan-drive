@@ -75,7 +75,8 @@ Contributing: [ARCHITECTURE.md](ARCHITECTURE.md) has the target module layout an
 
 ```
 Drive Real Map.html   real-map page (markup + styles; logic in drive-map.js)
-drive-map.js          real-map page: map picker, loading screen, sky and time of day, car, game loop, HUD
+drive-map.js          real-map page: map picker, loading screen, time of day, car, game loop, HUD
+sky.js                real-map sky: the sun where it really is, sky canvas, lights, shadows, fog
 map-data.js           map data: browser cache, proxy, Overpass servers, vector-tile fallback
 world.js              buildWorld(): the 3D place from OpenStreetMap elements, one builder per feature, plus road/area lookups
 buildings.js          buildBuildings(): walls and roofs per footprint, building parts, shopfronts, lit windows
