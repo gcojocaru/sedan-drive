@@ -59,7 +59,9 @@ test('a car stops behind the player in its lane, and drives on when the player m
   const roads = [street([[-200, 0], [200, 0]], [1, 2])], g = laneGraph(roads, prepareRoads(roads, 'right').junctions, 500);
   const sim = createTraffic(g, { rand: seeded(3) }), east = g.edges.find(e => e.dirA[0] > 0);
   const car = sim.add(east, 0, 10), player = { x: 0, z: 1.575, h: 0, v: 0 };
-  for (let t = 0; t < 1200; t++) sim.step(1 / 30, player);
+  let hardest = 0;
+  for (let t = 0; t < 1200; t++) { sim.step(1 / 30, player); hardest = Math.max(hardest, car.brake); }
+  assert.ok(hardest > 1 && hardest < 9, 'it braked (' + hardest + ' m/s²)');
   assert.ok(car.v < 0.05, 'stopped, at ' + car.v + ' m/s');
   const bumperGap = player.x - car.x - 4.4;
   assert.ok(bumperGap > 0.8 && bumperGap < 4, 'gap ' + bumperGap);
@@ -191,7 +193,7 @@ test('levels set how many cars live around the player, and hit() finds them', ()
   assert.ok(sim.target > 20 && sim.cars.length > sim.target * 0.8 && sim.cars.length <= sim.target, sim.cars.length + ' of ' + sim.target);
   assert.ok(sim.cars.every(c => Math.hypot(c.x, c.z) >= 25), 'none start on top of the player');
   const c = sim.cars[0];
-  assert.ok(sim.hit(c.x + Math.cos(c.h) * 2, c.z - Math.sin(c.h) * 2));
+  assert.equal(sim.hit(c.x + Math.cos(c.h) * 2, c.z - Math.sin(c.h) * 2), c);
   assert.ok(!sim.hit(c.x + Math.sin(c.h) * 1.2, c.z + Math.cos(c.h) * 1.2));
   sim.setLevel(1, 0, 0);
   assert.ok(sim.cars.length <= sim.target);

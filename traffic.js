@@ -252,7 +252,7 @@ function along(route, d0, d1, step) {
 // step(dt, player) moves them; player = { x, z, h, v } (or null) is an obstacle they stop for, and where they live:
 // cars more than `radius` + 70 m away go, and new ones start 150 m to `radius` away. seen(x, z) says whether a spot
 // is on screen: cars appear only where they aren't (or far off), and a car stuck in a jam or at a dead end goes once
-// it is out of sight. hit(x, z) is true inside a car.
+// it is out of sight. hit(x, z) is the car at that spot, if any.
 export function createTraffic(graph, { rand = Math.random, max = Infinity, radius = 260, seen = () => false } = {}) {
   const { edges, half } = graph, cars = [];
   let time = 0, level = 0, target = 0, retune = 0, spawnT = 0, ids = 0;
@@ -397,7 +397,7 @@ export function createTraffic(graph, { rand = Math.random, max = Infinity, radiu
     if (gap < Infinity) { limit(lead, gap - 2); limit(lead * Math.min(1, Math.max(0, gap - 0.5) / 1.5) + Math.max(0, gap - 2) / 1.1, 0); } // 2 m behind, and dropping back when closer
     const a = v < vt ? Math.min(1.8, (vt - v) * 1.2 + 0.2) : -Math.min(9, Math.max(need, (v - vt) * 3));
     c.v = v < vt ? Math.min(vt, v + a * dt) : Math.max(0, v + a * dt);
-    c.braking = a < -1.2 || (c.v < 0.3 && vt < 0.5);
+    c.braking = a < -1.2 || (c.v < 0.3 && vt < 0.5); c.brake = Math.max(0, -a); // (m/s², for the screech of a hard stop)
   }
   function move(c, dt) {
     c.s += c.v * dt;
@@ -427,9 +427,9 @@ export function createTraffic(graph, { rand = Math.random, max = Infinity, radiu
     for (const c of cars) {
       const dx = x - c.x, dz = z - c.z; if (dx * dx + dz * dz > 7) continue;
       const cs = Math.cos(c.h), sn = Math.sin(c.h);
-      if (Math.abs(dx * cs - dz * sn) < 2.25 && Math.abs(dx * sn + dz * cs) < 0.9) return true;
+      if (Math.abs(dx * cs - dz * sn) < 2.25 && Math.abs(dx * sn + dz * cs) < 0.9) return c;
     }
-    return false;
+    return null;
   }
   const clear = (x, z, r) => { for (const c of cars.slice()) if (Math.hypot(c.x - x, c.z - z) < r) drop(c); };
   return { cars, step, hit, clear, setLevel, add, get target() { return target; } };

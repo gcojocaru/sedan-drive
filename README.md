@@ -45,6 +45,7 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | A D / ← → | Steer |
 | Space | Handbrake |
 | H · C | Headlights · camera |
+| B | Horn (hold it down for a long blast) |
 | T · N | Next time of day · night on/off (real-map page: starts at the place's real local time, with the sun where it really is; T goes through the presets and back to live) |
 | E | Next weather (real-map page: starts with the real weather there now; then clear, partly cloudy, overcast, fog, rain, snow, thunderstorm, and back to live). Rain leaves the roads wet and shiny and snow lies on the ground and roofs; both cost grip, so the car takes longer to stop and slides wide in fast corners |
 | Esc | Settings (real-map page): choose the time of day, the weather and how much traffic (off, light, normal, heavy). Driving pauses while it is open |
@@ -54,7 +55,7 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | J | Start or cancel a parcel delivery (real-map page). You can also use the Start delivery button. |
 | M | Choose another place (real-map page) |
 
-On phones and tablets only the driving controls appear on screen: steer on the left, gas and brake/reverse on the right. The ••• button above the brake opens the rest (handbrake, lights, time of day or night, weather, settings, camera, radio, reset).
+On phones and tablets only the driving controls appear on screen: steer on the left, gas and brake/reverse on the right. The ••• button above the brake opens the rest (handbrake, lights, time of day or night, weather, settings, camera, horn, radio, reset).
 
 In a delivery job, follow the mint minimap marker and stop inside the road ring to collect the parcel. The marker then moves to the drop-off. Each job stays in the current area.
 
@@ -70,7 +71,7 @@ In a delivery job, follow the mint minimap marker and stop inside the road ring 
 - Outdoor parking lots contain parked cars with gaps for driving aisles. Benches, bollards and bus-stop poles appear at mapped locations.
 - Parking lots and plazas count as hard ground, so the car keeps its road speed there.
 - **Weather on the ground**: in rain the roads, sidewalks and roofs turn dark and glossy, with puddles, and at night the street lamps glint in the wet asphalt. Snow whitens the ground, roofs, wall tops and tree crowns, and leaves grey slush on the roads. Live weather goes by the real snow depth and the last few hours of rain, so snow stays after it stops falling and roads stay wet after a shower (the clock line then says e.g. "20 cm on the ground" or "wet roads"). Wet roads cost about a third of the grip and full snow over half: braking from 50 km/h takes about 8 m wet and 12 m on snow instead of 5, the car pulls away slower on snow, and corners taken too fast make it slide wide until its path lines up with where it points again.
-- **Traffic**: other cars drive the streets around you in their lanes, on the side of the road the place drives on, at each road's speed limit (`maxspeed`, or a typical speed for the road type), slowing for bends. They keep their distance, stop for you if you're in their way, and take junctions in turn without blocking them. One-way streets are respected, and service roads and private roads stay empty. Their lights come on at dusk and their brake lights as they slow. Bumping into one is like hitting a wall. New cars appear out of sight 150 to 260 m away; set the amount in the settings (Esc). They show on the minimap as dots. You hear the nearest ones: engines that rise in pitch as they come and drop as they pass, tyres hissing louder on wet roads, and a horn if you sit in their way.
+- **Traffic**: other cars drive the streets around you in their lanes, on the side of the road the place drives on, at each road's speed limit (`maxspeed`, or a typical speed for the road type), slowing for bends. They keep their distance, stop for you if you're in their way, and take junctions in turn without blocking them. One-way streets are respected, and service roads and private roads stay empty. Their lights come on at dusk and their brake lights as they slow. Bumping into one is like hitting a wall. New cars appear out of sight 150 to 260 m away; set the amount in the settings (Esc). They show on the minimap as dots. You hear the nearest ones: engines that rise in pitch as they come and drop as they pass, tyres hissing louder on wet roads, a horn if you sit in their way (and a long one if you hit them), and a screech when one has to stop hard. Your own car squeals braking hard, on the handbrake, cornering at the limit and sliding (not on grass or snow, less on wet roads), rumbles off the road and swishes through the wet; hitting a wall thuds, a post clangs, and a car crunches, with breaking glass in a hard hit.
 - **Traffic lights** where OpenStreetMap has them (`highway=traffic_signals`), on every road into the junction; the simplified map has none, so there they stand where main roads cross. Traffic stops at red and goes in turns, one direction at a time. Nobody stops you running a red.
 
 ## External services (real-map page)
@@ -106,7 +107,7 @@ sign-layout.js        curbside placement of named street and landmark signs
 sign-mesh.js          sign lettering, two-sided boards and posts
 road-layout.js        directional lanes, junction corners, stop lines and spawn positions
 area-travel.js        adjacent map areas, boundary prompts and load cooldown
-driving-audio.js      synthesized engine, traffic and radio tuning sounds for both drive pages
+driving-audio.js      synthesized engine, tyre, crash, horn, traffic and radio tuning sounds for both drive pages
 minimap.js            north-up driving minimap drawn from the loaded world geometry
 traffic.js            traffic: lanes and junctions from the road layout, cars that follow them and take turns at junctions
 traffic-cars.js       the traffic cars on screen (one instanced car body, paint, brake lights, night glows)
