@@ -47,6 +47,8 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | R | Reset / back on the road |
 | M | Choose another place (real-map page) |
 
+On phones and tablets only the driving controls appear on screen: steer on the left, gas and brake/reverse on the right. The ••• button above the brake opens the rest (handbrake, lights, time of day or night, camera, radio, reset).
+
 ## What gets built from the map (real-map page)
 
 - **Roads** at their tagged width, sidewalks, lane markings (centre line, edge lines, lane dividers from `lanes=*`), zebra crossings, railings on bridges.
@@ -82,6 +84,7 @@ minimap.js            north-up driving minimap drawn from the loaded world geome
 osm-query.js          the Overpass query, cache key, start-point grid and proxy address (shared with proxy/)
 vector-fallback.js    OpenFreeMap vector tiles → the same element list as an Overpass reply (fallback map data)
 radio.js              car radio: stations near the chosen place from radio-browser.info, Romanian presets on the test track
+touch.js              on-screen driving buttons for touch screens (both drive pages)
 proxy/                Cloudflare Worker that caches map downloads for all players (see proxy/README.md)
 vendor/               three.js 0.184.0 and Leaflet 1.9.4, served by the site
 sedan-model.js        buildCar() as an ES module (used by drive-map.js)

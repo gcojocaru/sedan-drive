@@ -67,12 +67,13 @@ a{color:inherit} a:hover{opacity:.8}
     <dt>V</dt><dd style="margin:0">Toggle driving sounds</dd>
   </dl>
   <p>Stay on the road. Grass slows you down. Cross the chequered line to start a lap.</p>
-  <p style="opacity:1;font-weight:600">Click or press any key to start</p>
+  <p style="opacity:1;font-weight:600">Tap, click or press any key to start</p>
 </div></div>
 <script type="module">
 import * as THREE from 'three';
 import { radio, radioHud } from './radio.js';
 import { drivingAudio } from './driving-audio.js';
+import { touchControls } from './touch.js';
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 function buildCar() {
 const car = new THREE.Group(); car.name = 'sedan';
@@ -958,7 +959,10 @@ function hud(s) {
 }
 const startEl = el('start');
 const sound = drivingAudio();
-function begin() { sound.activate(); if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => el('keys').style.opacity = 0, 6000); }
+function begin() {
+  sound.activate(); if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => el('keys').style.opacity = 0, 6000);
+  touchControls([['Lights', 'KeyH'], ['Night', 'KeyN'], ['Camera', 'KeyC'], ['Radio', 'KeyQ'], ['Sound', 'KeyV'], ['Reset', 'KeyR']]);
+}
 startEl.addEventListener('click', begin);
 const tune = radio(radioHud(), undefined, sound.tuningStatic);
 addEventListener('keydown', e => {

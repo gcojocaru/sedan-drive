@@ -8,7 +8,7 @@
     "dev": "npx --yes serve@14.2.4 -l 5173 .",
     "start": "npm run dev",
     "test": "node --test 'test/*.test.js'",
-    "build": "rm -rf dist && mkdir dist && cp index.html 'Drive Real Map.html' Drive.html Sedan.html drive-map.js road-layout.js area-travel.js driving-audio.js minimap.js building-fronts.js osm-query.js vector-fallback.js radio.js sedan-model.js vaz-model.js three-d-stage.js dist/ && cp -r vendor models dist/",
+    "build": "rm -rf dist && mkdir dist && cp index.html 'Drive Real Map.html' Drive.html Sedan.html drive-map.js road-layout.js area-travel.js driving-audio.js minimap.js building-fronts.js osm-query.js vector-fallback.js radio.js touch.js sedan-model.js vaz-model.js three-d-stage.js dist/ && cp -r vendor models dist/",
     "preview": "npm run build && npx --yes serve@14.2.4 -l 5174 dist",
     "proxy:kv": "cd proxy && npx --yes wrangler@4.159.0 kv namespace create AREAS --update-config",
     "proxy:dev": "cd proxy && npx --yes wrangler@4.159.0 dev",
