@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deliveryNetwork, createDelivery } from '../delivery.js';
+import { deliveryNetwork, createDelivery, allowedTime, afterCrash, deliveryPay, receiptText, FINE } from '../delivery.js';
 import { laneGraph } from '../traffic.js';
 import { prepareRoads } from '../road-layout.js';
 
@@ -47,4 +47,44 @@ test('jobs stay inside the area and skip obstructed stops, beyond-boundary conne
   assert.equal(createDelivery([]).start(0,0),false);
   const stops = network([street('Long Road',[[-2000,0],[2000,0]])],x=>x<0);
   assert.ok(stops.length>1 && stops.every(p=>p.x>=0 && p.x<495));
+});
+
+test('the clock allows for the distance, and crashes damage the parcel by how hard they are', () => {
+  assert.equal(allowedTime(300), 75);
+  assert.ok(allowedTime(600) > allowedTime(300) + 40);
+  assert.equal(afterCrash(1, 1.2), 1, 'a knock does nothing');
+  assert.ok(Math.abs(afterCrash(1, 30 / 3.6) - 0.66) < 0.02, 'a crash at 30 km/h takes a third off');
+  assert.equal(afterCrash(1, 75 / 3.6), 0, 'one at 75 km/h ruins it');
+  assert.equal(afterCrash(0.2, 15), 0);
+});
+
+test('pay rewards arriving early and undamaged, and takes off for lateness, damage and fines', () => {
+  const job = { metres: 300, allowed: 75 };
+  const early = deliveryPay({ ...job, taken: 40 }), onTime = deliveryPay({ ...job, taken: 75 }), late = deliveryPay({ ...job, taken: 105 });
+  assert.equal(onTime.base, 14); assert.equal(onTime.total, 14);
+  assert.ok(early.bonus > 0 && early.total > onTime.total && late.late < 0 && late.total < onTime.total);
+  assert.ok(deliveryPay({ ...job, taken: 600 }).total >= Math.round(onTime.base * 0.2) - 1, 'a very late parcel still pays a little');
+  const damaged = deliveryPay({ ...job, taken: 75, condition: 0.5 });
+  assert.equal(damaged.damage, -7); assert.equal(damaged.total, 7);
+  assert.equal(deliveryPay({ ...job, taken: 75, condition: 0 }).total, 0, 'a ruined parcel pays nothing');
+  assert.equal(deliveryPay({ ...job, taken: 75, fines: 2 * FINE }).total, 0, 'and fines never make it negative');
+  assert.deepEqual(receiptText({ ...deliveryPay({ ...job, taken: 40, condition: 0.9, fines: FINE }), taken: 40 }),
+    { title: 'Delivered in 0:40 · $5', detail: '$14 pay · +$3 early · −$2 damage · −$10 red light' });
+});
+
+test('the clock, damage and fines start once the parcel is aboard, and the receipt adds them up', () => {
+  const job = createDelivery(network([street('High Street', [[-300, 0], [300, 0]])]), () => 0);
+  assert.ok(job.start(-290, 0));
+  const pickup = job.target;
+  job.crash(15); job.ranRed();
+  assert.equal(job.load, null, 'nothing counts before the parcel is collected');
+  assert.equal(job.arrive(pickup.x, pickup.z, 0, 100), 'collected');
+  assert.ok(job.load.allowed === allowedTime(job.load.metres) && job.load.since === 100 && job.load.condition === 1);
+  job.crash(30 / 3.6); job.ranRed();
+  const drop = job.target;
+  assert.equal(job.arrive(drop.x, drop.z, 0, 100 + 10), 'delivered');
+  const r = job.receipt;
+  assert.ok(r.taken === 10 && r.condition < 0.7 && r.fines === -FINE && r.bonus > 0 && r.damage < 0);
+  assert.equal(r.total, Math.max(0, r.base + r.bonus + r.late + r.damage + r.fines));
+  assert.equal(job.load, null);
 });

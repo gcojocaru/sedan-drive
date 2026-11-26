@@ -150,11 +150,27 @@ function trafficLights(nodes, signals) {
     for (const e of ins) {
       e.signal = { ctrl, phase: Math.abs(cross(axis, e.dirB)) > 0.7 ? 1 : 0 };
       const L = e.lanes[0], P = L.pts.at(-1), u = L.len > 0.5 ? unit(L.pts.at(-2), P) : e.dirB, o = e.side * (e.r.hw + 0.6) - e.offs[0]; // from the kerbside lane to the kerb
-      heads.push({ e, x: P[0] - u[1] * o, z: P[1] + u[0] * o, h: Math.atan2(u[1], -u[0]), state: 'red' }); // facing the cars coming in
+      // the stop line across this road's lanes in: its middle (cx, cz), the way in (ux, uz) and half its width
+      const ends = e.lanes.map(l => l.pts.at(-1)), cx = ends.reduce((a, p) => a + p[0], 0) / ends.length, cz = ends.reduce((a, p) => a + p[1], 0) / ends.length;
+      const half = Math.max(...ends.map(p => Math.abs((p[0] - cx) * -u[1] + (p[1] - cz) * u[0]))) + 1.9;
+      heads.push({ e, x: P[0] - u[1] * o, z: P[1] + u[0] * o, h: Math.atan2(u[1], -u[0]), state: 'red', cx, cz, ux: u[0], uz: u[1], half }); // facing the cars coming in
     }
     ctrl.phases = [...new Set(ins.map(e => e.signal.phase))].sort();
   }
   return heads;
+}
+
+// The light whose stop line a move from (ax, az) to (bx, bz) crossed on its way into the junction while it showed red
+// (signals: graph.signals, their state kept up to date by step()), or null.
+export function ranRed(signals, ax, az, bx, bz) {
+  for (const s of signals) {
+    if (s.state !== 'red') continue;
+    const da = (ax - s.cx) * s.ux + (az - s.cz) * s.uz, db = (bx - s.cx) * s.ux + (bz - s.cz) * s.uz;
+    if (da >= 0 || db < 0) continue; // it didn't go over the line, or went over it the other way
+    const t = da / (da - db), lx = ax + (bx - ax) * t - s.cx, lz = az + (bz - az) * t - s.cz;
+    if (Math.abs(lz * s.ux - lx * s.uz) <= s.half) return s;
+  }
+  return null;
 }
 
 // The colour of light `signal` (an edge's { ctrl, phase }) at time t (s): its phase gets green, then amber, then all

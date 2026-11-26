@@ -16,7 +16,7 @@ import { radio, radioHud, stationsNear } from './radio.js';
 import { touchControls } from './touch.js';
 import { createSky } from './sky.js';
 import { WEATHERS, weatherNow, solarHour, groundOf } from './weather.js';
-import { laneGraph, createTraffic, LEVELS } from './traffic.js';
+import { laneGraph, createTraffic, ranRed, LEVELS } from './traffic.js';
 import { trafficCars } from './traffic-cars.js';
 import { trafficLights } from './traffic-lights.js';
 import { showAppVersion } from './app-version.js';
@@ -28,6 +28,7 @@ const $ = id => document.getElementById(id);
 const LS_PLACE = 'sedan-map-last-place-v1';
 const LS_CAR = 'sedan-map-car-v1'; // 'sedan' or 'vaz'
 const LS_TRAFFIC = 'sedan-map-traffic-v1'; // index into LEVELS
+const LS_EARNED = 'sedan-map-earnings-v1'; // { total, jobs }: money made delivering parcels, and deliveries made
 
 function backToMap() { history.replaceState(null, '', location.pathname + location.search); location.reload(); }
 $('retry').onclick = () => location.reload();
@@ -278,25 +279,34 @@ async function startGame(lat0, lon0, placeName) {
     return object === 'car' ? 'car' : object ? 'post' : null;
   }
 
-  const delivery = deliveryHud(scene, graph, furnitureHit, $('jobButton'), $('jobStage'), $('jobDistance'), flash);
+  let earned = { total: 0, jobs: 0 }; try { earned = { ...earned, ...JSON.parse(localStorage.getItem(LS_EARNED) || '{}') }; } catch { }
+  if (!(earned.total >= 0 && earned.jobs >= 0)) earned = { total: 0, jobs: 0 }; // (whatever else was stored there)
+  const showEarned = () => { $('wallet').hidden = !earned.jobs; $('wallet').textContent = '$' + earned.total + ' earned · ' + earned.jobs + (earned.jobs === 1 ? ' delivery' : ' deliveries'); };
+  showEarned();
+  const delivery = deliveryHud(scene, graph, furnitureHit, $('jobButton'), $('jobStage'), $('jobDistance'), flash, receipt => {
+    earned = { total: earned.total + receipt.total, jobs: earned.jobs + 1 }; showEarned();
+    try { localStorage.setItem(LS_EARNED, JSON.stringify(earned)); } catch { }
+  });
   function toggleDelivery() {
     if (started && !paused()) delivery.toggle(st.pos.x,st.pos.z);
   }
   $('jobButton').onclick = () => { toggleDelivery(); $('jobButton').blur(); };
   const TUNE = { power: 7.4, idle: 0.5, vtop: 50 };
   function update(dt) {
-    const k = readKeys(keys), ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
+    const k = readKeys(keys), was = [st.pos.x, st.pos.z], ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
     const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard, grip }, TUNE, (nx, nz, nh) => {
       const hit = blocked(nx, nz, nh);
       boundary.move(st.pos.x, st.pos.z);
       if (SOLID[hit]) {
         const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20);
         sound.impact(imp, SOLID[hit]); if (hit === 'traffic' && imp > 2) sound.honkAt(hitCar, ear); // and the other driver lets you know
+        delivery.crash(imp);
       }
       else if (hit) { st.v = 0; boundary.offer(hit); } // the edge of the area
       return !!hit;
     });
-    if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v);
+    if (ranRed(graph.signals, was[0], was[1], st.pos.x, st.pos.z)) delivery.ranRed();
+    if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v, dt);
     sound.update(st.v, !paused() && k.up, !paused() && k.dn, { hb: !paused() && k.hb, steer: st.steer, slip: st.slip, rough: !onHard, wet: ear.wet, snow: ear.snow, grip });
     return s;
   }

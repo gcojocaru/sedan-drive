@@ -57,7 +57,7 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 
 On phones and tablets only the driving controls appear on screen: steer on the left, gas and brake/reverse on the right. The ••• button above the brake opens the rest (handbrake, lights, time of day or night, weather, settings, camera, horn, radio, reset).
 
-In a delivery job, follow the mint minimap marker and stop inside the road ring to collect the parcel. The marker then moves to the drop-off. Each job stays in the current area.
+In a delivery job, follow the mint minimap marker and stop inside the road ring to collect the parcel. The marker then moves to the drop-off, and the clock starts: the time you have depends on the distance, and the status box counts it down. The pay is more the farther the drop-off, up to 40% more for arriving early and less the later you are. Crashes damage the parcel (a knock is fine, a hard crash ruins it) and cut the pay by as much; running a red light costs $10. When you deliver, the status box shows the receipt, and your earnings and deliveries are kept under it from one drive to the next. Each job stays in the current area.
 
 ## What gets built from the map (real-map page)
 
