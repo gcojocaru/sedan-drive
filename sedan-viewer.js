@@ -26,7 +26,7 @@ const studioLights = scene.children.filter(o => o.isLight).map(l => ({ l, i: l.i
 const nightGround = new THREE.Mesh(new THREE.CircleGeometry(16, 96), new THREE.MeshStandardMaterial({ color: 0x3b3c3f, roughness: 0.88 }));
 nightGround.rotation.x = -Math.PI / 2; nightGround.position.y = 0.001; nightGround.receiveShadow = true; nightGround.visible = false; scene.add(nightGround);
 
-const { car, headMat, tailMat, cbrakeMat, revMat, fogMat, lights, extraLights: [rearGlow, revGlow, domeGlow, turnGlowL, turnGlowR, cabinFill], IN, glass, lensClear, domeMat, gaugeFace, radioDisp, turnL, turnR } = buildCar();
+const { car, headMat, tailMat, cbrakeMat, revMat, fogMat, lights, extraLights: [rearGlow, revGlow, domeGlow, turnGlowL, turnGlowR, cabinFill], IN, glass, lensClear, domeMat, gaugeFace, radioDisp, turnL, turnR, drlMat } = buildCar();
 
 stage.setObject(car);
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
@@ -51,7 +51,7 @@ function apply() {
   localStorage.setItem(KEY, JSON.stringify(st));
   const n = st.night;
   headMat.emissiveIntensity = st.beam ? (st.beam === 2 ? 9 : 5) : 0;
-  window.__drl.emissiveIntensity = st.beam ? 6 : 0;
+  drlMat.emissiveIntensity = st.beam ? 6 : 0;
   lights.low.forEach(l => l.intensity = st.beam ? 140 : 0);
   lights.high.forEach(l => l.intensity = st.beam === 2 ? 600 : 0);
   fogMat.emissiveIntensity = st.fog ? 5 : 0; lights.fog.forEach(l => l.intensity = st.fog ? 50 : 0);

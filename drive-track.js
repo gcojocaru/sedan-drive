@@ -123,7 +123,7 @@ const distToRoad = (x, z) => { let d = 1e9; for (let i = 0; i < N; i += 6) { con
   mk(blob(0.35, 0.6), 5.0, 2.1, -0.05, 0); const tb = blob(0.1, 0.8); for (const x of [1.32, -1.31]) for (const z of [0.735, -0.735]) mk(tb, 0.55, 0.34, x, z); }
 
 // ---------- Driving ----------
-const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0, idx: 0, a: 0 };
+const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0, idx: 0 };
 const keys = {};
 let started = false, camMode = 0, head = false, night = false;
 const cam = chaseCamera(camera, car);
@@ -162,7 +162,7 @@ function update(dt) {
   return s;
 }
 function setLights() {
-  C.headMat.emissiveIntensity = head ? 6 : 0; if (window.__drl) window.__drl.emissiveIntensity = head ? 6 : 0;
+  C.headMat.emissiveIntensity = head ? 6 : 0; C.drlMat.emissiveIntensity = head ? 6 : 0;
   C.lights.low.forEach(l => { l.intensity = head ? 260 : 0; l.visible = head; });
   C.lights.high.forEach(l => { l.intensity = head && night ? 900 : 0; l.visible = head && night; });
 }

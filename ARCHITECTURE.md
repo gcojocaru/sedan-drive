@@ -26,7 +26,7 @@ how each part works; this file says how the parts may fit together.
 | `sedan-viewer.js` | 108 | Viewer page (`Sedan.html`): studio lights, contact shadows, light toggles, views |
 | `sedan-model.js` | 662 | `buildCar()` and the axle constants `FA`, `RA`: the one procedural car, used by all three pages |
 | `vaz-model.js` | 46 | `loadVaz()`: VAZ-2101 from `models/vaz-2101.glb` in `buildCar()`'s shape, the second car on the real-map page |
-| `three-d-stage.js` | 435 | Viewer web component (renderer, orbit, GLB/OBJ export) |
+| `three-d-stage.js` | 412 | Viewer web component (renderer, orbit, GLB/OBJ export) |
 | `area-travel.js` | — | Neighboring-area geometry, boundary confirmation and cooldown |
 | `driving-audio.js` | — | Shared engine and tuning synthesis and per-tab mute |
 | `road-layout.js` | — | Pure lane, junction and spawn geometry |
@@ -128,4 +128,5 @@ Behaviour-neutral PRs, in this order. Tick them off here as they merge.
 - [x] **4. Split `drive-map.js`.** Move the cache and download into `map-data.js`, the pure helpers into `geom.js`
   (with tests), and the world build into `world.js`. `drive-map.js` keeps the picker, loading screen, time of day and
   game loop.
-- [ ] **5. Cleanup.** Drop `notifyExport()` from `three-d-stage.js`; drop anything the steps above left unused.
+- [x] **5. Cleanup.** Drop `notifyExport()` from `three-d-stage.js`; drop anything the steps above left unused (the
+  never-read `st.a`; `buildCar()` returns `drlMat` instead of setting `window.__drl`).
