@@ -28,7 +28,7 @@ While driving on a real map, the minimap shows 240 metres across with north at t
 
 ## Release version
 
-The map picker, driving settings, test track and model viewer show the version from `package.json`. Use `npm version patch --no-git-tag-version` for a fix, or replace `patch` with `minor` for a feature or `major` for a breaking change. Commit the manifest with the release. Both the repository-root site and the production build read the same file.
+On the real map, open **Settings** with Esc or the touch menu and look for **Game version**. The test track and model viewer also display the version from `package.json`. Use `npm version patch --no-git-tag-version` for a fix, or replace `patch` with `minor` for a feature or `major` for a breaking change. Commit the manifest with the release. Both the repository-root site and the production build read the same file.
 
 ## Deploy
 

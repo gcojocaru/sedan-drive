@@ -6,7 +6,7 @@ export async function showAppVersion() {
     const { version } = await response.json();
     if (typeof version !== 'string' || !version) throw new Error('Missing package version');
     for (const label of document.querySelectorAll('[data-app-version]')) {
-      label.textContent = 'Version ' + version;
+      label.querySelector('span').textContent = version;
       label.hidden = false;
     }
   } catch (error) {
