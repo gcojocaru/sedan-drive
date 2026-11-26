@@ -5,6 +5,7 @@ import { createMinimap } from './minimap.js';
 import { drivingAudio } from './driving-audio.js';
 import { crossedEdge, nextArea, cooldownSeconds, startCooldown, visitArea, cooldownButton, edgePrompt } from './area-travel.js';
 import { buildCar } from './sedan-model.js';
+import { readKeys, rigCar, step, syncCar, chaseCamera, speedHud } from './drive-core.js';
 import { loadVaz } from './vaz-model.js';
 import { HALF, CACHE_V, AREA_PROXY, ENDPOINTS, snap, areaKey, overpassQuery, overpassError } from './osm-query.js';
 import { fetchVectorArea, FALLBACK_CREDIT } from './vector-fallback.js';
@@ -1098,11 +1099,7 @@ async function startGame(lat0, lon0, placeName) {
   // ---- car ----
   await say('Placing the car…');
   const CAR = localStorage.getItem(LS_CAR) === 'vaz' ? await loadVaz().catch(e => (console.warn('VAZ-2101 did not load, using the sedan', e), buildCar())) : buildCar(), car = CAR.car;
-  car.rotation.order = 'YXZ';
-  CAR.lights.low.concat(CAR.lights.high, CAR.lights.fog, CAR.extraLights).forEach(l => { l.visible = false; l.intensity = 0; });
-  car.traverse(o => { if (o.isMesh) { o.castShadow = o.material !== CAR.glass && o.material !== CAR.lensClear; o.receiveShadow = false; } });
-  CAR.IN.traverse(o => { if (o.isMesh) o.castShadow = false; });
-  { const u = car.getObjectByName('underbody'); if (u) u.traverse(o => { if (o.isMesh) o.castShadow = false; }); }
+  const rig = rigCar(CAR);
   {
     const blob = (inner, a) => makeTex(128, 128, (x) => { const g = x.createRadialGradient(64, 64, 64 * inner, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); });
     const mk = (tex, w, d, x, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.07, z); m.renderOrder = 2; car.add(m); };
@@ -1116,13 +1113,11 @@ async function startGame(lat0, lon0, placeName) {
   car.updateMatrixWorld(true); car.traverse(o => { if (o.isMesh && o.name === 'tail_brake') tails.push(new THREE.Box3().setFromObject(o).getCenter(V())); });
   for (const c of tails) { const s = new THREE.Sprite(tailGlow); s.position.copy(car.worldToLocal(c)).add(V(-0.1, 0, 0)); s.scale.setScalar(0.6); car.add(s); }
 
-  const wheels =['front_R', 'front_L', 'rear_R', 'rear_L'].map(k => { const w = car.getObjectByName('wheel_' + k); return w && { w, front: k.startsWith('front'), side: k.endsWith('R') ? 1 : -1, base: w.rotation.y }; }).filter(Boolean);
-  const swFace = car.getObjectByName('steering_wheel_face');
   const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0 };
-  const camPos = V();
+  const cam = chaseCamera(camera, car);
   function place(x, z, h) {
     st.pos.set(x, 0, z); st.h = h; st.v = 0; st.steer = 0;
-    camPos.set(x - Math.cos(h) * 9, 3.2, z + Math.sin(h) * 9);
+    cam.reset(st);
   }
   const corners = [[2.2, 0.86], [2.2, -0.86], [0, 0.88], [0, -0.88], [-2.18, 0.86], [-2.18, -0.86]];
   const start = laneSpawn(layout.spawnSegments, entry?.x ?? 0, entry?.z ?? 0, entry?.h, HALF);
@@ -1202,46 +1197,23 @@ async function startGame(lat0, lon0, placeName) {
     return null;
   }
 
+  const TUNE = { power: 7.4, idle: 0.5, vtop: 50 };
   function update(dt) {
-    const up = keys.KeyW || keys.ArrowUp, dn = keys.KeyS || keys.ArrowDown, lf = keys.KeyA || keys.ArrowLeft, rt = keys.KeyD || keys.ArrowRight, hb = keys.Space;
-    const ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
-    const vmax = onRoad ? 42 : onHard ? 20 : 12;
-    let a = 0;
-    if (up) a = st.v < -0.2 ? 18 : 7.4 * Math.max(0, 1 - Math.max(0, st.v) / vmax) + 0.5;
-    if (dn) a = st.v > 0.2 ? -17 : -5;
-    a -= 0.0011 * st.v * Math.abs(st.v) + (onHard ? 0.02 : 0.7) * st.v + Math.sign(st.v) * 0.3;
-    if (hb) a -= Math.sign(st.v) * 9;
-    st.v += a * dt;
-    if (!up && !dn && Math.abs(st.v) < 0.4) st.v = 0;
-    st.v = Math.max(-9, Math.min(50, st.v));
-    const target = (lf ? 1 : 0) - (rt ? 1 : 0), ms = 0.62 / (1 + Math.abs(st.v) / 14);
-    st.steer += (target * ms - st.steer) * Math.min(1, dt * (target ? 5 : 8));
-    const yaw = st.v * Math.tan(st.steer) / 2.63 * (hb && Math.abs(st.v) > 4 ? 1.5 : 1);
-    const nh = st.h + yaw * dt, nx = st.pos.x + Math.cos(nh) * st.v * dt, nz = st.pos.z - Math.sin(nh) * st.v * dt;
-    const hit = blocked(nx, nz, nh);
-    boundary.move(st.pos.x, st.pos.z);
-    if (hit && hit !== 'bld') {
-      st.v = 0;
-      boundary.offer(hit);
-    } else if (hit) {
-      const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20);
-    } else { st.h = nh; st.pos.x = nx; st.pos.z = nz; }
-    st.roll += (Math.max(-0.045, Math.min(0.045, st.v * yaw * 0.0045)) - st.roll) * Math.min(1, dt * 6);
-    st.pitch += (Math.max(-0.03, Math.min(0.02, a * 0.0018)) - st.pitch) * Math.min(1, dt * 5);
-    if (!onHard && Math.abs(st.v) > 3) st.pitch += (Math.random() - 0.5) * 0.004;
-    sound.update(st.v, !dialog.open && up, !dialog.open && dn);
-    st.spin += st.v * dt / 0.308;
-    return { braking: (dn && st.v > 0.2) || hb, reversing: st.v < -0.2 };
+    const k = readKeys(keys), ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
+    const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard }, TUNE, (nx, nz, nh) => {
+      const hit = blocked(nx, nz, nh);
+      boundary.move(st.pos.x, st.pos.z);
+      if (hit && hit !== 'bld') { st.v = 0; boundary.offer(hit); }
+      else if (hit) { const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20); }
+      return !!hit;
+    });
+    sound.update(st.v, !dialog.open && k.up, !dialog.open && k.dn);
+    return s;
   }
-  function syncCar(s) {
-    car.position.set(st.pos.x, 0, st.pos.z); car.rotation.set(st.roll, st.h, st.pitch);
-    for (const w of wheels) w.w.rotation.set(0, w.base + (w.front ? st.steer : 0), w.side > 0 ? -st.spin : st.spin);
-    if (swFace) swFace.rotation.z = st.steer * 4;
-    CAR.tailMat.emissiveIntensity = s.braking ? 7 : head ? 1.8 : 0; CAR.cbrakeMat.emissiveIntensity = s.braking ? 7 : 0;
-    CAR.revMat.emissiveIntensity = s.reversing ? 5 : 0;
+  function glows(s) {
     headGlow.opacity = head ? (lowLight ? 0.85 : 0.25) : 0; tailGlow.opacity = s.braking ? (lowLight ? 0.9 : 0.4) : head && lowLight ? 0.35 : 0;
   }
-  const look = V(), want = V(), shC = V(), lx = V(), ly = V();
+  const shC = V(), lx = V(), ly = V();
   function placeShadow() { // centre the shadow box ahead of the car, snapped to whole shadow-map texels so edges don't crawl
     shC.set(st.pos.x + Math.cos(st.h) * 45, 0, st.pos.z - Math.sin(st.h) * 45);
     lx.crossVectors(UPV, lightDir); if (lx.lengthSq() < 1e-6) lx.set(1, 0, 0); lx.normalize(); ly.crossVectors(lightDir, lx);
@@ -1250,22 +1222,8 @@ async function startGame(lat0, lon0, placeName) {
     sun.target.position.copy(shC); sun.position.copy(shC).addScaledVector(lightDir, 400);
   }
   function updateCam(dt) {
-    const fx = Math.cos(st.h), fz = -Math.sin(st.h);
-    if (camMode === 0) {
-      let back = 8.5 + Math.max(0, st.v) * 0.04, camY = 3.0;
-      for (let s = 2; s < back; s += 0.6) if (inBuilding(st.pos.x - fx * s, st.pos.z - fz * s, camY)) { back = Math.max(2.5, s - 0.8); camY = 2.2 + back * 0.12; break; }
-      want.set(st.pos.x - fx * back, camY, st.pos.z - fz * back);
-      camPos.lerp(want, 1 - Math.exp(-dt * 4.5)); camera.position.copy(camPos);
-      look.set(st.pos.x + fx * 4, 1.1, st.pos.z + fz * 4); camera.lookAt(look);
-      camera.fov = 58 + Math.max(0, st.v) * 0.18; camera.near = 0.1;
-    } else {
-      car.updateMatrixWorld(true);
-      camera.position.copy(car.localToWorld(V(-0.18, 1.2, -0.37)));
-      camera.lookAt(car.localToWorld(V(20, 0.75, -0.37)));
-      camera.fov = 68; camera.near = 0.02;
-    }
+    cam.update(st, camMode, dt, inBuilding);
     if (shake > 0.01) { camera.position.x += (Math.random() - 0.5) * shake * 0.25; camera.position.y += (Math.random() - 0.5) * shake * 0.2; shake *= Math.exp(-dt * 7); }
-    camera.updateProjectionMatrix();
     placeShadow();
   }
 
@@ -1276,8 +1234,7 @@ async function startGame(lat0, lon0, placeName) {
   let streetT = 0, shownStreet = null;
   function hud(s, dt) {
     drawMinimap(st.pos.x, st.pos.z, st.h);
-    kmh.textContent = Math.round(Math.abs(st.v) * 3.6);
-    gear.textContent = s.reversing ? 'R' : st.v === 0 ? 'N' : 'D';
+    speedHud(kmh, gear, st, s);
     if ((streetT -= dt) > 0) return; streetT = 0.25;
     const r = roadAt(st.pos.x, st.pos.z); let label = '';
     const seg = r.drv && r.de < 3 ? r.drv : r.any && r.ae < 1 ? r.any : null;
@@ -1341,7 +1298,7 @@ async function startGame(lat0, lon0, placeName) {
   renderer.setAnimationLoop(now => {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     if (started && !dialog.open) lastS = update(dt);
-    syncCar(lastS); updateCam(dt); hud(lastS, dt);
+    syncCar(rig, st, lastS, head); glows(lastS); updateCam(dt); hud(lastS, dt);
     renderer.render(scene, camera);
   });
 }
