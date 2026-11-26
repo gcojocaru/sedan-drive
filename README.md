@@ -47,9 +47,12 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | V | Mute or unmute engine sound and tuning static. The radio has its own off position. |
 | Q · Shift+Q | Radio: next / previous station, last one is off (real-map page: up to 30 stations from around the chosen place; test track: Romanian stations) |
 | R | Reset / back on the road |
+| J | Start or cancel a parcel delivery (real-map page). You can also use the Start delivery button. |
 | M | Choose another place (real-map page) |
 
 On phones and tablets only the driving controls appear on screen: steer on the left, gas and brake/reverse on the right. The ••• button above the brake opens the rest (handbrake, lights, time of day or night, weather, settings, camera, radio, reset).
+
+In a delivery job, follow the mint minimap marker and stop inside the road ring to collect the parcel. The marker then moves to the drop-off. Each job stays in the current area.
 
 ## What gets built from the map (real-map page)
 

@@ -42,6 +42,8 @@ how each part works; this file says how the parts may fit together.
 | `road-layout.js` | — | Pure lane, junction and spawn geometry |
 | `traffic.js` | — | Traffic on the real map: lane graph, car following, junction claims, spawning around the player |
 | `traffic-cars.js` | — | The traffic cars on screen: instanced bodies, paint, brake lights and night glows |
+| `delivery.js` | — | Parcel stops on connected, directed lanes and pickup/drop-off state |
+| `delivery-hud.js` | — | Current job prompt and road marker |
 | `minimap.js` | — | North-up driving minimap and car marker, drawn on supplied canvases |
 | `building-fronts.js` | — | Facade layout (style, storeys, window bays, doors, shop windows) and atlas drawing on a supplied canvas context |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
@@ -68,6 +70,8 @@ root, one copy each. Page URLs don't change.
 | `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch` |
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model` |
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`), the ground under the car (`vmax`, `drag`, `rough`, `grip`) and collisions | nothing (works on the three.js objects it is given) |
+| `delivery.js` | Select reachable stops and advance an area-local parcel job | nothing |
+| `delivery-hud.js` | Drive the HUD and place the active stop in the scene | `delivery`, three |
 | `minimap.js` | Cached raster of real-map geometry and car-centred HUD view | nothing |
 | `traffic-cars.js` | `trafficCars(scene, max, glowTex)` → `sync(cars, lit)`: instanced car bodies posed from `traffic.js` cars | three |
 | `traffic.js` | `laneGraph(roads, junctions, half)`, `createTraffic(graph, { rand, max, seen })` → `step`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
