@@ -32,7 +32,7 @@ export async function loadVaz(url = './models/vaz-2101.glb') {
   // lamps: front and rear clusters share one material in the file; give each its own so they light separately
   const glow = (node, color) => { let mat; m.getObjectByName(node).traverse(o => { if (o.material?.name === 'Light') o.material = mat ||= Object.assign(o.material.clone(), { emissive: new THREE.Color(color), emissiveMap: o.material.map, emissiveIntensity: 0 }); }); return mat; };
   const headMat = glow('Light', 0xfff1d6), tailMat = glow('Light001', 0xff3020);
-  let glass; m.traverse(o => { if (o.material?.name === 'Windows glass') glass = o.material; });
+  let glass, paint; m.traverse(o => { if (o.material?.name === 'Windows glass') glass = o.material; if (o.material?.name === 'Paint_body') paint = o.material; });
   Object.assign(glass, { transmission: 0, transparent: true, opacity: 0.45 }); // transmission re-renders the whole city every frame
 
   const lights = { low: [], high: [], fog: [] };
@@ -42,5 +42,5 @@ export async function loadVaz(url = './models/vaz-2101.glb') {
     lights.high.push(spot(new THREE.Vector3(1.86, 0.66, s * 0.6), new THREE.Vector3(20, 0.4, s * 0.5), 0.3, 0.6));
   }
   // no centre brake light or separate reverse lens on this car: the game's writes to those land in plain objects
-  return { car, headMat, tailMat, cbrakeMat: {}, revMat: {}, lights, extraLights: [], IN: new THREE.Group(), glass, lensClear: null };
+  return { car, paint, headMat, tailMat, cbrakeMat: {}, revMat: {}, lights, extraLights: [], IN: new THREE.Group(), glass, lensClear: null };
 }

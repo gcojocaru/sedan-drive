@@ -56,6 +56,7 @@ test('the clock allows for the distance, and crashes damage the parcel by how ha
   assert.ok(Math.abs(afterCrash(1, 30 / 3.6) - 0.66) < 0.02, 'a crash at 30 km/h takes a third off');
   assert.equal(afterCrash(1, 75 / 3.6), 0, 'one at 75 km/h ruins it');
   assert.equal(afterCrash(0.2, 15), 0);
+  assert.ok(Math.abs((1 - afterCrash(1, 30 / 3.6, 0.4)) - 0.4 * (1 - afterCrash(1, 30 / 3.6))) < 1e-9, 'padding lets through only its share');
 });
 
 test('pay rewards arriving early and undamaged, and takes off for lateness, damage and fines', () => {

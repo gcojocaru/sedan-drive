@@ -72,9 +72,9 @@ export function deliveryHud(scene, graph, occupied, button, stage, detail, flash
       refresh(x,z);
     },
     // a crash at `speed` m/s, and running a red light: they count while the parcel is aboard
-    crash(speed) {
+    crash(speed, cushion = 1) {
       const load = job?.load; if (!load) return;
-      const before = load.condition; job.crash(speed);
+      const before = load.condition; job.crash(speed, cushion);
       if (load.condition < before) flash(load.condition > 0 ? 'Parcel damaged · ' + Math.round(load.condition * 100) + '%' : 'Parcel ruined');
     },
     ranRed() { if (job?.load) { job.ranRed(); flash('Ran a red light · ' + money(-FINE)); } }

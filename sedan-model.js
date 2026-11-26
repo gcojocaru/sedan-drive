@@ -658,5 +658,5 @@ const revGlow = P('reverse_glow', 0xffffff, -2.9, 0.6, 0, 8);
 const domeGlow = P('dome_light', 0xffe8c8, -0.35, 1.35, 0, 3);
 const turnGlowL = P('turn_glow_L', 0xff8a00, 0, 0.7, -1.2, 4), turnGlowR = P('turn_glow_R', 0xff8a00, 0, 0.7, 1.2, 4);
 
-return { car, headMat, tailMat, cbrakeMat, revMat, fogMat, lights, extraLights: [rearGlow, revGlow, domeGlow, turnGlowL, turnGlowR, cabinFill], IN, glass, lensClear, domeMat, gaugeFace, radioDisp, turnL, turnR, drlMat };
+return { car, paint, headMat, tailMat, cbrakeMat, revMat, fogMat, lights, extraLights: [rearGlow, revGlow, domeGlow, turnGlowL, turnGlowR, cabinFill], IN, glass, lensClear, domeMat, gaugeFace, radioDisp, turnL, turnR, drlMat };
 }

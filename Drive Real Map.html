@@ -108,15 +108,15 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 .travel-actions .ghost:hover{background:#364748}
 .travel-actions button:disabled{background:#354548;color:#bac7c5;cursor:default}
 .travel-actions button:focus-visible{outline:2px solid #fff;outline-offset:3px}
-#edgeDialog,#settings{position:fixed;inset:0;width:min(27rem,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;color-scheme:dark}
-#edgeDialog::backdrop,#settings::backdrop{background:rgba(7,14,17,.66)}
+#edgeDialog,#settings,#garage{position:fixed;inset:0;width:min(27rem,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;color-scheme:dark}
+#edgeDialog::backdrop,#settings::backdrop,#garage::backdrop{background:rgba(7,14,17,.66)}
 #edgeDialog .route-map{height:clamp(58px,12vh,90px)}
 #edgeDialog .route-map::after{
   left:65%;border-left:2px dashed #ccded4aa;background:repeating-linear-gradient(125deg,#17252996 0 8px,#17252973 8px 10px);
 }
 #edgeDialog .route-marker{width:30px;height:30px}
 #edgeDialog .route-marker::before{inset:7px 6px 7px 8px}
-#edgeDialog h2,#settings h2{font-size:clamp(25px,4vw,31px)}
+#edgeDialog h2,#settings h2,#garage h2{font-size:clamp(25px,4vw,31px)}
 .setting{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;font-size:15px;color:#dbe6e2}
 .setting select{font:inherit;padding:9px 10px;border-radius:9px;border:1px solid #516365;background:#293739;color:#eff3ef;min-width:min(13rem,55vw);cursor:pointer}
 .setting select:focus-visible{outline:2px solid #fff;outline-offset:2px}
@@ -139,8 +139,23 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 #stats{font-size:12px;opacity:.8}
 #tod{font-size:13px;font-weight:600}
 #changePlace{font-size:13px;padding:7px 11px;border-radius:8px;background:rgba(0,0,0,.4);backdrop-filter:blur(6px);font-weight:500}
-#jobButton{font-size:13px;min-height:36px;padding:7px 12px;background:#1b3739;color:#c5fff2;border:1px solid #76c7b7}
-#jobButton:hover{background:#294c4d}
+#jobButton,#garageButton{font-size:13px;min-height:36px;padding:7px 12px;background:#1b3739;color:#c5fff2;border:1px solid #76c7b7}
+#jobButton:hover,#garageButton:hover{background:#294c4d}
+.garage-cash{margin:10px 0 4px;color:#dbe6e2;font-size:14px} .garage-cash strong{color:#ffbd66;font-size:18px}
+.garage-item{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid #33464a}
+.garage-item strong{font-size:15px;color:#eff3ef} .garage-item small{display:block;color:#a9bab6;font-size:12.5px;margin-top:3px}
+.pips{display:inline-flex;gap:3px;margin-left:8px;vertical-align:middle} .pips i{width:9px;height:9px;border-radius:50%;border:1px solid #76c7b7}
+.pips i.on{background:#68e6d3;border-color:#68e6d3}
+#garage .garage-item button{min-width:74px;min-height:38px;padding:8px 12px;background:#ffbd66;color:#211c14;font-weight:650}
+#garage .garage-item button:hover:not(:disabled){background:#ffce8e}
+#garage .garage-item button:disabled{background:#354548;color:#9fb0ad}
+#garage h3{font-size:15px;margin:16px 0 8px;color:#eff3ef}
+.swatches{display:flex;flex-wrap:wrap;gap:10px 8px;padding-bottom:6px}
+#garage .swatch,#garage .swatch:hover,#garage .swatch:disabled{position:relative;width:42px;height:42px;padding:0;background:var(--c);border:2px solid #516365;color:#dbe6e2;font-weight:650}
+#garage .swatch:hover:not(:disabled){border-color:#9fb0ad}
+#garage .swatch.on{border-color:#fff;box-shadow:0 0 0 2px #68e6d3}
+.swatch b{position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);white-space:nowrap;font-size:10px;line-height:14px;background:#13262b;color:#ffbd66;border-radius:4px;padding:0 4px}
+#garage .swatch:disabled{opacity:.45}
 #jobStatus{max-width:100%;box-sizing:border-box;text-align:right;background:#13262bee;border-right:3px solid #68e6d3;border-radius:5px;padding:7px 10px;pointer-events:none}
 #jobStatus strong,#jobStatus small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #jobStatus strong{font-size:13px} #jobStatus small{color:#a6efdf;font-size:12px;margin-top:3px}
@@ -214,15 +229,23 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
     <div class="travel-actions"><button autofocus>Back to driving</button></div>
   </form>
 </dialog>
+<dialog id="garage" class="travel-panel" aria-labelledby="garageTitle">
+  <form method="dialog" class="travel-copy">
+    <h2 id="garageTitle">Garage</h2>
+    <div id="garageItems"></div>
+    <div class="travel-actions"><button autofocus>Back to driving</button></div>
+  </form>
+</dialog>
 <div id="hud" style="display:none">
   <a id="back" href="Sedan.html">← Model viewer</a>
   <div class="hud" id="speed"><b id="kmh">0</b><span>km/h</span><span id="gear">N</span></div>
   <div class="hud" id="street"></div>
   <div class="hud" id="where"><span id="place"></span><span id="stats"></span><span id="tod"></span><button id="changePlace">Change place (M)</button>
     <button type="button" id="jobButton" aria-keyshortcuts="J">Start delivery</button>
+    <button type="button" id="garageButton" aria-keyshortcuts="G">Garage</button>
     <div id="jobStatus" hidden><strong id="jobStage" aria-live="polite"></strong><small id="jobDistance"></small></div>
     <small id="wallet" hidden></small></div>
-  <div class="hud" id="keys">W/↑ accelerate · S/↓ brake &amp; reverse · A/D steer · Space handbrake · H lights · B horn · T time of day · E weather · N night · C camera · Esc settings · V driving sounds · Q radio · J delivery · R back on road · M map</div>
+  <div class="hud" id="keys">W/↑ accelerate · S/↓ brake &amp; reverse · A/D steer · Space handbrake · H lights · B horn · T time of day · E weather · N night · C camera · Esc settings · V driving sounds · Q radio · J delivery · G garage · R back on road · M map</div>
   <div class="hud" id="msg"></div>
   <div id="mapHud">
     <div id="minimap" role="img" aria-label="North-up minimap with street names, house numbers and an arrow toward the active delivery"><canvas width="360" height="360"></canvas><span class="north" aria-hidden="true">N</span></div>
@@ -244,6 +267,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
     <dt>V</dt><dd>Toggle driving sounds</dd>
     <dt>Q</dt><dd>Radio: next station (Shift+Q back)</dd>
     <dt>J</dt><dd>Start or cancel a delivery job: once the parcel is aboard the clock runs; crashes damage it and red lights cost $10</dd>
+    <dt>G</dt><dd>Garage: spend what deliveries earn on upgrades and paint</dd>
     <dt>R · M</dt><dd>Back on the road · choose another place</dd>
   </dl>
   <p id="startNote"></p>

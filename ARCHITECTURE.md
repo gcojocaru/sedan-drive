@@ -45,6 +45,8 @@ how each part works; this file says how the parts may fit together.
 | `app-version.js` | — | Shared release label from the local package manifest |
 | `delivery.js` | — | Parcel stops on connected, directed lanes, pickup/drop-off state, the clock, damage, fines and pay |
 | `delivery-hud.js` | — | Current job prompt, countdown, receipt and road marker |
+| `garage.js` | — | What delivery money buys (upgrades, paint), the wallet, and what the upgrades do to the car |
+| `garage-panel.js` | — | The garage dialog: cash, upgrade levels and prices, paint swatches |
 | `minimap-labels.js` | — | Nearby street and address labels, footprint anchors and label spacing |
 | `traffic-lights.js` | — | Traffic light poles and signal heads on screen, the lamp that's on |
 | `minimap.js` | — | North-up driving minimap and car marker, drawn on supplied canvases |
@@ -72,10 +74,12 @@ root, one copy each. Page URLs don't change.
 | `drive-map.js` | Real-map page entry: picker, loading screen, time of day, game loop wiring | everything below |
 | `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch`, `app-version` |
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model`, `app-version` |
-| `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`), the ground under the car (`vmax`, `drag`, `rough`, `grip`) and collisions | nothing (works on the three.js objects it is given) |
+| `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`, `brake`), and `repaint(C, hex)` colours the car's `paint`; the ground under the car (`vmax`, `drag`, `rough`, `grip`) and collisions | nothing (works on the three.js objects it is given) |
 | `app-version.js` | Show the current release on the three game pages | nothing |
-| `delivery.js` | Select reachable stops and advance an area-local parcel job; `allowedTime`, `afterCrash`, `deliveryPay`, `receiptText` | nothing |
+| `delivery.js` | Select reachable stops and advance an area-local parcel job; `allowedTime`, `afterCrash` (with the padding's cushion), `deliveryPay`, `receiptText` | nothing |
 | `delivery-hud.js` | Drive the HUD (countdown, damage and fines, receipt) and place the active stop in the scene; `paid(receipt)` hands the pay to the page | `delivery`, three |
+| `garage-panel.js` | `garagePanel(root, choose)` → `draw(garage, wallet)`: the shop in the garage dialog | `garage` |
+| `garage.js` | `UPGRADES`, `PAINTS`, `readGarage`, `readWallet`, `earn`, `price`, `buy`, `carTuning`: what delivery money buys and what it does to the car | nothing |
 | `minimap.js` | Cached raster of real-map geometry, car and goal markers, traffic as dots | `minimap-labels`, `delivery` |
 | `minimap-labels.js` | Nearby names and address numbers on the supplied canvas | `geom` |
 | `traffic-cars.js` | `trafficCars(scene, max, glowTex)` → `sync(cars, lit)`: instanced car bodies posed from `traffic.js` cars | three |
@@ -105,7 +109,7 @@ root, one copy each. Page URLs don't change.
 | `proxy/worker.js` | Caching proxy | `osm-query` |
 
 Dependencies point down the table only. Page entries are the only modules that touch the page's DOM at import time.
-`geom.js`, `drive-core.js`, `road-layout.js`, `traffic.js`, `osm-query.js`, `vector-fallback.js` and `weather.js` stay importable in Node: no three, no DOM, no storage, and network
+`geom.js`, `drive-core.js`, `road-layout.js`, `traffic.js`, `garage.js`, `osm-query.js`, `vector-fallback.js` and `weather.js` stay importable in Node: no three, no DOM, no storage, and network
 only through a passed-in `fetch`. `radio.js` follows the same rules, except that calling `radio()` creates an `<audio>` and `radioHud()` its on-screen station display. The travel controller reads browser history and the cooldown at runtime. The driving audio factory reads the tab’s mute preference and initializes Web Audio on a driving gesture.
 
 Tests live in `test/*.test.js` and run with `npm test`. Tests build their own fixtures (the vector-fallback test

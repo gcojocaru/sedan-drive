@@ -53,11 +53,14 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | Q · Shift+Q | Radio: next / previous station, last one is off (real-map page: up to 30 stations from around the chosen place; test track: Romanian stations) |
 | R | Reset / back on the road |
 | J | Start or cancel a parcel delivery (real-map page). You can also use the Start delivery button. |
+| G | Garage (real-map page): spend delivery money on upgrades and paint. Driving pauses while it's open |
 | M | Choose another place (real-map page) |
 
-On phones and tablets only the driving controls appear on screen: steer on the left, gas and brake/reverse on the right. The ••• button above the brake opens the rest (handbrake, lights, time of day or night, weather, settings, camera, horn, radio, reset).
+On phones and tablets only the driving controls appear on screen: steer on the left, gas and brake/reverse on the right. The ••• button above the brake opens the rest (handbrake, lights, time of day or night, weather, settings, garage, camera, horn, radio, reset).
 
-In a delivery job, follow the mint minimap marker and stop inside the road ring to collect the parcel. The marker then moves to the drop-off, and the clock starts: the time you have depends on the distance, and the status box counts it down. The pay is more the farther the drop-off, up to 40% more for arriving early and less the later you are. Crashes damage the parcel (a knock is fine, a hard crash ruins it) and cut the pay by as much; running a red light costs $10. When you deliver, the status box shows the receipt, and your earnings and deliveries are kept under it from one drive to the next. Each job stays in the current area.
+In a delivery job, follow the mint minimap marker and stop inside the road ring to collect the parcel. The marker then moves to the drop-off, and the clock starts: the time you have depends on the distance, and the status box counts it down. The pay is more the farther the drop-off, up to 40% more for arriving early and less the later you are. Crashes damage the parcel (a knock is fine, a hard crash ruins it) and cut the pay by as much; running a red light costs $10. When you deliver, the status box shows the receipt, and your cash and deliveries are kept under it from one drive to the next. Each job stays in the current area.
+
+Spend the money in the garage (G): a stronger engine, better brakes, all-weather tyres that lose less grip in rain and snow, and cargo padding so crashes damage parcels less, each bought a level at a time, plus paint colours for either car (Factory puts its own colours back). Upgrades and paint are kept from one drive to the next; the test track keeps the stock car.
 
 ## What gets built from the map (real-map page)
 
@@ -112,6 +115,8 @@ minimap.js            north-up driving minimap drawn from the loaded world geome
 traffic.js            traffic: lanes and junctions from the road layout, cars that follow them and take turns at junctions
 traffic-cars.js       the traffic cars on screen (one instanced car body, paint, brake lights, night glows)
 traffic-lights.js     traffic light poles and signal heads on screen
+garage.js             what delivery money buys (upgrades, paint) and what it does to the car
+garage-panel.js       the garage dialog
 osm-query.js          the Overpass query, cache key, start-point grid and proxy address (shared with proxy/)
 vector-fallback.js    OpenFreeMap vector tiles → the same element list as an Overpass reply (fallback map data)
 radio.js              car radio: stations near the chosen place from radio-browser.info, Romanian presets on the test track
