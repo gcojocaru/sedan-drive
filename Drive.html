@@ -33,6 +33,8 @@ a{color:inherit} a:hover{opacity:.8}
 #gear{font-size:14px;opacity:.85;margin-left:10px;padding:2px 7px;border:1px solid rgba(255,255,255,.6);border-radius:5px}
 #times{right:28px;top:22px;display:grid;grid-template-columns:auto auto;gap:4px 16px;font-size:15px;text-align:right}
 #times .k{opacity:.75;text-transform:uppercase;font-size:11px;letter-spacing:.08em;align-self:center}
+[data-app-version]{font-size:12px;opacity:.8}
+#times [data-app-version]{grid-column:1 / -1}
 #times .big{font-size:28px;font-weight:600}
 #msg{left:50%;top:22%;transform:translateX(-50%);font-size:28px;font-weight:600;opacity:0;transition:opacity .4s}
 #back{position:fixed;left:20px;top:18px;font-size:13px;text-decoration:none;background:rgba(0,0,0,.35);padding:7px 11px;border-radius:8px;backdrop-filter:blur(6px)}
@@ -52,11 +54,13 @@ a{color:inherit} a:hover{opacity:.8}
   <span class="k">Last</span><span id="lastT">–</span>
   <span class="k">Best</span><span id="bestT">–</span>
   <span class="k">Laps</span><span id="lapN">0</span>
+  <small data-app-version hidden></small>
 </div>
 <div class="hud" id="msg"></div>
 <div class="hud" id="keys">W/↑ accelerate · S/↓ brake &amp; reverse · A/D steer · Space handbrake · H lights · N night · C camera · Q radio · V driving sounds · R reset</div>
 <div id="start"><div class="card">
   <h1>Drive the sedan</h1>
+  <small data-app-version hidden></small>
   <dl>
     <dt>W / ↑</dt><dd style="margin:0">Accelerate</dd>
     <dt>S / ↓</dt><dd style="margin:0">Brake, then reverse</dd>

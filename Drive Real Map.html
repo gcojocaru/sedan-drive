@@ -166,6 +166,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 #start dt{opacity:.65} #start dd{margin:0}
 #start p{margin:0;font-size:14px;opacity:.85;text-wrap:pretty}
 #startNote:empty{display:none}
+[data-app-version]{font-size:12px;color:inherit;opacity:.8}
 </style></head><body>
 <div id="picker" style="display:none">
   <div id="map"></div>
@@ -178,6 +179,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
     <div class="chosen"><span class="k">Start point</span><span id="placeInfo">Not chosen yet</span></div>
     <label class="chosen"><span class="k">Car</span><select id="car"><option value="sedan">Sedan (Logan-style)</option><option value="vaz">VAZ-2101 Zhiguli</option></select></label>
     <button id="go" disabled>Drive here</button>
+    <small data-app-version hidden></small>
   </div>
 </div>
 <section id="loading" aria-labelledby="loadTitle">
@@ -202,6 +204,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 <dialog id="settings" class="travel-panel" aria-labelledby="settingsTitle">
   <form method="dialog" class="travel-copy">
     <h2 id="settingsTitle">Settings</h2>
+    <small data-app-version hidden></small>
     <label class="setting">Time of day<select id="timeSel"></select></label>
     <label class="setting">Weather<select id="wxSel"></select></label>
     <label class="setting">Traffic<select id="trafficSel"></select></label>

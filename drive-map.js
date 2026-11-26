@@ -18,6 +18,9 @@ import { createSky } from './sky.js';
 import { WEATHERS, weatherNow, solarHour, groundOf } from './weather.js';
 import { laneGraph, createTraffic, LEVELS } from './traffic.js';
 import { trafficCars } from './traffic-cars.js';
+import { showAppVersion } from './app-version.js';
+
+showAppVersion();
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = id => document.getElementById(id);

@@ -6,6 +6,8 @@ Context for working on this repo. See README.md for what the pages do and how to
 
 @ARCHITECTURE.md
 
+The public game version lives in `package.json`. All three game pages use `app-version.js` to display it.
+
 ## Stack
 
 - Plain HTML + native ES modules. No bundler, no npm dependencies, no TypeScript.

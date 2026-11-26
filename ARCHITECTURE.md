@@ -42,6 +42,7 @@ how each part works; this file says how the parts may fit together.
 | `road-layout.js` | — | Pure lane, junction and spawn geometry |
 | `traffic.js` | — | Traffic on the real map: lane graph, car following, junction claims, spawning around the player |
 | `traffic-cars.js` | — | The traffic cars on screen: instanced bodies, paint, brake lights and night glows |
+| `app-version.js` | — | Shared release label from the local package manifest |
 | `delivery.js` | — | Parcel stops on connected, directed lanes and pickup/drop-off state |
 | `delivery-hud.js` | — | Current job prompt and road marker |
 | `minimap.js` | — | North-up driving minimap and car marker, drawn on supplied canvases |
@@ -67,9 +68,10 @@ root, one copy each. Page URLs don't change.
 | Module | Owns | May import |
 |---|---|---|
 | `drive-map.js` | Real-map page entry: picker, loading screen, time of day, game loop wiring | everything below |
-| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch` |
-| `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model` |
+| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch`, `app-version` |
+| `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model`, `app-version` |
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`), the ground under the car (`vmax`, `drag`, `rough`, `grip`) and collisions | nothing (works on the three.js objects it is given) |
+| `app-version.js` | Show the current release on the three game pages | nothing |
 | `delivery.js` | Select reachable stops and advance an area-local parcel job | nothing |
 | `delivery-hud.js` | Drive the HUD and place the active stop in the scene | `delivery`, three |
 | `minimap.js` | Cached raster of real-map geometry and car-centred HUD view | nothing |
@@ -112,7 +114,7 @@ and every `integrity` hash matches its file in `vendor/`.
    import. Where they need slightly different behaviour, pass the difference in (an argument, a callback such as
    `surface(x, z)` or `blocked(x, z, h)`); don't fork the code.
 2. **Respect the dependency table.** No upward imports, no new DOM or three.js use in the Node-importable modules, no
-   network or storage calls outside `map-data.js`, `vector-fallback.js`, `weather.js` (through a passed-in `fetch`), `radio.js` (station search through a passed-in
+   network or storage calls outside `app-version.js` (local package metadata), `map-data.js`, `vector-fallback.js`, `weather.js` (through a passed-in `fetch`), `radio.js` (station search through a passed-in
    `fetch`, and the stream itself), `vaz-model.js` (its own model file), `buildings.js` (its own photo textures in `textures/`), the proxy and the page entries.
 3. **New logic goes in its module, not in a page and not in `startGame()`.** A new world feature is its own function
    in `world.js` that `buildWorld()` calls, not more lines inside `buildWorld()`. No new inline

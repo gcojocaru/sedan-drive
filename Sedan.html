@@ -34,6 +34,7 @@ three-d-stage{transition:--stage-bg .4s}
 #panel button[aria-pressed="true"]{background:#1d1d1f;color:#fff;border-color:#1d1d1f}
 #panel.night button[aria-pressed="true"]{background:#f2f2f2;color:#141414;border-color:#f2f2f2}
 #panel button kbd{font:inherit;font-size:10px;opacity:.5}
+[data-app-version]{font-size:12px;opacity:.8}
 .dot{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.25}
 .dot.on{background:#ff9a1a;opacity:1}
 </style>
@@ -58,6 +59,7 @@ three-d-stage{transition:--stage-bg .4s}
     <button data-k="under">Underside view <kbd>U</kbd></button>
     <button data-k="inside">Interior view <kbd>I</kbd></button>
   </div>
+  <small data-app-version hidden></small>
 </div>
 <script src="three-d-stage.js"></script>
 <script type="module" src="sedan-viewer.js"></script>

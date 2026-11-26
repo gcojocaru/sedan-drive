@@ -1,4 +1,7 @@
 import { buildCar, FA, RA } from './sedan-model.js';
+import { showAppVersion } from './app-version.js';
+
+showAppVersion();
 const stage = document.querySelector('three-d-stage');
 const { THREE } = await stage.ready;
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
