@@ -97,3 +97,9 @@ test('a slide left over when the ground dries ends at once', () => {
   const st = corner(70, WET).st; assert.ok(st.slip);
   step(st, {}, 1 / 60, ROAD, TUNE); assert.equal(st.slip, 0);
 });
+
+test('better brakes stop the car shorter', () => {
+  const stopAt = brake => { const st = { ...car(), v: 13.9 }; let n = 0; while (st.v > 0 && n++ < 1000) step(st, { dn: true }, 1 / 60, ROAD, { ...TUNE, brake }); return st.pos.x; };
+  assert.ok(stopAt(1.25) < stopAt(1) * 0.85 && stopAt(1.25) > stopAt(1) * 0.7, stopAt(1) + ' → ' + stopAt(1.25));
+  assert.equal(stopAt(undefined), stopAt(1), 'stock brakes when the tune says nothing');
+});

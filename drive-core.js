@@ -17,7 +17,8 @@ export function rigCar(C) {
 
 // One physics step of st = { pos, h, v, steer, spin, roll, pitch, slip } (m, rad, m/s; heading 0 = +x; slip: the angle
 // from the heading to the way the car is actually moving, 0 unless it slides).
-// k: controls from readKeys. surf: the ground under the car, { vmax, drag, rough, grip }. tune: the page's car, { power, idle, vtop }.
+// k: controls from readKeys. surf: the ground under the car, { vmax, drag, rough, grip }. tune: the page's car,
+// { power, idle, vtop, brake } (brake: how much harder than stock the brakes bite, default 1).
 // grip (default 1, dry) is the share of dry tyre grip left on wet or snowy ground: brakes and handbrake bite by that share,
 // the engine can't pull harder than 10 * grip m/s², and the tyres hold the car's path to 8 * grip / (1 - grip) m/s²
 // sideways (no limit when dry). Corner harder than that and the car slides wide, scrubbing speed, until its path lines
@@ -27,7 +28,7 @@ export function step(st, k, dt, surf, tune, collide) {
   const g = Math.max(0.05, Math.min(1, surf.grip ?? 1)), slip = st.slip || 0;
   let a = 0;
   if (k.up) a = st.v < -0.2 ? 18 * g : Math.min(tune.power * Math.max(0, 1 - Math.max(0, st.v) / surf.vmax) + tune.idle, 10 * g);
-  if (k.dn) a = st.v > 0.2 ? -17 * g : -Math.min(5, 10 * g);
+  if (k.dn) a = st.v > 0.2 ? -17 * g * (tune.brake ?? 1) : -Math.min(5, 10 * g);
   a -= 0.0011 * st.v * Math.abs(st.v) + surf.drag * st.v + Math.sign(st.v) * 0.3;
   if (k.hb) a -= Math.sign(st.v) * 9 * g;
   const hold = 8 * g / (1 - g); // Infinity when dry
@@ -51,6 +52,14 @@ export function step(st, k, dt, surf, tune, collide) {
   if (surf.rough && Math.abs(st.v) > 3) st.pitch += (Math.random() - 0.5) * 0.004;
   st.spin += st.v * dt / 0.308;
   return { braking: (k.dn && st.v > 0.2) || k.hb, reversing: st.v < -0.2 };
+}
+
+// Paint a buildCar()-shaped car (its `paint` material) in colour `hex`, or back in its own colours with null.
+export function repaint(C, hex) {
+  const m = C.paint; if (!m) return;
+  C.factoryPaint ||= { color: m.color.clone(), map: m.map };
+  if (hex) { m.color.set(hex); m.map = null; } else { m.color.copy(C.factoryPaint.color); m.map = C.factoryPaint.map; } // (the VAZ's own paint is a texture)
+  m.needsUpdate = true;
 }
 
 // Pose the car, its wheels and steering wheel, and light the brake, tail and reverse lamps.

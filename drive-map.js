@@ -5,7 +5,9 @@ import { createMinimap } from './minimap.js';
 import { drivingAudio } from './driving-audio.js';
 import { crossedEdge, nextArea, cooldownSeconds, startCooldown, visitArea, cooldownButton, edgePrompt } from './area-travel.js';
 import { buildCar } from './sedan-model.js';
-import { readKeys, rigCar, step, syncCar, chaseCamera, speedHud } from './drive-core.js';
+import { readKeys, rigCar, repaint, step, syncCar, chaseCamera, speedHud } from './drive-core.js';
+import { readGarage, readWallet, earn, buy, carTuning } from './garage.js';
+import { garagePanel } from './garage-panel.js';
 import { loadVaz } from './vaz-model.js';
 import { HALF, snap } from './osm-query.js';
 import { FALLBACK_CREDIT } from './vector-fallback.js';
@@ -28,7 +30,9 @@ const $ = id => document.getElementById(id);
 const LS_PLACE = 'sedan-map-last-place-v1';
 const LS_CAR = 'sedan-map-car-v1'; // 'sedan' or 'vaz'
 const LS_TRAFFIC = 'sedan-map-traffic-v1'; // index into LEVELS
-const LS_EARNED = 'sedan-map-earnings-v1'; // { total, jobs }: money made delivering parcels, and deliveries made
+const LS_WALLET = 'sedan-map-wallet-v1'; // { cash, earned, jobs }: delivery money to spend, all earned, deliveries made
+const LS_GARAGE = 'sedan-map-garage-v1'; // what the garage fitted: { levels, paints, paint } (garage.js)
+const LS_EARNED = 'sedan-map-earnings-v1'; // before the garage: { total, jobs }, only read to start the wallet
 
 function backToMap() { history.replaceState(null, '', location.pathname + location.search); location.reload(); }
 $('retry').onclick = () => location.reload();
@@ -164,6 +168,9 @@ async function startGame(lat0, lon0, placeName) {
   await say('Placing the car…');
   const CAR = localStorage.getItem(LS_CAR) === 'vaz' ? await loadVaz().catch(e => (console.warn('VAZ-2101 did not load, using the sedan', e), buildCar())) : buildCar(), car = CAR.car;
   const rig = rigCar(CAR);
+  const stored = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, keep = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } };
+  let wallet = readWallet(stored(LS_WALLET), stored(LS_EARNED)), garage = readGarage(stored(LS_GARAGE)), tuning = carTuning(garage); // delivery money, and what it bought
+  repaint(CAR, tuning.paint);
   const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), probe = new THREE.Sphere(V(), 3); // what the camera sees: traffic comes and goes out of sight
   const graph = laneGraph(roads, layout.junctions, HALF, signalPts), lightsView = trafficLights(scene, graph.signals, glowTex);
   const traffic = createTraffic(graph, { max: matchMedia('(pointer: coarse)').matches ? 45 : 100, seen: (x, z) => frustum.intersectsSphere((probe.center.set(x, 1, z), probe)) });
@@ -247,7 +254,7 @@ async function startGame(lat0, lon0, placeName) {
     if (tSel !== NIGHT) dayIdx = tSel;
     const w = weatherOf(), ground = groundOf(w); // wet roads, snow on the ground and roofs, and how well the tyres grip
     let e, murky; ({ night, e, lowLight, murky } = sky.set(hourOf(), tSel === NIGHT, w, ground.snow));
-    setGround(ground.wet, ground.snow); grip = ground.grip; ear.wet = ground.wet; ear.snow = ground.snow;
+    setGround(ground.wet, ground.snow); grip = tuning.grip(ground.grip); ear.wet = ground.wet; ear.snow = ground.snow;
     if (frontMat) frontMat.emissiveIntensity = night ? 0.60 : e < 0 ? 0.25 : 0;
     wallMat.emissiveIntensity = night ? 1.6 : e < 0 ? 0.9 : 0;
     setLamps(lowLight);
@@ -279,19 +286,23 @@ async function startGame(lat0, lon0, placeName) {
     return object === 'car' ? 'car' : object ? 'post' : null;
   }
 
-  let earned = { total: 0, jobs: 0 }; try { earned = { ...earned, ...JSON.parse(localStorage.getItem(LS_EARNED) || '{}') }; } catch { }
-  if (!(earned.total >= 0 && earned.jobs >= 0)) earned = { total: 0, jobs: 0 }; // (whatever else was stored there)
-  const showEarned = () => { $('wallet').hidden = !earned.jobs; $('wallet').textContent = '$' + earned.total + ' earned · ' + earned.jobs + (earned.jobs === 1 ? ' delivery' : ' deliveries'); };
-  showEarned();
-  const delivery = deliveryHud(scene, graph, furnitureHit, $('jobButton'), $('jobStage'), $('jobDistance'), flash, receipt => {
-    earned = { total: earned.total + receipt.total, jobs: earned.jobs + 1 }; showEarned();
-    try { localStorage.setItem(LS_EARNED, JSON.stringify(earned)); } catch { }
-  });
+  const showWallet = () => { $('wallet').hidden = !wallet.jobs && !wallet.cash; $('wallet').textContent = '$' + wallet.cash + ' · ' + wallet.jobs + (wallet.jobs === 1 ? ' delivery' : ' deliveries'); };
+  showWallet();
+  const delivery = deliveryHud(scene, graph, furnitureHit, $('jobButton'), $('jobStage'), $('jobDistance'), flash, receipt => { wallet = earn(wallet, receipt.total); keep(LS_WALLET, wallet); showWallet(); });
   function toggleDelivery() {
     if (started && !paused()) delivery.toggle(st.pos.x,st.pos.z);
   }
   $('jobButton').onclick = () => { toggleDelivery(); $('jobButton').blur(); };
-  const TUNE = { power: 7.4, idle: 0.5, vtop: 50 };
+  const TUNE = { power: 7.4 * tuning.power, idle: 0.5, vtop: 50, brake: tuning.brake };
+  // ---- garage: delivery money buys upgrades and paint (G) ----
+  const garageEl = $('garage'), shop = garagePanel($('garageItems'), item => {
+    const bought = buy(garage, wallet, item); if (!bought) return;
+    ({ garage, wallet } = bought); tuning = carTuning(garage); keep(LS_GARAGE, garage); keep(LS_WALLET, wallet);
+    Object.assign(TUNE, { power: 7.4 * tuning.power, brake: tuning.brake }); repaint(CAR, tuning.paint); applyTime(); // (tyres: the grip)
+    showWallet(); shop.draw(garage, wallet);
+  });
+  function openGarage() { if (paused()) return; clearKeys(); shop.draw(garage, wallet); garageEl.showModal(); }
+  $('garageButton').onclick = () => { openGarage(); $('garageButton').blur(); };
   function update(dt) {
     const k = readKeys(keys), was = [st.pos.x, st.pos.z], ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
     const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard, grip }, TUNE, (nx, nz, nh) => {
@@ -300,7 +311,7 @@ async function startGame(lat0, lon0, placeName) {
       if (SOLID[hit]) {
         const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20);
         sound.impact(imp, SOLID[hit]); if (hit === 'traffic' && imp > 2) sound.honkAt(hitCar, ear); // and the other driver lets you know
-        delivery.crash(imp);
+        delivery.crash(imp, tuning.cushion);
       }
       else if (hit) { st.v = 0; boundary.offer(hit); } // the edge of the area
       return !!hit;
@@ -344,7 +355,7 @@ async function startGame(lat0, lon0, placeName) {
     $('stats').textContent += ' · simplified map'; $('attrib').textContent += ' · ' + FALLBACK_CREDIT;
   }
 
-  const dialog = $('edgeDialog'), settings = $('settings'), paused = () => dialog.open || settings.open;
+  const dialog = $('edgeDialog'), settings = $('settings'), paused = () => dialog.open || settings.open || garageEl.open;
   const sound = drivingAudio();
   const clearKeys = () => { for (const k in keys) keys[k] = false; };
   const pose = () => ({ x: st.pos.x, z: st.pos.z, h: st.h, camera: camMode, day: dayIdx, time: tSel, weather: wSel, headlights: head });
@@ -362,7 +373,7 @@ async function startGame(lat0, lon0, placeName) {
   load.style.display = 'none';
   $('hud').style.display = 'block';
   const startEl = $('start'); startEl.style.display = started ? 'none' : 'flex';
-  const touch = () => touchControls([['Lights', 'KeyH'], ['Time', 'KeyT'], ['Weather', 'KeyE'], ['Settings', 'Escape'], ['Camera', 'KeyC'], ['Horn', 'KeyB'], ['Radio', 'KeyQ'], ['Sound', 'KeyV'], ['Reset', 'KeyR']]);
+  const touch = () => touchControls([['Lights', 'KeyH'], ['Time', 'KeyT'], ['Weather', 'KeyE'], ['Settings', 'Escape'], ['Garage', 'KeyG'], ['Camera', 'KeyC'], ['Horn', 'KeyB'], ['Radio', 'KeyQ'], ['Sound', 'KeyV'], ['Reset', 'KeyR']]);
   if (started) { $('keys').style.opacity = 0; touch(); } // arrived from the next area: no start screen
   function begin() {
     sound.activate(); if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => $('keys').style.opacity = 0, 7000);
@@ -374,6 +385,7 @@ async function startGame(lat0, lon0, placeName) {
   addEventListener('keydown', e => {
     if (paused()) return; // a dialog has the keys (Esc closes the settings again)
     if (e.code === 'Escape') { e.preventDefault(); clearKeys(); settings.showModal(); return; } // preventDefault: the same press would close it again
+    if (e.code === 'KeyG' && !e.repeat) { e.preventDefault(); openGarage(); return; }
     if (e.target === $('jobButton') && ['Space','Enter'].includes(e.code)) return;
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     if (e.code === 'KeyM') { backToMap(); return; }

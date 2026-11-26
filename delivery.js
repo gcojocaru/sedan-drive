@@ -8,8 +8,9 @@ export const FINE = 10; // for running a red light
 // junctions and lights), plus 25 s to find the way.
 export const allowedTime = metres => Math.round(25 + 1.5 * metres / 9);
 // The parcel's condition (1 = perfect, 0 = ruined) after a crash at `speed` m/s: a knock under 1.5 m/s does nothing,
-// one at 30 km/h takes about a third off, and a crash at 75 km/h ruins it.
-export const afterCrash = (condition, speed) => Math.max(0, condition - Math.max(0, Math.abs(speed) - 1.5) / 19.3);
+// one at 30 km/h takes about a third off, and a crash at 75 km/h ruins it. cushion: the share of that the padding lets
+// through (garage.js).
+export const afterCrash = (condition, speed, cushion = 1) => Math.max(0, condition - cushion * Math.max(0, Math.abs(speed) - 1.5) / 19.3);
 // The pay for a delivery, in whole money: base for the distance, a bonus of up to 40% for arriving early, less for
 // arriving late (down to a fifth of the base a minute late), less for the damage, minus the fines. Never below 0.
 export function deliveryPay({ metres, allowed, taken, condition = 1, fines = 0 }) {
@@ -115,7 +116,7 @@ export function createDelivery(stops, random = Math.random) {
     get load() { return load; },
     get receipt() { return receipt; },
     cancel() { phase = 'idle'; pickup = dropoff = load = null; },
-    crash(speed) { if (load) load.condition = afterCrash(load.condition, speed); },
+    crash(speed, cushion = 1) { if (load) load.condition = afterCrash(load.condition, speed, cushion); },
     ranRed() { if (load) load.fines += FINE; },
     arrive(x,z,speed,t = 0) {
       if (!this.target || Math.abs(speed) > 0.5 || separation(this.target,{x,z}) > STOP_RADIUS) return null;
