@@ -167,6 +167,7 @@ async function startGame(lat0, lon0, placeName) {
   const graph = laneGraph(roads, layout.junctions, HALF, signalPts), lightsView = trafficLights(scene, graph.signals, glowTex);
   const traffic = createTraffic(graph, { max: matchMedia('(pointer: coarse)').matches ? 45 : 100, seen: (x, z) => frustum.intersectsSphere((probe.center.set(x, 1, z), probe)) });
   const trafficView = trafficCars(scene, 100, glowTex), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
+  const ear = { x: 0, z: 0, fx: 1, fz: 0, vx: 0, vz: 0, wet: 0, me }, look = V(0, 0, 0); // the camera, listening to the traffic
   {
     const blob = (inner, a) => makeTex(128, 128, (x) => { const g = x.createRadialGradient(64, 64, 64 * inner, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); });
     const mk = (tex, w, d, x, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.07, z); m.renderOrder = 2; car.add(m); };
@@ -243,7 +244,7 @@ async function startGame(lat0, lon0, placeName) {
     if (tSel !== NIGHT) dayIdx = tSel;
     const w = weatherOf(), ground = groundOf(w); // wet roads, snow on the ground and roofs, and how well the tyres grip
     let e, murky; ({ night, e, lowLight, murky } = sky.set(hourOf(), tSel === NIGHT, w, ground.snow));
-    setGround(ground.wet, ground.snow); grip = ground.grip;
+    setGround(ground.wet, ground.snow); grip = ground.grip; ear.wet = ground.wet;
     if (frontMat) frontMat.emissiveIntensity = night ? 0.60 : e < 0 ? 0.25 : 0;
     wallMat.emissiveIntensity = night ? 1.6 : e < 0 ? 0.9 : 0;
     setLamps(lowLight);
@@ -386,6 +387,9 @@ async function startGame(lat0, lon0, placeName) {
       Object.assign(me, { x: st.pos.x, z: st.pos.z, h: st.h, v: st.v }); traffic.step(dt, me);
     }
     trafficView.sync(traffic.cars, dim); lightsView.sync(dim);
+    camera.getWorldDirection(look); const flat = Math.hypot(look.x, look.z) || 1;
+    Object.assign(ear, { x: camera.position.x, z: camera.position.z, fx: look.x / flat, fz: look.z / flat, vx: Math.cos(st.h) * st.v, vz: -Math.sin(st.h) * st.v });
+    sound.traffic(traffic.cars, ear);
     syncCar(rig, st, lastS, head); glows(lastS); updateCam(dt); hud(lastS, dt);
     renderer.render(scene, camera);
   });
