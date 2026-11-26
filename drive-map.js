@@ -15,11 +15,14 @@ import { radio, radioHud, stationsNear } from './radio.js';
 import { touchControls } from './touch.js';
 import { createSky } from './sky.js';
 import { WEATHERS, weatherNow, solarHour } from './weather.js';
+import { laneGraph, createTraffic, LEVELS } from './traffic.js';
+import { trafficCars } from './traffic-cars.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = id => document.getElementById(id);
 const LS_PLACE = 'sedan-map-last-place-v1';
 const LS_CAR = 'sedan-map-car-v1'; // 'sedan' or 'vaz'
+const LS_TRAFFIC = 'sedan-map-traffic-v1'; // index into LEVELS
 
 function backToMap() { history.replaceState(null, '', location.pathname + location.search); location.reload(); }
 $('retry').onclick = () => location.reload();
@@ -155,6 +158,9 @@ async function startGame(lat0, lon0, placeName) {
   await say('Placing the car…');
   const CAR = localStorage.getItem(LS_CAR) === 'vaz' ? await loadVaz().catch(e => (console.warn('VAZ-2101 did not load, using the sedan', e), buildCar())) : buildCar(), car = CAR.car;
   const rig = rigCar(CAR);
+  const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), probe = new THREE.Sphere(V(), 3); // what the camera sees: traffic comes and goes out of sight
+  const traffic = createTraffic(laneGraph(roads, layout.junctions, HALF), { max: matchMedia('(pointer: coarse)').matches ? 45 : 100, seen: (x, z) => frustum.intersectsSphere((probe.center.set(x, 1, z), probe)) });
+  const trafficView = trafficCars(scene, 100, glowTex), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
   {
     const blob = (inner, a) => makeTex(128, 128, (x) => { const g = x.createRadialGradient(64, 64, 64 * inner, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); });
     const mk = (tex, w, d, x, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.07, z); m.renderOrder = 2; car.add(m); };
@@ -211,6 +217,11 @@ async function startGame(lat0, lon0, placeName) {
   wxSel.append(new Option('Live weather', 'live'), ...WEATHERS.map((w, i) => new Option(w.label, i)));
   timeSel.onchange = () => { tSel = pick(timeSel.value); applyTime(); };
   wxSel.onchange = () => { wSel = pick(wxSel.value); applyTime(); };
+  const trafficSel = $('trafficSel'), storedLevel = Number(localStorage.getItem(LS_TRAFFIC) ?? 2);
+  trafficSel.append(...LEVELS.map(([name], i) => new Option(name, i)));
+  trafficSel.value = LEVELS[storedLevel] ? storedLevel : 2;
+  trafficSel.onchange = () => { localStorage.setItem(LS_TRAFFIC, trafficSel.value); traffic.setLevel(+trafficSel.value, st.pos.x, st.pos.z); };
+  traffic.setLevel(+trafficSel.value, st.pos.x, st.pos.z);
   function showTime(announce) { // local clock time, also for the presets (they are set in solar time)
     const w = weatherOf(), text = (tSel === 'live' ? '' : TIMES[tSel][0] + ' · ') + clock(hourOf() - lon0 / 15 + offset() / 3600) + ' · ' + w.label + (wSel === 'live' && live ? ', ' + Math.round(live.temp) + '°C' : '');
     $('tod').textContent = text; if (announce) flash(text);
@@ -243,6 +254,7 @@ async function startGame(lat0, lon0, placeName) {
       const edge = crossedEdge(wx, wz);
       if (edge) return edge;
       if (inBuilding(wx, wz, 0.6)) return 'bld';
+      if (traffic.hit(wx, wz)) return 'car';
     }
     return null;
   }
@@ -253,8 +265,8 @@ async function startGame(lat0, lon0, placeName) {
     const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard }, TUNE, (nx, nz, nh) => {
       const hit = blocked(nx, nz, nh);
       boundary.move(st.pos.x, st.pos.z);
-      if (hit && hit !== 'bld') { st.v = 0; boundary.offer(hit); }
-      else if (hit) { const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20); }
+      if (hit === 'bld' || hit === 'car') { const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20); }
+      else if (hit) { st.v = 0; boundary.offer(hit); } // the edge of the area
       return !!hit;
     });
     sound.update(st.v, !paused() && k.up, !paused() && k.dn);
@@ -335,7 +347,7 @@ async function startGame(lat0, lon0, placeName) {
     if (e.code === 'KeyC') camMode = 1 - camMode;
     if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on');
     if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);
-    if (e.code === 'KeyR') { const s = laneSpawn(layout.spawnSegments, st.pos.x, st.pos.z, st.h, HALF); if (s) place(s.x, s.z, s.h); }
+    if (e.code === 'KeyR') { const s = laneSpawn(layout.spawnSegments, st.pos.x, st.pos.z, st.h, HALF); if (s) { traffic.clear(s.x, s.z, 8); place(s.x, s.z, s.h); } }
   });
   addEventListener('keyup', e => keys[e.code] = false);
   addEventListener('blur', clearKeys);
@@ -344,6 +356,11 @@ async function startGame(lat0, lon0, placeName) {
   renderer.setAnimationLoop(now => {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     if (started && !paused()) lastS = update(dt);
+    if (!paused()) {
+      frustum.setFromProjectionMatrix(view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+      Object.assign(me, { x: st.pos.x, z: st.pos.z, h: st.h, v: st.v }); traffic.step(dt, me);
+    }
+    trafficView.sync(traffic.cars, dim);
     syncCar(rig, st, lastS, head); glows(lastS); updateCam(dt); hud(lastS, dt);
     renderer.render(scene, camera);
   });

@@ -43,7 +43,7 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | H · C | Headlights · camera |
 | T · N | Next time of day · night on/off (real-map page: starts at the place's real local time, with the sun where it really is; T goes through the presets and back to live) |
 | E | Next weather (real-map page: starts with the real weather there now; then clear, partly cloudy, overcast, fog, rain, snow, thunderstorm, and back to live) |
-| Esc | Settings (real-map page): choose the time of day and the weather. Driving pauses while it is open |
+| Esc | Settings (real-map page): choose the time of day, the weather and how much traffic (off, light, normal, heavy). Driving pauses while it is open |
 | V | Mute or unmute engine sound and tuning static. The radio has its own off position. |
 | Q · Shift+Q | Radio: next / previous station, last one is off (real-map page: up to 30 stations from around the chosen place; test track: Romanian stations) |
 | R | Reset / back on the road |
@@ -60,6 +60,7 @@ On phones and tablets only the driving controls appear on screen: steer on the l
 - **Ground**: residential, commercial and industrial land, parking lots, plazas, parks, forests, farmland, beaches, rivers, lakes, and the **sea**, which is built from coastlines.
 - **Railways** (ballast, sleepers, rails), **tram tracks**, **walls, fences and hedges**, piers and breakwaters, trees (mapped trees, tree rows, parks and forests, scattered garden trees).
 - Parking lots and plazas count as hard ground, so the car keeps its road speed there.
+- **Traffic**: other cars drive the streets around you in their lanes, on the side of the road the place drives on, at each road's speed limit (`maxspeed`, or a typical speed for the road type), slowing for bends. They keep their distance, stop for you if you're in their way, and take junctions in turn without blocking them. One-way streets are respected, and service roads and private roads stay empty. Their lights come on at dusk and their brake lights as they slow. Bumping into one is like hitting a wall. New cars appear out of sight 150 to 260 m away; set the amount in the settings (Esc).
 
 ## External services (real-map page)
 
@@ -92,6 +93,8 @@ road-layout.js        directional lanes, junction corners, stop lines and spawn 
 area-travel.js        adjacent map areas, boundary prompts and load cooldown
 driving-audio.js      synthesized engine and radio tuning sounds for both drive pages
 minimap.js            north-up driving minimap drawn from the loaded world geometry
+traffic.js            traffic: lanes and junctions from the road layout, cars that follow them and take turns at junctions
+traffic-cars.js       the traffic cars on screen (one instanced car body, paint, brake lights, night glows)
 osm-query.js          the Overpass query, cache key, start-point grid and proxy address (shared with proxy/)
 vector-fallback.js    OpenFreeMap vector tiles → the same element list as an Overpass reply (fallback map data)
 radio.js              car radio: stations near the chosen place from radio-browser.info, Romanian presets on the test track
