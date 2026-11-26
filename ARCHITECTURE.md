@@ -19,16 +19,16 @@ how each part works; this file says how the parts may fit together.
 
 | File | Lines | What it is |
 |---|---|---|
-| `drive-map.js` | 348 | Real-map page: picker, loading screen, time of day and weather choice, car, game loop, HUD |
-| `sky.js` | 185 | `createSky()`: the real sun position, sky canvas, sun/moon/sky lights, shadow box, fog and exposure for a time of day and weather; rain, snow and lightning |
-| `weather.js` | 29 | `weatherNow()` (Open-Meteo: current weather and UTC offset, real-map page), WMO code table, `WEATHERS` presets, `solarHour()` |
-| `world.js` | 412 | Road/area tag tables and `buildWorld()`, which runs one builder per feature (`layRoads`, `roadLookup`, `paintCrossings`, `layRailways`, `buildWalls`, `plantTrees`, `streetLamps`, …) |
-| `buildings.js` | 363 | `buildBuildings()`: building tag tables, walls and roofs per footprint (parapets, eaves), building parts, shopfronts, the facade shader and roof textures, `inBuilding` |
-| `world-kit.js` | 28 | three.js and tag helpers shared by the two above: `fillPoly`, `makeTex`, `tagColor`, `num`, … |
+| `drive-map.js` | 370 | Real-map page: picker, loading screen, time of day and weather choice, car, game loop, HUD |
+| `sky.js` | 188 | `createSky()`: the real sun position, sky canvas, sun/moon/sky lights, shadow box, fog and exposure for a time of day and weather; rain, snow and lightning |
+| `weather.js` | 48 | `weatherNow()` (Open-Meteo: current weather, snow depth, recent rain and UTC offset, real-map page), WMO code table, `WEATHERS` presets, `groundOf()` (wet, snow, grip), `solarHour()` |
+| `world.js` | 421 | Road/area tag tables and `buildWorld()`, which runs one builder per feature (`layRoads`, `roadLookup`, `paintCrossings`, `layRailways`, `buildWalls`, `plantTrees`, `streetLamps`, …) |
+| `buildings.js` | 364 | `buildBuildings()`: building tag tables, walls and roofs per footprint (parapets, eaves), building parts, shopfronts, the facade shader and roof textures, `inBuilding` |
+| `world-kit.js` | 87 | three.js and tag helpers shared by the two above: `fillPoly`, `makeTex`, `tagColor`, `num`, …, and `weatherLook()`, the wet and snowy surface shader |
 | `map-data.js` | 55 | `loadArea()`: IndexedDB cache, proxy, Overpass servers, vector fallback |
 | `geom.js` | 204 | Pure geometry: strips, polygons, oriented boxes, roof clipping, coastline → sea |
 | `drive-track.js` | 215 | Test-track page (`Drive.html`): track, surface, lap timing, sky |
-| `drive-core.js` | 80 | Driving shared by both drive pages: `readKeys`, `rigCar`, physics `step`, `syncCar`, `chaseCamera`, `speedHud` |
+| `drive-core.js` | 94 | Driving shared by both drive pages: `readKeys`, `rigCar`, physics `step` (with grip and sliding), `syncCar`, `chaseCamera`, `speedHud` |
 | `sedan-viewer.js` | 108 | Viewer page (`Sedan.html`): studio lights, contact shadows, light toggles, views |
 | `sedan-model.js` | 662 | `buildCar()` and the axle constants `FA`, `RA`: the one procedural car, used by all three pages |
 | `vaz-model.js` | 46 | `loadVaz()`: VAZ-2101 from `models/vaz-2101.glb` in `buildCar()`'s shape, the second car on the real-map page |
@@ -63,22 +63,22 @@ root, one copy each. Page URLs don't change.
 | `drive-map.js` | Real-map page entry: picker, loading screen, time of day, game loop wiring | everything below |
 | `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch` |
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model` |
-| `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`), the ground under the car (`vmax`, `drag`, `rough`) and collisions | nothing (works on the three.js objects it is given) |
+| `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`), the ground under the car (`vmax`, `drag`, `rough`, `grip`) and collisions | nothing (works on the three.js objects it is given) |
 | `minimap.js` | Cached raster of real-map geometry and car-centred HUD view | nothing |
 | `traffic-cars.js` | `trafficCars(scene, max, glowTex)` → `sync(cars, lit)`: instanced car bodies posed from `traffic.js` cars | three |
 | `traffic.js` | `laneGraph(roads, junctions, half)`, `createTraffic(graph, { rand, max, seen })` → `step`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
-| `sky.js` | `createSky(renderer, scene, lat)` → `TIMES`, `sunAt`, `set(h, forceNight, weather)`, `update(dt, cameraPosition)`, `placeShadow(x, z)`: sun, sky, lights, fog, exposure, rain and snow | `world-kit`, `geom`, three |
-| `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, three |
+| `sky.js` | `createSky(renderer, scene, lat)` → `TIMES`, `sunAt`, `set(h, forceNight, weather, snow)`, `update(dt, cameraPosition)`, `placeShadow(x, z)`: sun, sky, lights, fog, exposure, rain and snow | `world-kit`, `geom`, three |
+| `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`), wet and snowy surfaces (`setGround(wet, snow)`, `reflectLamps(x, z)`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, three |
 | `road-layout.js` | `prepareRoads(roads, side)` → lanes per road, junction arms and corners, spawn segments; `laneSpawn`, `mappedStops`, `drivingSide`, `nodeKey` | nothing |
-| `buildings.js` | `buildBuildings(polys, entranceNodes, roadAt, mkMesh)` → `{ blds, inBuilding, frontMat, wallMat }`; building tag tables, `roofPlanes`, parapets and eaves, shopfronts, the facade material | `world-kit`, `geom`, `building-fronts`, three |
-| `world-kit.js` | three.js and tag helpers shared by `world.js` and `buildings.js`: `fillPoly`/`eachTri`, `makeTex`, `speckle`, `num`, `tagColor`, `matColor` | `geom`, three |
+| `buildings.js` | `buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear)` → `{ blds, inBuilding, frontMat, wallMat }`; building tag tables, `roofPlanes`, parapets and eaves, shopfronts, the facade material | `world-kit`, `geom`, `building-fronts`, three |
+| `world-kit.js` | three.js and tag helpers shared by `world.js` and `buildings.js`: `fillPoly`/`eachTri`, `makeTex`, `speckle`, `num`, `tagColor`, `matColor`, `weatherLook()` → `{ wear, set, lamps, lit, follow }` | `geom`, three |
 | `map-data.js` | `loadArea(lat, lon, status)`: IndexedDB cache → proxy → Overpass → vector fallback; returns `{ data, fallback, err }` | `osm-query`, `vector-fallback` |
 | `sedan-model.js` | `buildCar()` and the axle constants: the procedural car | three |
 | `vaz-model.js` | `loadVaz()`: the VAZ-2101 model file, returned in `buildCar()`'s shape | three (GLTFLoader) |
 | `area-travel.js` | Boundary dialog, projected arrival pose and cooldown | `osm-query` |
 | `driving-audio.js` | Synthesized engine and tuning sounds on both driving pages | nothing |
 | `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find, tuningStatic)` → `tune(step)`; station playback | nothing |
-| `weather.js` | `weatherNow(lat, lon, fetch)` → `{ kind, label, amount, temp, offset }`, `weatherOf(code)`, `WEATHERS`, `solarHour(ms, lon)` | nothing |
+| `weather.js` | `weatherNow(lat, lon, fetch)` → `{ kind, label, amount, temp, offset, snowDepth?, recent? }`, `weatherOf(code)`, `WEATHERS`, `groundOf(w)` → `{ wet, snow, grip }`, `solarHour(ms, lon)` | nothing |
 | `touch.js` | `touchControls(extras)`: on-screen buttons for touch screens that press keys (synthetic keydown/keyup), so pages handle touch and keyboard the same way | nothing |
 | `geom.js` | Pure geometry on plain arrays (`ribbon`, `obb`, `clipHalf`, `offsetRing`, `joinRings`, `seaPolys`, …). Triangulating polygons needs three.js, so `fillPoly` is in `world-kit.js` | nothing |
 | `osm-query.js` | Query, cache key, grid, servers, proxy address | nothing |
