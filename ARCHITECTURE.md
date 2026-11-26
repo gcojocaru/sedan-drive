@@ -23,11 +23,13 @@ how each part works; this file says how the parts may fit together.
 | `sedan-model.js` | 661 | `buildCar()`, used only by `drive-map.js` |
 | `vaz-model.js` | 46 | `loadVaz()`: VAZ-2101 from `models/vaz-2101.glb` in `buildCar()`'s shape, the second car on the real-map page |
 | `three-d-stage.js` | 435 | Viewer web component (renderer, orbit, GLB/OBJ export) |
+| `area-travel.js` | — | Neighboring-area geometry, boundary confirmation and cooldown |
+| `driving-audio.js` | — | Shared engine and tuning synthesis and per-tab mute |
 | `road-layout.js` | — | Pure lane, junction and spawn geometry |
 | `minimap.js` | — | North-up driving minimap and car marker, drawn on supplied canvases |
 | `building-fronts.js` | — | Ground-floor facade layout and atlas drawing on a supplied canvas context |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
-| `radio.js` | 53 | Car radio for both drive pages: `stationsNear()` (radio-browser.info, real-map page), Romanian presets (test track), `radio(show, find)` player, `radioHud()` station display |
+| `radio.js` | 53 | Car radio for both drive pages: `stationsNear()` (radio-browser.info, real-map page), Romanian presets (test track), `radio(show, find, tuningStatic)` player, `radioHud()` station display |
 | `osm-query.js` | 37 | Overpass query, cache key, start-point grid, servers; shared with the proxy |
 | `proxy/worker.js` | 69 | Cloudflare Worker that caches map downloads |
 
@@ -64,7 +66,9 @@ root, one copy each. Page URLs don't change.
 | `map-data.js` | `loadArea(lat, lon, status)`: IndexedDB cache → proxy → Overpass → vector fallback; returns `{ data, fallback, err }` | `osm-query`, `vector-fallback` |
 | `sedan-model.js` | `buildCar()` and the axle constants: the procedural car | three |
 | `vaz-model.js` | `loadVaz()`: the VAZ-2101 model file, returned in `buildCar()`'s shape | three (GLTFLoader) |
-| `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find)` → `tune(step)`; the only audio | nothing |
+| `area-travel.js` | Boundary dialog, projected arrival pose and cooldown | `osm-query` |
+| `driving-audio.js` | Synthesized engine and tuning sounds on both driving pages | nothing |
+| `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find, tuningStatic)` → `tune(step)`; station playback | nothing |
 | `geom.js` | Pure geometry on plain arrays (`ribbon`, `fillPoly`, `obb`, `clipHalf`, `joinRings`, …) | nothing |
 | `osm-query.js` | Query, cache key, grid, servers, proxy address | nothing |
 | `vector-fallback.js` | Vector tiles → Overpass-shaped elements | `osm-query` |
@@ -73,7 +77,7 @@ root, one copy each. Page URLs don't change.
 
 Dependencies point down the table only. Page entries are the only modules that touch the page's DOM at import time.
 `geom.js`, `osm-query.js` and `vector-fallback.js` stay importable in Node: no three, no DOM, no storage, and network
-only through a passed-in `fetch`. `radio.js` follows the same rules, except that calling `radio()` creates an `<audio>` and `radioHud()` its on-screen station display.
+only through a passed-in `fetch`. `radio.js` follows the same rules, except that calling `radio()` creates an `<audio>` and `radioHud()` its on-screen station display. The travel controller reads browser history and the cooldown at runtime. The driving audio factory reads the tab’s mute preference and initializes Web Audio on a driving gesture.
 
 Tests live in `test/*.test.js` and run with `npm test`. Fixtures (a small Overpass reply, one vector tile) live in
 `test/fixtures/`; tests never touch the network.

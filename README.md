@@ -24,7 +24,7 @@ python3 -m http.server 5173
 
 Then open http://localhost:5173 — it redirects to the real-map drive.
 
-While driving on a real map, the minimap shows 240 metres across with north at the top. The amber arrow shows where your car is and which way it faces. A dashed line marks the edge of the playable area.
+While driving on a real map, the minimap shows 240 metres across with north at the top. The amber arrow shows where your car is and which way it faces. A dashed line marks the edge of the playable area. When you reach it, choose **Load next area** to continue in that direction or **Stay here** to turn back. Neighboring map loads have a 30-second cooldown. The car resumes at rest, facing the same way.
 
 ## Deploy
 
@@ -42,6 +42,7 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | Space | Handbrake |
 | H · C | Headlights · camera |
 | T · N | Next time of day · night on/off (real-map page: the sun is placed where it really is over that place today) |
+| V | Mute or unmute engine sound and tuning static. The radio has its own off position. |
 | Q · Shift+Q | Radio: next / previous station, last one is off (real-map page: up to 30 stations from around the chosen place; test track: Romanian stations) |
 | R | Reset / back on the road |
 | M | Choose another place (real-map page) |
@@ -75,6 +76,8 @@ Drive Real Map.html   real-map page (markup + styles; logic in drive-map.js)
 drive-map.js          map picker, map data download/cache, world mesh building, driving game
 building-fronts.js    ground-floor entrance placement and retail window layouts
 road-layout.js        directional lanes, junction corners, stop lines and spawn positions
+area-travel.js        adjacent map areas, boundary prompts and load cooldown
+driving-audio.js      synthesized engine and radio tuning sounds for both drive pages
 minimap.js            north-up driving minimap drawn from the loaded world geometry
 osm-query.js          the Overpass query, cache key, start-point grid and proxy address (shared with proxy/)
 vector-fallback.js    OpenFreeMap vector tiles → the same element list as an Overpass reply (fallback map data)

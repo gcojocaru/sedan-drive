@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { facadeWalls, onOutline, planFronts, shopBays, isRetail, facadeAtlas } from './building-fronts.js';
 import { drivingSide, prepareRoads, laneSpawn, mappedStops } from './road-layout.js';
 import { createMinimap } from './minimap.js';
+import { drivingAudio } from './driving-audio.js';
+import { crossedEdge, nextArea, cooldownSeconds, startCooldown, visitArea, cooldownButton, edgePrompt } from './area-travel.js';
 import { buildCar } from './sedan-model.js';
 import { loadVaz } from './vaz-model.js';
 import { HALF, CACHE_V, AREA_PROXY, ENDPOINTS, snap, areaKey, overpassQuery, overpassError } from './osm-query.js';
@@ -113,8 +115,8 @@ async function fetchArea(lat0, lon0, status) {
   let err = null, rested = 0;
   for (const s of sources) {
     if ((restMap()[s.host] || 0) > Date.now()) { rested++; continue; }
-    const ac = new AbortController(), t0 = performance.now();
-    const tick = setInterval(() => status('Downloading map data from ' + s.host + '… ' + Math.round((performance.now() - t0) / 1000) + ' s'), 500);
+    const ac = new AbortController();
+    status('Downloading map data from ' + s.host + '…');
     const kill = setTimeout(() => ac.abort(), s.wait);
     try {
       const r = await fetch(s.url, s.proxy ? { signal: ac.signal } : { method: 'POST', signal: ac.signal, body: 'data=' + encodeURIComponent(overpassQuery(lat0, lon0)), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
@@ -128,7 +130,7 @@ async function fetchArea(lat0, lon0, status) {
       const bad = overpassError(data.remark); if (bad) throw new Error(bad.slice(0, 90));
       return { data };
     } catch (e) { err = e.name === 'AbortError' ? new Error('no answer in time') : e; status(s.host + ' is busy, trying another server…'); }
-    finally { clearInterval(tick); clearTimeout(kill); }
+    finally { clearTimeout(kill); }
   }
   status('The map servers are busy. Building a simplified map from OpenFreeMap…');
   try { return { data: await fetchVectorArea(lat0, lon0), fallback: true }; } catch (e) { console.warn('vector fallback failed', e); }
@@ -568,17 +570,44 @@ function createSkyReflections(renderer) {
 }
 
 // ---------------- Game ----------------
+function showLoadError(message, visit) {
+  $('loadTitle').textContent = 'Area unavailable';
+  $('loadMsg').textContent = message;
+  $('spin').style.display = 'none';
+  $('loadBtns').style.display = 'flex';
+  if (visit?.from) {
+    cooldownButton($('retry'), 'Try again');
+    $('pickAgain').textContent = 'Return to your drive';
+    $('pickAgain').onclick = () => visitArea(visit.from);
+  }
+}
+
 async function startGame(lat0, lon0, placeName) {
+  const saved = history.state?.visit;
+  const visit = saved?.lat === lat0 && saved?.lon === lon0 ? saved : null;
+  const entry = visit?.entry;
   const load = $('loading'), say = t => { $('loadMsg').textContent = t; return new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))); };
   load.style.display = 'flex';
-  await say('Downloading map data from OpenStreetMap…');
+  if (visit?.direction) $('loadTitle').textContent = 'Continuing ' + visit.direction;
+  $('loadPlace').textContent = placeName || lat0.toFixed(4) + ', ' + lon0.toFixed(4);
+  if (visit?.from) {
+    if (cooldownSeconds()) {
+      showLoadError('Please wait before loading this area again.', visit);
+      return;
+    }
+    startCooldown();
+  }
+  await say('Checking for a saved map…');
   const cosL = Math.cos(lat0 * Math.PI / 180), KX = 111320 * cosL, KZ = 110574;
   const P = (lat, lon) => [(lon - lon0) * KX, -(lat - lat0) * KZ];
   const cacheKey = areaKey(lat0, lon0);
   let data = await idbGet(cacheKey), err = null, fallback = false;
   if (data) await say('Loading saved map data…');
   else { ({ data, err, fallback } = await fetchArea(lat0, lon0, say)); if (data && !fallback) { idbSet(cacheKey, data); idbPrune(CACHE_V); } } // a simplified map isn't kept, so the next visit tries for full detail
-  if (!data) { $('loadMsg').textContent = 'The free OpenStreetMap servers are busy (' + (err ? err.message : 'unknown error') + '). Try again in a minute.'; $('spin').style.display = 'none'; $('loadBtns').style.display = 'flex'; return; }
+  if (!data) {
+    showLoadError('The map servers could not load this area' + (err ? ' (' + err.message + ')' : '') + '.', visit);
+    return;
+  }
 
   await say('Building the streets…');
   const lines = [], polys = [], treePts = [], crossPts = [], stopNodes = [];
@@ -1094,11 +1123,14 @@ async function startGame(lat0, lon0, placeName) {
     st.pos.set(x, 0, z); st.h = h; st.v = 0; st.steer = 0;
     camPos.set(x - Math.cos(h) * 9, 3.2, z + Math.sin(h) * 9);
   }
-  const start = laneSpawn(layout.spawnSegments, 0, 0, undefined, HALF);
-  if (start) place(start.x, start.z, start.h); else place(0, 0, 0);
+  const corners = [[2.2, 0.86], [2.2, -0.86], [0, 0.88], [0, -0.88], [-2.18, 0.86], [-2.18, -0.86]];
+  const start = laneSpawn(layout.spawnSegments, entry?.x ?? 0, entry?.z ?? 0, entry?.h, HALF);
+  if (entry && !blocked(entry.x, entry.z, entry.h)) place(entry.x, entry.z, entry.h);
+  else if (start) place(start.x, start.z, start.h);
+  else place(0, 0, entry?.h ?? 0);
 
   // ---- state / lights ----
-  const keys = {}; let started = false, camMode = 0, head = false, night = false, shake = 0, edgeMsgT = 0;
+  const keys = {}; let started = !!entry, camMode = entry?.camera ?? 0, head = false, night = false, shake = 0;
   const lowBeams = CAR.lights.low.map(light => ({
     light, angle: light.angle, targetZ: light.target.position.z
   }));
@@ -1154,12 +1186,18 @@ async function startGame(lat0, lon0, placeName) {
   }
   { // start in daylight: whichever of morning / midday / afternoon has the sun nearest 32° up (low winter sun, high summer sun)
     const el = i => Math.asin(sunAt(TIMES[i][1]).y) * 180 / Math.PI;
-    applyTime([2, 1, 0].reduce((b, i) => Math.abs(el(i) - 32) < Math.abs(el(b) - 32) ? i : b));
+    dayIdx = entry?.day ?? dayIdx;
+    applyTime(entry?.time ?? [2, 1, 0].reduce((b, i) => Math.abs(el(i) - 32) < Math.abs(el(b) - 32) ? i : b));
+    if (entry) { head = entry.headlights; setLights(); }
   }
-  const corners = [[2.2, 0.86], [2.2, -0.86], [0, 0.88], [0, -0.88], [-2.18, 0.86], [-2.18, -0.86]];
   function blocked(x, z, h) {
     const c = Math.cos(h), s = Math.sin(h);
-    for (const [lx, lz] of corners) { const wx = x + lx * c + lz * s, wz = z - lx * s + lz * c; if (Math.abs(wx) > HALF || Math.abs(wz) > HALF) return 'edge'; if (inBuilding(wx, wz, 0.6)) return 'bld'; }
+    for (const [lx, lz] of corners) {
+      const wx = x + lx * c + lz * s, wz = z - lx * s + lz * c;
+      const edge = crossedEdge(wx, wz);
+      if (edge) return edge;
+      if (inBuilding(wx, wz, 0.6)) return 'bld';
+    }
     return null;
   }
 
@@ -1180,13 +1218,17 @@ async function startGame(lat0, lon0, placeName) {
     const yaw = st.v * Math.tan(st.steer) / 2.63 * (hb && Math.abs(st.v) > 4 ? 1.5 : 1);
     const nh = st.h + yaw * dt, nx = st.pos.x + Math.cos(nh) * st.v * dt, nz = st.pos.z - Math.sin(nh) * st.v * dt;
     const hit = blocked(nx, nz, nh);
-    if (hit) {
+    boundary.move(st.pos.x, st.pos.z);
+    if (hit && hit !== 'bld') {
+      st.v = 0;
+      boundary.offer(hit);
+    } else if (hit) {
       const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20);
-      if (hit === 'edge' && performance.now() - edgeMsgT > 3000) { edgeMsgT = performance.now(); flash('Edge of the map area · press M to choose another place'); }
     } else { st.h = nh; st.pos.x = nx; st.pos.z = nz; }
     st.roll += (Math.max(-0.045, Math.min(0.045, st.v * yaw * 0.0045)) - st.roll) * Math.min(1, dt * 6);
     st.pitch += (Math.max(-0.03, Math.min(0.02, a * 0.0018)) - st.pitch) * Math.min(1, dt * 5);
     if (!onHard && Math.abs(st.v) > 3) st.pitch += (Math.random() - 0.5) * 0.004;
+    sound.update(st.v, !dialog.open && up, !dialog.open && dn);
     st.spin += st.v * dt / 0.308;
     return { braking: (dn && st.v > 0.2) || hb, reversing: st.v < -0.2 };
   }
@@ -1251,32 +1293,49 @@ async function startGame(lat0, lon0, placeName) {
     $('stats').textContent += ' · simplified map'; $('attrib').textContent += ' · ' + FALLBACK_CREDIT;
   }
 
+  const dialog = $('edgeDialog');
+  const sound = drivingAudio();
+  const clearKeys = () => { for (const k in keys) keys[k] = false; };
+  const pose = () => ({ x: st.pos.x, z: st.pos.z, h: st.h, camera: camMode, day: dayIdx, time: tIdx, headlights: head });
+  const boundary = edgePrompt({
+    dialog, title: $('edgeTitle'), detail: $('edgeDetail'), proceed: $('edgeContinue'), stay: $('edgeStay'),
+    destination(direction) {
+      clearKeys();
+      const next = nextArea(lat0, lon0, direction, pose());
+      return next && { ...next, direction, from: { lat: lat0, lon: lon0, name: placeName, entry: pose() } };
+    },
+    depart: visitArea
+  });
+  if (visit?.from) history.replaceState({ ...history.state, visit: { lat: lat0, lon: lon0, entry } }, '');
   load.style.display = 'none';
   $('hud').style.display = 'block';
-  const startEl = $('start'); startEl.style.display = 'flex';
-  function begin() { if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => $('keys').style.opacity = 0, 7000); }
+  const startEl = $('start'); startEl.style.display = started ? 'none' : 'flex';
+  if (started) $('keys').style.opacity = 0;
+  function begin() { sound.activate(); if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => $('keys').style.opacity = 0, 7000); }
   startEl.addEventListener('click', begin);
   $('changePlace').addEventListener('click', backToMap);
-  const tune = radio(radioHud(), () => stationsNear(lat0, lon0, fetch));
+  const tune = radio(radioHud(), () => stationsNear(lat0, lon0, fetch), sound.tuningStatic);
   addEventListener('keydown', e => {
+    if (dialog.open) return;
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     if (e.code === 'KeyM') { backToMap(); return; }
-    if (!started) begin();
+    if (!e.repeat) begin();
     keys[e.code] = true; if (e.repeat) return;
     if (e.code === 'KeyH') { head = !head; setLights(); }
     if (e.code === 'KeyN') applyTime(tIdx === NIGHT ? dayIdx : NIGHT, true);
     if (e.code === 'KeyT') applyTime((tIdx + 1) % TIMES.length, true);
     if (e.code === 'KeyC') camMode = 1 - camMode;
+    if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on');
     if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);
     if (e.code === 'KeyR') { const s = laneSpawn(layout.spawnSegments, st.pos.x, st.pos.z, st.h, HALF); if (s) place(s.x, s.z, s.h); }
   });
   addEventListener('keyup', e => keys[e.code] = false);
-  addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+  addEventListener('blur', clearKeys);
   addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
   let last = performance.now(), lastS = { braking: false, reversing: false };
   renderer.setAnimationLoop(now => {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    if (started) lastS = update(dt);
+    if (started && !dialog.open) lastS = update(dt);
     syncCar(lastS); updateCam(dt); hud(lastS, dt);
     renderer.render(scene, camera);
   });
