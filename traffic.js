@@ -1,8 +1,9 @@
-// Traffic on the real map. laneGraph() turns the prepared roads (road-layout.js) into lanes that meet at nodes;
-// createTraffic() runs cars along them around the player. Cars keep their lane, slow for bends, keep their distance
-// from whatever is ahead in their path (another car or the player) and take junctions in turn: a car enters only
-// when no car already in the junction, or waiting there longer, has a path that crosses its own, and when there is
-// room for it beyond. Pure: no three.js, no DOM, so it runs in the Node tests.
+// Traffic on the real map. laneGraph() turns the prepared roads (road-layout.js) into lanes that meet at nodes, and
+// puts traffic lights on the junctions that have them; createTraffic() runs cars along the lanes around the player.
+// Cars keep their lane, slow for bends, keep their distance from whatever is ahead in their path (another car or the
+// player), stop at red lights and take junctions in turn: a car enters only when no car already in the junction, or
+// waiting there longer, has a path that crosses its own, and when there is room for it beyond. Pure: no three.js, no
+// DOM, so it runs in the Node tests.
 import { nodeKey } from './road-layout.js';
 import { offsetLine, cumLen } from './geom.js';
 
@@ -13,6 +14,8 @@ const LAT = 2.6, BRAKE = 3.2, AHEAD = 120, R = 1.85, LEN = 2.2; // bend accelera
 const CIRCLES = [-1.45, 0, 1.45]; // a car's body as three circles along its axis
 // [label, m of lane per car, most cars]
 export const LEVELS = [['Off', 0, 0], ['Light', 170, 30], ['Normal', 95, 60], ['Heavy', 55, 100]];
+const MAIN = new Set(['motorway', 'trunk', 'primary', 'secondary']); // where lights go when none are mapped
+const GREEN = 18, AMBER = 3, CLEAR = 2, PHASE = GREEN + AMBER + CLEAR; // traffic light timing (s); CLEAR: all red
 
 const unit = (a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1], cross = (a, b) => a[0] * b[1] - a[1] * b[0];
@@ -60,7 +63,8 @@ function track(pts, lim, floor) {
 // Lanes of the roads that take traffic, split where roads meet. An edge is one direction of travel between two
 // nodes, with one lane piece per lane (k = 0 is the kerbside lane), cut back clear of the junctions at both ends.
 // junctions: prepareRoads().junctions, whose arm.clear says how far a road's markings stay out of a junction.
-export function laneGraph(roads, junctions, half = Infinity) {
+// signals: mapped traffic_signals points, [x, z] ([] puts lights where main roads cross; null: no lights).
+export function laneGraph(roads, junctions, half = Infinity, signals = null) {
   const use = roads.filter(r => SPEED[r.type] && r.t.area !== 'yes' && !BARRED.test(r.t.motorcar || r.t.motor_vehicle || r.t.vehicle || r.t.access || '') && (r.lanes.one || r.lanes.total > 1 || r.lanes.edge >= 2.3)); // a two-way road needs room for two cars to pass
   const uses = new Map(), clear = new Map(), nodes = new Map(), edges = [];
   for (const r of use) r.g.forEach((p, i) => { const k = nodeKey(r, i); uses.set(k, (uses.get(k) || 0) + 1); });
@@ -113,7 +117,53 @@ export function laneGraph(roads, junctions, half = Infinity) {
       return Object.assign(track(rounded(slice(line, a, b)), e.speed, 3), { edge: e, k, node: null });
     });
   }
-  return { nodes: [...nodes.values()], edges, half };
+  const list = [...nodes.values()];
+  return { nodes: list, edges, half, signals: trafficLights(list, signals) };
+}
+
+// Traffic lights. Junction nodes with a mapped signal within 30 m (or, with none mapped, where main roads cross) are
+// controlled; nodes linked by a short edge share a controller. Each road coming in gets a light, in one of two phases
+// by its direction (the widest road's axis first), and a signal head at the kerb where its cars stop: [{ e, x, z, h }].
+function trafficLights(nodes, signals) {
+  if (!signals) return [];
+  const junctions = nodes.filter(n => n.junction), on = new Set();
+  if (signals.length) for (const [x, z] of signals) {
+    let best = null, bd = 30;
+    for (const n of junctions) { const d = Math.hypot(n.p[0] - x, n.p[1] - z); if (d < bd) { bd = d; best = n; } }
+    if (best) on.add(best);
+  } else for (const n of junctions) {
+    const main = n.arms.filter(a => MAIN.has(a.r.type));
+    if (n.arms.length > 3 && !n.arms.some(a => a.r.t.junction === 'roundabout') && main.some(a => main.some(b => Math.abs(cross(a.u, b.u)) > 0.5))) on.add(n);
+  }
+  const heads = [], ctrls = new Map();
+  for (const n of on) {
+    if (ctrls.has(n)) continue;
+    const ctrl = { nodes: new Set(), offset: (ctrls.size * 17.3) % (2 * PHASE) }; // lights out of step with each other
+    for (const stack = [n]; stack.length;) {
+      const m = stack.pop(); if (ctrls.has(m)) continue;
+      ctrls.set(m, ctrl); ctrl.nodes.add(m);
+      for (const e of m.outs.concat(m.ins)) { const o = e.from === m ? e.to : e.from; if (on.has(o) && e.len < 40) stack.push(o); }
+    }
+    const ins = [...ctrl.nodes].flatMap(m => m.ins.filter(e => !ctrl.nodes.has(e.from) && e.lanes.length));
+    if (!ins.length) continue;
+    const axis = ins.reduce((a, b) => b.r.hw > a.r.hw ? b : a).dirB;
+    for (const e of ins) {
+      e.signal = { ctrl, phase: Math.abs(cross(axis, e.dirB)) > 0.7 ? 1 : 0 };
+      const L = e.lanes[0], P = L.pts.at(-1), u = L.len > 0.5 ? unit(L.pts.at(-2), P) : e.dirB, o = e.side * (e.r.hw + 0.6) - e.offs[0]; // from the kerbside lane to the kerb
+      heads.push({ e, x: P[0] - u[1] * o, z: P[1] + u[0] * o, h: Math.atan2(u[1], -u[0]), state: 'red' }); // facing the cars coming in
+    }
+    ctrl.phases = [...new Set(ins.map(e => e.signal.phase))].sort();
+  }
+  return heads;
+}
+
+// The colour of light `signal` (an edge's { ctrl, phase }) at time t (s): its phase gets green, then amber, then all
+// stand at red a moment before the next phase's green.
+export function lightAt(signal, t) {
+  const { ctrl, phase } = signal, n = ctrl.phases.length;
+  let s = ((t + ctrl.offset) % (n * PHASE) + n * PHASE) % (n * PHASE);
+  const i = Math.floor(s / PHASE); s -= i * PHASE;
+  return ctrl.phases[i] !== phase ? 'red' : s < GREEN ? 'green' : s < GREEN + AMBER ? 'amber' : 'red';
 }
 
 // The curve from lane k of E into lane kF of F (a U-turn when F is E's twin). Made once and kept on E.
@@ -319,7 +369,11 @@ export function createTraffic(graph, { rand = Math.random, max = Infinity, radiu
     c.ahead = ahead;
     const hold = group ? waitBack(group[0].p.from.lanes[group[0].p.k]) : 0;
     let wait = !!group;
-    if (group && gap > group[0].at - c.s - LEN - 1 - hold) { // first in line: may it go?
+    // a light on the way in: stop at red, and at amber if it can do so comfortably; wait for green, not for its turn
+    const light = group?.[0].p.from.signal ? lightAt(group[0].p.from.signal, time) : 'green', toStop = group ? group[0].at - 2.5 - hold - c.s : 0;
+    c.atLight = light !== 'green' && toStop > v * v / (2 * (light === 'red' ? 6 : 3.5)) - 0.5;
+    if (c.atLight) for (const { p } of group) p.node.queue.delete(c);
+    else if (group && gap > group[0].at - c.s - LEN - 1 - hold) { // first in line: may it go?
       // room for the whole car beyond (before a dead end too), or a car ahead going the same way through all of it, moving freely
       const first = group[0], since = n => n.queue.get(c)?.t ?? time;
       const room = (gap > gEnd - c.s + 3.7 || (lead > 3 && gap > 6 && group.every(({ p }) => p.node.holders.get(ahead)?.to === p.to))) && (!c.dead || end.at + end.p.len - gEnd > 2 * LEN + 1);
@@ -352,11 +406,12 @@ export function createTraffic(graph, { rand = Math.random, max = Infinity, radiu
       if (c.claimed.delete(e)) e.p.node.holders.delete(c);
     }
     pose(c);
-    c.still = c.v < 0.2 ? c.still + dt : 0;
+    c.still = c.v < 0.2 ? c.still + (c.atLight ? 0 : dt) : 0; // (waiting at a red light isn't being stuck)
   }
 
   function step(dt, player) {
     time += dt;
+    for (const s of graph.signals || []) s.state = lightAt(s.e.signal, time);
     const bodies = player ? cars.concat([player]) : cars;
     for (const c of cars) drive(c, dt, bodies);
     for (const c of cars) move(c, dt);
@@ -364,7 +419,7 @@ export function createTraffic(graph, { rand = Math.random, max = Infinity, radiu
     if ((retune -= dt) <= 0) { retune = 5; retarget(player.x, player.z); }
     for (const c of cars.slice()) {
       const d = Math.hypot(c.x - player.x, c.z - player.z), end = c.route.at(-1);
-      if (d > radius + 70 || ((c.still > (c.dead ? 8 : 25) || (c.dead && c.s > end.at + end.p.len - 3)) && !seen(c.x, c.z))) drop(c);
+      if (d > radius + 70 || ((c.still > (c.dead ? 8 : 45) || (c.dead && c.s > end.at + end.p.len - 3)) && !seen(c.x, c.z))) drop(c);
     }
     if (cars.length < target && (spawnT -= dt) <= 0) { spawnT = 0.25; fill(player.x, player.z, 150, 1); }
   }

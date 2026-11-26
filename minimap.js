@@ -10,6 +10,9 @@ export function minimapView(x, z, heading, half) {
   return { left: half + x - SPAN / 2, top: half + z - SPAN / 2, span: SPAN, rotation: Math.PI / 2 - heading };
 }
 
+// Where world point (x, z) falls on a minimap `size` units across showing `view`.
+export const minimapPoint = (x, z, view, half, size) => [(half + x - view.left) * size / view.span, (half + z - view.top) * size / view.span];
+
 function trace(ctx, points) {
   ctx.moveTo(points[0][0], points[0][1]);
   for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
@@ -63,13 +66,22 @@ export function createMinimap(canvas, base, half, geometry) {
   const size = 180; // drawing units, independent of the display's CSS size
   ctx.scale(canvas.width / size, canvas.height / size);
   let lastX, lastZ, lastHeading, lastTarget;
-  return (x, z, heading, target = null) => {
-    if (x === lastX && z === lastZ && heading === lastHeading && target === lastTarget) return;
+  // target: the delivery stop ({ x, z }) or null; others: other cars ({ x, z }), drawn as dots
+  return (x, z, heading, target = null, others = []) => {
+    if (x === lastX && z === lastZ && heading === lastHeading && target === lastTarget && !others.length) return;
     lastX = x; lastZ = z; lastHeading = heading; lastTarget = target;
     const { left, top, span, rotation } = minimapView(x, z, heading, half);
     ctx.fillStyle = '#151d21';
     ctx.fillRect(0, 0, size, size);
     ctx.drawImage(base, left, top, span, span, 0, 0, size, size);
+    ctx.fillStyle = '#dfe7e4';
+    ctx.strokeStyle = '#172026';
+    ctx.lineWidth = 1;
+    for (const c of others) {
+      const [px, py] = minimapPoint(c.x, c.z, { left, top, span }, half, size);
+      if (px < -3 || py < -3 || px > size + 3 || py > size + 3) continue;
+      ctx.beginPath(); ctx.arc(px, py, 2.4, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+    }
 
     let goal;
     if (target) {

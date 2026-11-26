@@ -40,12 +40,13 @@ how each part works; this file says how the parts may fit together.
 | `sign-layout.js` | — | Street and landmark names and curbside placement |
 | `sign-mesh.js` | — | Sign atlas, two-sided boards and instanced posts |
 | `road-layout.js` | — | Pure lane, junction and spawn geometry |
-| `traffic.js` | — | Traffic on the real map: lane graph, car following, junction claims, spawning around the player |
+| `traffic.js` | — | Traffic on the real map: lane graph, traffic lights, car following, junction claims, spawning around the player |
 | `traffic-cars.js` | — | The traffic cars on screen: instanced bodies, paint, brake lights and night glows |
 | `app-version.js` | — | Shared release label from the local package manifest |
 | `delivery.js` | — | Parcel stops on connected, directed lanes and pickup/drop-off state |
 | `delivery-hud.js` | — | Current job prompt and road marker |
 | `minimap-labels.js` | — | Nearby street and address labels, footprint anchors and label spacing |
+| `traffic-lights.js` | — | Traffic light poles and signal heads on screen, the lamp that's on |
 | `minimap.js` | — | North-up driving minimap and car marker, drawn on supplied canvases |
 | `building-fronts.js` | — | Facade layout (style, storeys, window bays, doors, shop windows) and atlas drawing on a supplied canvas context |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
@@ -75,12 +76,13 @@ root, one copy each. Page URLs don't change.
 | `app-version.js` | Show the current release on the three game pages | nothing |
 | `delivery.js` | Select reachable stops and advance an area-local parcel job | nothing |
 | `delivery-hud.js` | Drive the HUD and place the active stop in the scene | `delivery`, three |
-| `minimap.js` | Cached raster of real-map geometry, car and goal markers | `minimap-labels`, `delivery` |
+| `minimap.js` | Cached raster of real-map geometry, car and goal markers, traffic as dots | `minimap-labels`, `delivery` |
 | `minimap-labels.js` | Nearby names and address numbers on the supplied canvas | `geom` |
 | `traffic-cars.js` | `trafficCars(scene, max, glowTex)` → `sync(cars, lit)`: instanced car bodies posed from `traffic.js` cars | three |
-| `traffic.js` | `laneGraph(roads, junctions, half)`, `createTraffic(graph, { rand, max, seen })` → `step`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
+| `traffic-lights.js` | `trafficLights(scene, signals, glowTex)` → `sync(lit)`: the signal heads in `graph.signals`, showing their `state` | three |
+| `traffic.js` | `laneGraph(roads, junctions, half, signals)` → lanes, nodes and `signals` (light heads), `lightAt(signal, t)`, `createTraffic(graph, { rand, max, seen })` → `step`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
 | `sky.js` | `createSky(renderer, scene, lat)` → `TIMES`, `sunAt`, `set(h, forceNight, weather, snow)`, `update(dt, cameraPosition)`, `placeShadow(x, z)`: sun, sky, lights, fog, exposure, rain and snow | `world-kit`, `geom`, three |
-| `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`), wet and snowy surfaces (`setGround(wet, snow)`, `reflectLamps(x, z)`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, `sign-layout`, `sign-mesh`, `street-furniture`, `furniture-mesh`, three |
+| `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`), mapped traffic signals (`signalPts`), wet and snowy surfaces (`setGround(wet, snow)`, `reflectLamps(x, z)`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, `sign-layout`, `sign-mesh`, `street-furniture`, `furniture-mesh`, three |
 | `street-furniture.js` | Plan parked cars and mapped furnishings and provide the player collision lookup | `geom`, `osm-query` |
 | `furniture-mesh.js` | Draw static parking and street furniture | `traffic-cars`, `world-kit`, three |
 | `sign-layout.js` | Choose sign positions at named junctions and near mapped landmarks | `geom`, `osm-query` |
