@@ -18,7 +18,9 @@ how each part works; this file says how the parts may fit together.
 | File | Lines | What it is |
 |---|---|---|
 | `drive-map.js` | 434 | Real-map page: picker, loading screen, sky and time of day, car, game loop, HUD |
-| `world.js` | 650 | OSM tag tables and `buildWorld()`: the 3D place and its lookups (`roadAt`, `areaAt`, `inBuilding`) |
+| `world.js` | 412 | Road/area tag tables and `buildWorld()`, which runs one builder per feature (`layRoads`, `roadLookup`, `paintCrossings`, `layRailways`, `buildWalls`, `plantTrees`, `streetLamps`, …) |
+| `buildings.js` | 267 | `buildBuildings()`: building tag tables, walls and roofs per footprint, building parts, shopfronts, lit windows, `inBuilding` |
+| `world-kit.js` | 28 | three.js and tag helpers shared by the two above: `fillPoly`, `makeTex`, `tagColor`, `num`, … |
 | `map-data.js` | 55 | `loadArea()`: IndexedDB cache, proxy, Overpass servers, vector fallback |
 | `geom.js` | 195 | Pure geometry: strips, polygons, oriented boxes, roof clipping, coastline → sea |
 | `drive-track.js` | 215 | Test-track page (`Drive.html`): track, surface, lap timing, sky |
@@ -42,11 +44,8 @@ What already works well and stays: the Overpass-shaped `elements` list as the si
 and the world builder; `osm-query.js` shared by browser and Worker so the proxy only runs the game's query; I/O passed
 in (`fetchVectorArea(lat, lon, fetchFn)`); named meshes; versioned storage keys.
 
-What has to change:
-
-1. **`buildWorld()` is one ~420-line function.** It reads top to bottom (parse, ground, roads, crossings, railways,
-   walls, buildings, trees, lamps) but shares one closure. Split it per feature (`buildRoads`, `buildBuildings`, …),
-   with buildings and their tag tables moving to their own module; that also brings `world.js` back under ~600 lines.
+Nothing structural is outstanding: every module is under ~600 lines and every function under ~150. Keep it that way
+with the rules below.
 
 ## Target
 
@@ -60,7 +59,9 @@ root, one copy each. Page URLs don't change.
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model` |
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`), the ground under the car (`vmax`, `drag`, `rough`) and collisions | nothing (works on the three.js objects it is given) |
 | `minimap.js` | Cached raster of real-map geometry and car-centred HUD view | nothing |
-| `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`); OSM tag tables; `makeTex` | `geom`, `building-fronts`, `road-layout`, three |
+| `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, three |
+| `buildings.js` | `buildBuildings(polys, entranceNodes, roadAt, mkMesh)` → `{ blds, inBuilding, frontMat, wallMat }`; building tag tables, `roofPlanes`, shopfronts | `world-kit`, `geom`, `building-fronts`, three |
+| `world-kit.js` | three.js and tag helpers shared by `world.js` and `buildings.js`: `fillPoly`/`eachTri`, `makeTex`, `speckle`, `num`, `tagColor`, `matColor` | `geom`, three |
 | `map-data.js` | `loadArea(lat, lon, status)`: IndexedDB cache → proxy → Overpass → vector fallback; returns `{ data, fallback, err }` | `osm-query`, `vector-fallback` |
 | `sedan-model.js` | `buildCar()` and the axle constants: the procedural car | three |
 | `vaz-model.js` | `loadVaz()`: the VAZ-2101 model file, returned in `buildCar()`'s shape | three (GLTFLoader) |
@@ -68,7 +69,7 @@ root, one copy each. Page URLs don't change.
 | `driving-audio.js` | Synthesized engine and tuning sounds on both driving pages | nothing |
 | `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find, tuningStatic)` → `tune(step)`; station playback | nothing |
 | `touch.js` | `touchControls(extras)`: on-screen buttons for touch screens that press keys (synthetic keydown/keyup), so pages handle touch and keyboard the same way | nothing |
-| `geom.js` | Pure geometry on plain arrays (`ribbon`, `obb`, `clipHalf`, `joinRings`, `seaPolys`, …). Triangulating polygons needs three.js, so `fillPoly` stays in `world.js` | nothing |
+| `geom.js` | Pure geometry on plain arrays (`ribbon`, `obb`, `clipHalf`, `joinRings`, `seaPolys`, …). Triangulating polygons needs three.js, so `fillPoly` is in `world-kit.js` | nothing |
 | `osm-query.js` | Query, cache key, grid, servers, proxy address | nothing |
 | `vector-fallback.js` | Vector tiles → Overpass-shaped elements | `osm-query` |
 | `three-d-stage.js` | Viewer component | three |
@@ -130,3 +131,5 @@ Behaviour-neutral PRs, in this order. Tick them off here as they merge.
   game loop.
 - [x] **5. Cleanup.** Drop `notifyExport()` from `three-d-stage.js`; drop anything the steps above left unused (the
   never-read `st.a`; `buildCar()` returns `drlMat` instead of setting `window.__drl`).
+- [x] **6. Split `buildWorld()` per feature.** One builder function per feature in `world.js`; buildings and their tag
+  tables in `buildings.js`; shared three.js/tag helpers in `world-kit.js`.
