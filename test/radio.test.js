@@ -45,3 +45,22 @@ test('radio: tuning shows the station busy, then plain once it plays (only once)
   assert.deepEqual(shown, [['Radio', 'Searching for stations…', true], ['A', 'Tuning…', true], ['A'], ['B', 'Tuning…', true], ['B', 'No signal'], ['Radio off']]);
   delete globalThis.Audio;
 });
+
+test('static starts on the tuning gesture, including a slow lookup, and stays silent on retries and off', async t => {
+  let audio;
+  globalThis.Audio = class {
+    constructor() { audio = this; }
+    play() { return Promise.resolve(); } pause() {} removeAttribute() {} load() {}
+  };
+  t.after(() => delete globalThis.Audio);
+  let resolve, bursts = 0;
+  const tune = radio(() => {}, () => new Promise(r => { resolve = r; }), () => { bursts++; });
+  const first = tune(1);
+  assert.equal(bursts, 1);
+  resolve([['A', 'https://a'], ['B', 'https://b']]); await first;
+  audio.onerror(); audio.onplaying();
+  assert.equal(bursts, 1);
+  await tune(1); assert.equal(bursts, 2);
+  await tune(1); assert.equal(bursts, 2); // off
+  await tune(-1); assert.equal(bursts, 3);
+});

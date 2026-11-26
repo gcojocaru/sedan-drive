@@ -37,18 +37,24 @@ export async function stationsNear(lat, lon, fetchFn = fetch) {
 
 // Returns tune(step): +1 / -1 steps off → first station → … → last → off. show(title, note, busy) puts it on screen (radioHud).
 // find() gives the station list; it runs on the first tune, and again after it found nothing.
-export function radio(show, find = async () => STATIONS) {
+// tuningStatic() plays a short burst on the dial gesture, including while the directory is loading.
+export function radio(show, find = async () => STATIONS, tuningStatic = () => {}) {
   const a = new Audio(); let list = [], found = null, i = -1, tries = 0, live = false;
   const start = () => { a.src = list[i][1]; a.play().catch(() => {}); }; // failures arrive as 'error' events below; AbortError = tuned away
   // Chromium sometimes can't decode the first AAC packet it joins a live stream on (PIPELINE_ERROR_DECODE); a fresh connection usually plays.
   a.onerror = () => { if (i < 0) return; if (tries-- > 0) start(); else show(list[i][0], 'No signal'); };
   a.onplaying = () => { if (i >= 0 && !live) { live = true; show(list[i][0]); } }; // only the first time: 'playing' also fires after every stall
   return async step => {
-    if (!found) show('Radio', 'Searching for stations…', true);
-    list = await (found ??= find().catch(() => []));
-    if (!list.length) { found = null; show('Radio', 'No stations found here'); return; }
+    const searching = !list.length;
+    if (searching) {
+      tuningStatic();
+      if (!found) show('Radio', 'Searching for stations…', true);
+      list = await (found ??= find().catch(() => []));
+      if (!list.length) { found = null; show('Radio', 'No stations found here'); return; }
+    }
     const n = list.length + 1; i = ((i + 1 + step) % n + n) % n - 1;
     if (i < 0) { a.pause(); a.removeAttribute('src'); a.load(); show('Radio off'); return; } // load() drops the live stream so it stops downloading
+    if (!searching) tuningStatic();
     tries = 2; live = false; start(); show(list[i][0], 'Tuning…', true);
   };
 }
