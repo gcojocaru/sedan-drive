@@ -185,15 +185,15 @@ test('cars stop at red and go on green, and never cross the stop line on red', (
   const { graph } = grid(3, 100, 'right', [[0, 0]]), sim = createTraffic(graph, { rand: seeded(4) });
   const ins = graph.signals.map(s => s.e);
   for (let i = 0; i < 16; i++) { const e = ins[i % 4]; sim.add(e, 0, Math.max(2, e.lanes[0].len - 12 - 9 * Math.floor(i / 4))); }
-  const inside = c => Math.abs(c.x) < 4.5 && Math.abs(c.z) < 4.5, was = new Map(), entered = { red: 0, amber: 0, green: 0 };
+  const nose = new Map(), entered = { red: 0, amber: 0, green: 0 }; // what the light showed as each nose crossed a stop line
   let t = 0, hits = 0, waited = 0;
   for (let k = 0; k < 30 * 150; k++) {
     sim.step(1 / 30, null); t += 1 / 30;
     waited += sim.cars.filter(c => c.atLight && c.v < 0.1).length;
     for (const c of sim.cars) {
-      const now = inside(c);
-      if (now && !was.get(c)) { const turn = c.route.find(e => e.p.node && e.at <= c.s + LEN_ && e.at + e.p.len >= c.s - LEN_); entered[lightAt(turn.p.from.signal, t)]++; }
-      was.set(c, now);
+      const was = nose.get(c), now = c.s + LEN_;
+      if (was !== undefined) for (const e of c.route) if (e.p.node && e.p.from.signal && was < e.at && now >= e.at) entered[lightAt(e.p.from.signal, t)]++;
+      nose.set(c, now);
     }
     for (let i = 0; i < sim.cars.length; i++) for (let j = i + 1; j < sim.cars.length; j++) if (overlap(sim.cars[i], sim.cars[j])) hits++;
   }

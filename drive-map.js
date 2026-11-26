@@ -21,6 +21,8 @@ import { WEATHERS, weatherNow, solarHour, groundOf } from './weather.js';
 import { laneGraph, createTraffic, ranRed, LEVELS } from './traffic.js';
 import { trafficCars } from './traffic-cars.js';
 import { trafficLights } from './traffic-lights.js';
+import { walkGraph, createPedestrians, PEOPLE } from './pedestrians.js';
+import { pedestrianFigures } from './pedestrian-figures.js';
 import { showAppVersion } from './app-version.js';
 
 showAppVersion();
@@ -30,6 +32,7 @@ const $ = id => document.getElementById(id);
 const LS_PLACE = 'sedan-map-last-place-v1';
 const LS_CAR = 'sedan-map-car-v1'; // 'sedan' or 'vaz'
 const LS_TRAFFIC = 'sedan-map-traffic-v1'; // index into LEVELS
+const LS_PEOPLE = 'sedan-map-people-v1'; // index into PEOPLE (pedestrians.js)
 const LS_WALLET = 'sedan-map-wallet-v1'; // { cash, earned, jobs }: delivery money to spend, all earned, deliveries made
 const LS_GARAGE = 'sedan-map-garage-v1'; // what the garage fitted: { levels, paints, paint } (garage.js)
 const LS_EARNED = 'sedan-map-earnings-v1'; // before the garage: { total, jobs }, only read to start the wallet
@@ -162,7 +165,7 @@ async function startGame(lat0, lon0, placeName) {
 
   const sky = createSky(renderer, scene, lat0), { TIMES, NIGHT } = sky;
 
-  const { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex } = await buildWorld(data.elements, lat0, lon0, scene, say);
+  const { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex } = await buildWorld(data.elements, lat0, lon0, scene, say);
 
   // ---- car ----
   await say('Placing the car…');
@@ -173,11 +176,14 @@ async function startGame(lat0, lon0, placeName) {
   repaint(CAR, tuning.paint);
   const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), probe = new THREE.Sphere(V(), 3); // what the camera sees: traffic comes and goes out of sight
   const graph = laneGraph(roads, layout.junctions, HALF, signalPts), lightsView = trafficLights(scene, graph.signals, glowTex);
-  const traffic = createTraffic(graph, { max: matchMedia('(pointer: coarse)').matches ? 45 : 100, seen: (x, z) => frustum.intersectsSphere((probe.center.set(x, 1, z), probe)) });
+  const seen = (x, z) => frustum.intersectsSphere((probe.center.set(x, 1, z), probe)), coarse = matchMedia('(pointer: coarse)').matches;
+  const traffic = createTraffic(graph, { max: coarse ? 45 : 100, seen });
   const trafficView = trafficCars(scene, 100, glowTex), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
+  const walks = walkGraph(roads, paths, layout.junctions, { armBack: graph.armBack, roadAt, crossings: crossPts }); // sidewalks, crossings, footways
+  const people = createPedestrians(walks, { max: coarse ? 50 : 140, half: HALF, seen }), figures = pedestrianFigures(scene, coarse ? 50 : 140);
   const ear = { x: 0, z: 0, fx: 1, fz: 0, vx: 0, vz: 0, wet: 0, snow: 0, me }, look = V(0, 0, 0); // the camera, listening to the traffic
   const SOLID = { bld: 'wall', car: 'car', traffic: 'car', post: 'post' }; // what blocked() hits → its crash sound
-  let hitCar = null; // the traffic car blocked() last found
+  let hitCar = null, hitPerson = null; // the traffic car and the pedestrian blocked() last found
   {
     const blob = (inner, a) => makeTex(128, 128, (x) => { const g = x.createRadialGradient(64, 64, 64 * inner, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); });
     const mk = (tex, w, d, x, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.07, z); m.renderOrder = 2; car.add(m); };
@@ -245,6 +251,11 @@ async function startGame(lat0, lon0, placeName) {
   trafficSel.value = LEVELS[storedLevel] ? storedLevel : 2;
   trafficSel.onchange = () => { localStorage.setItem(LS_TRAFFIC, trafficSel.value); traffic.setLevel(+trafficSel.value, st.pos.x, st.pos.z); };
   traffic.setLevel(+trafficSel.value, st.pos.x, st.pos.z);
+  const peopleSel = $('peopleSel'), storedPeople = Number(localStorage.getItem(LS_PEOPLE) ?? 2);
+  peopleSel.append(...PEOPLE.map(([name], i) => new Option(name, i)));
+  peopleSel.value = PEOPLE[storedPeople] ? storedPeople : 2;
+  peopleSel.onchange = () => { localStorage.setItem(LS_PEOPLE, peopleSel.value); people.setLevel(+peopleSel.value, st.pos.x, st.pos.z); };
+  people.setLevel(+peopleSel.value, st.pos.x, st.pos.z);
   function showTime(announce) { // local clock time, also for the presets (they are set in solar time)
     const w = weatherOf(), real = wSel === 'live' && live, lying = !real ? '' : live.snowDepth >= 0.01 ? ', ' + Math.round(live.snowDepth * 100) + ' cm on the ground' : groundOf(w).wet > 0.3 && !['rain', 'storm', 'snow'].includes(w.kind) ? ', wet roads' : '';
     const text = (tSel === 'live' ? '' : TIMES[tSel][0] + ' · ') + clock(hourOf() - lon0 / 15 + offset() / 3600) + ' · ' + w.label + (real ? ', ' + Math.round(live.temp) + '°C' : '') + lying;
@@ -282,6 +293,7 @@ async function startGame(lat0, lon0, placeName) {
       if (inBuilding(wx, wz, 0.6)) return 'bld';
       if ((hitCar = traffic.hit(wx, wz))) return 'traffic';
     }
+    if ((hitPerson = people.hit(x, z, h))) return 'person';
     const object = furnitureHit(x,z,h);
     return object === 'car' ? 'car' : object ? 'post' : null;
   }
@@ -308,7 +320,12 @@ async function startGame(lat0, lon0, placeName) {
     const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard, grip }, TUNE, (nx, nz, nh) => {
       const hit = blocked(nx, nz, nh);
       boundary.move(st.pos.x, st.pos.z);
-      if (SOLID[hit]) {
+      if (hit === 'person') { // they stumble out of the way; the car pulls up
+        const imp = Math.abs(st.v), fresh = hitPerson.state !== 'stagger';
+        people.bump(hitPerson, st.pos.x, st.pos.z); st.v *= 0.2; sound.impact(imp, 'person');
+        if (fresh && imp > 2 && !delivery.knocked()) flash('Watch out!');
+      }
+      else if (SOLID[hit]) {
         const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20);
         sound.impact(imp, SOLID[hit]); if (hit === 'traffic' && imp > 2) sound.honkAt(hitCar, ear); // and the other driver lets you know
         delivery.crash(imp, tuning.cushion);
@@ -401,7 +418,7 @@ async function startGame(lat0, lon0, placeName) {
     if (e.code === 'KeyC') camMode = 1 - camMode;
     if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on');
     if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);
-    if (e.code === 'KeyR') { const s = laneSpawn(layout.spawnSegments, st.pos.x, st.pos.z, st.h, HALF, furnitureHit); if (s) { traffic.clear(s.x, s.z, 8); place(s.x, s.z, s.h); } }
+    if (e.code === 'KeyR') { const s = laneSpawn(layout.spawnSegments, st.pos.x, st.pos.z, st.h, HALF, furnitureHit); if (s) { traffic.clear(s.x, s.z, 8); people.clear(s.x, s.z, 6); place(s.x, s.z, s.h); } }
   });
   addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyB') sound.horn(false); });
   addEventListener('blur', () => { clearKeys(); sound.horn(false); });
@@ -412,9 +429,10 @@ async function startGame(lat0, lon0, placeName) {
     if (started && !paused()) lastS = update(dt);
     if (!paused()) {
       frustum.setFromProjectionMatrix(view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
-      Object.assign(me, { x: st.pos.x, z: st.pos.z, h: st.h, v: st.v }); traffic.step(dt, me);
+      Object.assign(me, { x: st.pos.x, z: st.pos.z, h: st.h, v: st.v });
+      people.step(dt, me, traffic.cars, graph.signals); traffic.step(dt, me, people.crossing); // (traffic keeps from the people in the road)
     }
-    trafficView.sync(traffic.cars, dim); lightsView.sync(dim);
+    trafficView.sync(traffic.cars, dim); lightsView.sync(dim); figures.sync(people.people);
     camera.getWorldDirection(look); const flat = Math.hypot(look.x, look.z) || 1;
     Object.assign(ear, { x: camera.position.x, z: camera.position.z, fx: look.x / flat, fz: look.z / flat, vx: Math.cos(st.h) * st.v, vz: -Math.sin(st.h) * st.v });
     sound.traffic(traffic.cars, ear);

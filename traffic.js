@@ -5,7 +5,7 @@
 // waiting there longer, has a path that crosses its own, and when there is room for it beyond. Pure: no three.js, no
 // DOM, so it runs in the Node tests.
 import { nodeKey } from './road-layout.js';
-import { offsetLine, cumLen } from './geom.js';
+import { offsetLine, cumLen, trimLine } from './geom.js';
 
 // m/s by highway type when maxspeed isn't tagged; service roads, busways and raceways get no traffic
 const SPEED = { motorway: 30, trunk: 22, primary: 14, secondary: 14, tertiary: 13, unclassified: 11, residential: 9, living_street: 5, road: 9, motorway_link: 17, trunk_link: 14, primary_link: 12, secondary_link: 11, tertiary_link: 11 };
@@ -23,16 +23,6 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1], cross = (a, b) => a[0] * b[1] -
 function speedOf(r) {
   const m = /^(\d+(?:\.\d+)?)\s*(mph)?$/.exec(r.t.maxspeed || ''), v = m ? m[1] * (m[2] ? 0.447 : 1 / 3.6) : 0;
   return v >= 2 && v <= 40 ? v : SPEED[r.type];
-}
-
-// the part of polyline g from a m along it to b m before its end
-function slice(g, a, b) {
-  const c = cumLen(g), hi = Math.max(a, c.at(-1) - b);
-  const at = s => { let i = 1; while (i < g.length - 1 && c[i] < s) i++; const t = Math.min(1, (s - c[i - 1]) / (c[i] - c[i - 1] || 1)); return [g[i - 1][0] + (g[i][0] - g[i - 1][0]) * t, g[i - 1][1] + (g[i][1] - g[i - 1][1]) * t]; };
-  const out = [at(a)];
-  for (let i = 1; i < g.length - 1; i++) if (c[i] > a + 0.01 && c[i] < hi - 0.01) out.push(g[i]);
-  out.push(at(hi));
-  return out;
 }
 
 // sharp vertices get a curve of up to r m radius, so cars turn instead of snapping round
@@ -66,7 +56,7 @@ function track(pts, lim, floor) {
 // signals: mapped traffic_signals points, [x, z] ([] puts lights where main roads cross; null: no lights).
 export function laneGraph(roads, junctions, half = Infinity, signals = null) {
   const use = roads.filter(r => SPEED[r.type] && r.t.area !== 'yes' && !BARRED.test(r.t.motorcar || r.t.motor_vehicle || r.t.vehicle || r.t.access || '') && (r.lanes.one || r.lanes.total > 1 || r.lanes.edge >= 2.3)); // a two-way road needs room for two cars to pass
-  const uses = new Map(), clear = new Map(), nodes = new Map(), edges = [];
+  const uses = new Map(), clear = new Map(), nodes = new Map(), edges = [], armBack = new Map();
   for (const r of use) r.g.forEach((p, i) => { const k = nodeKey(r, i); uses.set(k, (uses.get(k) || 0) + 1); });
   for (const arms of junctions) for (const a of arms) { if (!clear.has(a.road)) clear.set(a.road, new Map()); clear.get(a.road).set(a.i * 2 + (a.direction > 0), a.clear); }
   const node = (r, i) => {
@@ -106,7 +96,10 @@ export function laneGraph(roads, junctions, half = Infinity, signals = null) {
     // clear of every other road there: along u, this road's near edge only clears road o's after (hw_o + hw cos θ) / sin θ
     let b = (clear.get(r)?.get(i * 2 + (d > 0)) || 0) + 1;
     for (const o of n.arms) if (o.r !== r) { const sn = Math.abs(cross(u, o.u)), cs = dot(u, o.u); if (sn > 0.17 || cs > 0) b = Math.max(b, (o.r.hw + r.hw * cs) / Math.max(sn, 0.04) + 0.8); } // roads forking almost side by side: as far as it goes
-    return Math.min(25, b);
+    b = Math.min(25, b);
+    if (!armBack.has(r)) armBack.set(r, new Map());
+    armBack.get(r).set(i * 2 + (d > 0), b);
+    return b + (r.walk ? 3 : 0); // a street with sidewalks keeps room for the crosswalk in front of its stop line
   };
   for (const e of edges) {
     e.dirA = unit(e.g[0], e.g[1]); e.dirB = unit(e.g.at(-2), e.g.at(-1)); e.mid = e.g[e.g.length >> 1]; e.len = cumLen(e.g).at(-1);
@@ -114,11 +107,13 @@ export function laneGraph(roads, junctions, half = Infinity, signals = null) {
     e.lanes = e.offs.map((off, k) => {
       const line = offsetLine(e.g, off), L = cumLen(line).at(-1); let a = a0, b = b0;
       if (a + b > L - 1) { const f = Math.max(0, L - 1) / (a + b || 1); a *= f; b *= f; }
-      return Object.assign(track(rounded(slice(line, a, b)), e.speed, 3), { edge: e, k, node: null });
+      return Object.assign(track(rounded(trimLine(line, a, b)), e.speed, 3), { edge: e, k, node: null });
     });
   }
   const list = [...nodes.values()];
-  return { nodes: list, edges, half, signals: trafficLights(list, signals) };
+  // armBack(r, i, d): how far the junction at road r's vertex i, along its arm d (±1), reaches along it; past that,
+  // a street with sidewalks has its crosswalk (pedestrians.js), and 3 m further its stop line
+  return { nodes: list, edges, half, signals: trafficLights(list, signals), armBack: (r, i, d) => armBack.get(r)?.get(i * 2 + (d > 0)) ?? null };
 }
 
 // Traffic lights. Junction nodes with a mapped signal within 30 m (or, with none mapped, where main roads cross) are
@@ -265,7 +260,8 @@ function along(route, d0, d1, step) {
 }
 
 // Cars around the player: cars[i] = { x, z, h, v, braking, paint, … } (heading as in drive-core.js: 0 = +x).
-// step(dt, player) moves them; player = { x, z, h, v } (or null) is an obstacle they stop for, and where they live:
+// step(dt, player, others) moves them; player = { x, z, h, v } (or null) is an obstacle they stop for, as are others
+// (pedestrians, { x, z, h, v, r }), and the player is where they live:
 // cars more than `radius` + 70 m away go, and new ones start 150 m to `radius` away. seen(x, z) says whether a spot
 // is on screen: cars appear only where they aren't (or far off), and a car stuck in a jam or at a dead end goes once
 // it is out of sight. hit(x, z) is the car at that spot, if any.
@@ -368,14 +364,15 @@ export function createTraffic(graph, { rand = Math.random, max = Infinity, radiu
     let gap = Infinity, lead = 0, ahead = null;
     for (const b of bodies) {
       if (b === c || Math.abs(b.x - c.x) > range + 4 || Math.abs(b.z - c.z) > range + 4) continue;
-      const fx = Math.cos(b.h), fz = -Math.sin(b.h);
+      // a car is three circles along its length; a body with a radius r (a pedestrian) is one
+      const fx = Math.cos(b.h), fz = -Math.sin(b.h), circles = b.r ? [0] : CIRCLES, near = b.r ? 0.95 + b.r : R, inset = b.r ?? 0.75;
       for (const [x, z, d, ux, uz] of S) {
-        if (d - c.s - R - LEN - 0.75 >= gap) break;
+        if (d - c.s - near - LEN - inset >= gap) break;
         let hit = false;
-        for (const o of CIRCLES) {
+        for (const o of circles) {
           const cx = b.x + fx * o, cz = b.z + fz * o;
-          if ((x - cx) ** 2 + (z - cz) ** 2 >= R * R) continue;
-          const g = d - c.s + (cx - x) * ux + (cz - z) * uz - LEN - 0.75; // its circle's centre is 0.75 m inside its bumper
+          if ((x - cx) ** 2 + (z - cz) ** 2 >= near * near) continue;
+          const g = d - c.s + (cx - x) * ux + (cz - z) * uz - LEN - inset; // a car's circle's centre is 0.75 m inside its bumper
           if (g < gap) { gap = g; lead = Math.max(0, b.v * (fx * ux + fz * uz)); ahead = b; }
           hit = true;
         }
@@ -425,10 +422,11 @@ export function createTraffic(graph, { rand = Math.random, max = Infinity, radiu
     c.still = c.v < 0.2 ? c.still + (c.atLight ? 0 : dt) : 0; // (waiting at a red light isn't being stuck)
   }
 
-  function step(dt, player) {
+  // others: more bodies in the way, e.g. pedestrians ({ x, z, h, v, r })
+  function step(dt, player, others = []) {
     time += dt;
     for (const s of graph.signals || []) s.state = lightAt(s.e.signal, time);
-    const bodies = player ? cars.concat([player]) : cars;
+    const bodies = cars.concat(player ? [player] : [], others);
     for (const c of cars) drive(c, dt, bodies);
     for (const c of cars) move(c, dt);
     if (!player) return;

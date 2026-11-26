@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deliveryNetwork, createDelivery, allowedTime, afterCrash, deliveryPay, receiptText, FINE } from '../delivery.js';
+import { deliveryNetwork, createDelivery, allowedTime, afterCrash, deliveryPay, receiptText, FINE, KNOCK_FINE } from '../delivery.js';
 import { laneGraph } from '../traffic.js';
 import { prepareRoads } from '../road-layout.js';
 
@@ -88,4 +88,18 @@ test('the clock, damage and fines start once the parcel is aboard, and the recei
   assert.ok(r.taken === 10 && r.condition < 0.7 && r.fines === -FINE && r.bonus > 0 && r.damage < 0);
   assert.equal(r.total, Math.max(0, r.base + r.bonus + r.late + r.damage + r.fines));
   assert.equal(job.load, null);
+});
+
+test('knocking into someone with the parcel aboard is fined, and the receipt says what for', () => {
+  const run = fines => {
+    const job = createDelivery(network([street('High Street', [[-300, 0], [300, 0]])]), () => 0);
+    job.start(-290, 0); job.knocked(); job.arrive(job.target.x, job.target.z, 0, 0);
+    fines(job); job.arrive(job.target.x, job.target.z, 0, 200); return job.receipt;
+  };
+  const one = run(job => job.knocked()), both = run(job => { job.knocked(); job.ranRed(); });
+  assert.equal(one.fines, -KNOCK_FINE, 'only once the parcel is aboard');
+  assert.match(receiptText(one).detail, new RegExp('−\\$' + KNOCK_FINE + ' pedestrian hit$'));
+  assert.equal(both.fines, -(KNOCK_FINE + FINE));
+  assert.match(receiptText(both).detail, /fines$/);
+  assert.match(receiptText(run(job => { job.ranRed(); job.ranRed(); })).detail, /red lights$/);
 });
