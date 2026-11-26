@@ -18,9 +18,9 @@ how each part works; this file says how the parts may fit together.
 | File | Lines | What it is |
 |---|---|---|
 | `drive-map.js` | 1085 | Real-map page: picker, IndexedDB cache, map download, geometry helpers, OSM tag tables, and `startGame()`, one ~690-line closure holding world build, physics, camera, time of day and HUD |
-| `Drive.html` | 973 | Test-track page with everything inline: its own copy of the car, physics, camera, HUD |
-| `Sedan.html` | 822 | Viewer page with everything inline: its own copy of the car, studio lights, light toggles |
-| `sedan-model.js` | 661 | `buildCar()`, used only by `drive-map.js` |
+| `drive-track.js` | 259 | Test-track page (`Drive.html`): track, physics, camera, HUD, laps |
+| `sedan-viewer.js` | 108 | Viewer page (`Sedan.html`): studio lights, contact shadows, light toggles, views |
+| `sedan-model.js` | 662 | `buildCar()` and the axle constants `FA`, `RA`: the one procedural car, used by all three pages |
 | `vaz-model.js` | 46 | `loadVaz()`: VAZ-2101 from `models/vaz-2101.glb` in `buildCar()`'s shape, the second car on the real-map page |
 | `three-d-stage.js` | 435 | Viewer web component (renderer, orbit, GLB/OBJ export) |
 | `area-travel.js` | — | Neighboring-area geometry, boundary confirmation and cooldown |
@@ -40,12 +40,9 @@ in (`fetchVectorArea(lat, lon, fetchFn)`); named meshes; versioned storage keys.
 
 What has to change:
 
-1. **The car exists three times.** The model body in `Drive.html` and `Sedan.html` is line-for-line the same as
-   `sedan-model.js` (checked by diff); only the page setup around it differs. Every car change must currently be made
-   three times.
-2. **Driving exists twice.** Input, physics step, wheel/lamp sync, chase camera and HUD are copied between `Drive.html`
+1. **Driving exists twice.** Input, physics step, wheel/lamp sync, chase camera and HUD are copied between `drive-track.js`
    and `drive-map.js`, with drifted tuning (top speeds, off-road drag, collision only on the map page).
-3. **`startGame()` does everything.** World building and the game loop share one closure, so nothing in it can be
+2. **`startGame()` does everything.** World building and the game loop share one closure, so nothing in it can be
    tested or reused, and every feature makes it longer.
 
 ## Target
@@ -120,7 +117,7 @@ Behaviour-neutral PRs, in this order. Tick them off here as they merge.
   `vector-fallback.js` (`decodeTile` and the tag mapping on a fixture tile), and a check that the three pages' import
   maps are identical and every `integrity` hash matches the file in `vendor/`. `npm run build` copies `*.html`, `*.js`,
   `vendor/` and `models/` instead of a list.
-- [ ] **2. One car.** `Drive.html` and `Sedan.html` import `buildCar` from `sedan-model.js` (export `FA`, `RA` for the
+- [x] **2. One car.** `Drive.html` and `Sedan.html` import `buildCar` from `sedan-model.js` (export `FA`, `RA` for the
   viewer's contact shadows) and their inline scripts move to `drive-track.js` and `sedan-viewer.js`. Delete the inline
   copies.
 - [ ] **3. Shared driving.** Extract `drive-core.js` from the two drive pages. Per-page differences (top speed by

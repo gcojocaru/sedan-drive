@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
+export const FA = 1.32, RA = -1.31; // front and rear axle x (m)
 export function buildCar() {
 const car = new THREE.Group(); car.name = 'sedan';
 const name = (m, n) => (m.name = n, m);
@@ -36,7 +37,7 @@ const ext = (shape, depth, bt = 0, bs = 0) => new THREE.ExtrudeGeometry(shape, {
 function strut(n, a, b, r, mat) { const len = a.distanceTo(b); const m = add(n, new THREE.CylinderGeometry(r, r, len, 16), mat); m.position.copy(a).add(b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(V(0, 1, 0), b.clone().sub(a).normalize()); return m; }
 
 // ---------- Lower body ----------
-const FA = 1.32, RA = -1.31, AR = 0.385, AY = 0.31, NOSE = 0.10;
+const AR = 0.385, AY = 0.31, NOSE = 0.10;
 // x of the painted nose surface at height y, lateral z (matches body_lower profile + deformation)
 let FRONT = [];
 function profX(y) { const P = FRONT; if (y <= P[0][1]) return P[0][0];
@@ -657,5 +658,5 @@ const revGlow = P('reverse_glow', 0xffffff, -2.9, 0.6, 0, 8);
 const domeGlow = P('dome_light', 0xffe8c8, -0.35, 1.35, 0, 3);
 const turnGlowL = P('turn_glow_L', 0xff8a00, 0, 0.7, -1.2, 4), turnGlowR = P('turn_glow_R', 0xff8a00, 0, 0.7, 1.2, 4);
 
-return { car, headMat, tailMat, cbrakeMat, revMat, fogMat, lights, extraLights: [rearGlow, revGlow, domeGlow, turnGlowL, turnGlowR, cabinFill], IN, glass, lensClear };
+return { car, headMat, tailMat, cbrakeMat, revMat, fogMat, lights, extraLights: [rearGlow, revGlow, domeGlow, turnGlowL, turnGlowR, cabinFill], IN, glass, lensClear, domeMat, gaugeFace, radioDisp, turnL, turnR };
 }

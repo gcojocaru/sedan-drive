@@ -87,10 +87,10 @@ radio.js              car radio: stations near the chosen place from radio-brows
 touch.js              on-screen driving buttons for touch screens (both drive pages)
 proxy/                Cloudflare Worker that caches map downloads for all players (see proxy/README.md)
 vendor/               three.js 0.184.0 and Leaflet 1.9.4, served by the site
-sedan-model.js        buildCar() as an ES module (used by drive-map.js)
+sedan-model.js        buildCar(): the car, used by all three pages
 vaz-model.js          loadVaz(): the VAZ-2101 car from models/vaz-2101.glb, chosen in the real-map picker
-Drive.html            test-track page (self-contained, own inline copy of the car)
-Sedan.html            model viewer (self-contained, own inline copy of the car + interior)
+Drive.html            test-track page (markup + styles; logic in drive-track.js)
+Sedan.html            model viewer (markup + styles; logic in sedan-viewer.js)
 three-d-stage.js      <three-d-stage> web component: renderer, studio lights, orbit, GLB/OBJ export
 ```
 

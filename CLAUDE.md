@@ -15,12 +15,7 @@ Context for working on this repo. See README.md for what the pages do and how to
 
 ## Architecture
 
-- **The car model exists in three copies** — keep this in mind before editing it:
-  - `sedan-model.js` → `export function buildCar()`; imported by `drive-map.js`.
-  - `Drive.html` → its own inline `buildCar()`.
-  - `Sedan.html` → inline model inside the page module.
-  The model bodies are identical today (interior and light rig included); only the page setup around them differs (Sedan.html adds a studio environment, contact shadows and light controls). Until migration step 2 in ARCHITECTURE.md lands, a change to the car's look must be made in all three.
-- `vaz-model.js` → `loadVaz()` loads `models/vaz-2101.glb` (third-party glTF, front at +Z) and returns it in `buildCar()`'s shape: turned to +X, axles centred, the merged wheel mesh cut into `wheel_front_R` … groups, own head/tail lamp materials, transmission glass swapped for plain transparency. The real-map picker chooses between the two cars; the other pages only have the sedan.
+- **One car model:** `sedan-model.js` → `buildCar()` (plus the axle constants `FA`, `RA`), imported by all three pages (`drive-map.js`, `drive-track.js`, `sedan-viewer.js`). Page setup around it (studio environment, contact shadows, light controls, driving) lives in the page's own module.
 - Units are metres; the car's long axis is +X (front axle at x≈1.32, rear at x≈-1.31), y up.
 - Meshes and groups are named (`car.getObjectByName('underbody')`, `steering_wheel`, `front_seat_L`, …). Other code looks parts up by name, so keep names stable when renaming things.
 - `road-layout.js` computes directional lanes, junction geometry and spawn/reset positions. `building-fronts.js` lays out mapped and inferred doors and retail display windows. Both modules are importable by the Node tests.
