@@ -1,16 +1,12 @@
 import * as THREE from 'three';
 import { buildCar } from './sedan-model.js';
+import { readKeys, rigCar, step, syncCar, chaseCamera, speedHud } from './drive-core.js';
 import { radio, radioHud } from './radio.js';
 import { drivingAudio } from './driving-audio.js';
 import { touchControls } from './touch.js';
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
-const C = buildCar(), car = C.car;
-car.rotation.order = 'YXZ';
-C.lights.low.concat(C.lights.high, C.lights.fog, C.extraLights).forEach(l => l.visible = false);
-car.traverse(o => { if (o.isMesh) { o.castShadow = o.material !== C.glass && o.material !== C.lensClear; o.receiveShadow = false; } });
-C.IN.traverse(o => { if (o.isMesh) o.castShadow = false; });
-{ const u = car.getObjectByName('underbody'); if (u) u.traverse(o => { if (o.isMesh) o.castShadow = false; }); }
+const C = buildCar(), rig = rigCar(C), car = C.car;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
@@ -127,14 +123,12 @@ const distToRoad = (x, z) => { let d = 1e9; for (let i = 0; i < N; i += 6) { con
   mk(blob(0.35, 0.6), 5.0, 2.1, -0.05, 0); const tb = blob(0.1, 0.8); for (const x of [1.32, -1.31]) for (const z of [0.735, -0.735]) mk(tb, 0.55, 0.34, x, z); }
 
 // ---------- Driving ----------
-const wheels = ['front_R', 'front_L', 'rear_R', 'rear_L'].map(k => { const w = car.getObjectByName('wheel_' + k); return { w, front: k.startsWith('front'), side: k.endsWith('R') ? 1 : -1, base: w.rotation.y }; });
-const swFace = car.getObjectByName('steering_wheel_face');
-const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0, idx: 0, a: 0 };
+const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0, idx: 0 };
 const keys = {};
 let started = false, camMode = 0, head = false, night = false;
-const camPos = V();
+const cam = chaseCamera(camera, car);
 function placeOnTrack(i, lane = 2.4) { const p = pts[i]; st.pos.copy(p).addScaledVector(Rt[i], lane); st.h = Math.atan2(-T[i].z, T[i].x); st.v = 0; st.steer = 0; st.idx = i;
-  const f = V(Math.cos(st.h), 0, -Math.sin(st.h)); camPos.copy(st.pos).addScaledVector(f, -9).add(V(0, 3.2, 0)); }
+  cam.reset(st); }
 function nearest(p, full) { let best = 1e9, bi = st.idx; const rng = full ? N : 60;
   for (let o = -rng; o <= rng; o++) { const i = ((st.idx + o) % N + N) % N, q = pts[i], d = (q.x - p.x) ** 2 + (q.z - p.z) ** 2; if (d < best) { best = d; bi = i; } }
   return { i: bi, d: Math.sqrt(best) }; }
@@ -158,42 +152,17 @@ function lapLogic(prev, cur) {
   if (prev < 80 && cur > N - 80) lap.cps.clear();
 }
 
+const TUNE = { power: 7.8, idle: 0.6, vtop: 60 };
 function update(dt) {
-  const up = keys.KeyW || keys.ArrowUp, dn = keys.KeyS || keys.ArrowDown, lf = keys.KeyA || keys.ArrowLeft, rt = keys.KeyD || keys.ArrowRight, hb = keys.Space;
-  const nr = nearest(st.pos), off = nr.d > HW + 0.6, rough = nr.d > HW + 1.6;
-  const vmax = rough ? 15 : 52;
-  let a = 0;
-  if (up) a = st.v < -0.2 ? 18 : 7.8 * Math.max(0, 1 - Math.max(0, st.v) / vmax) + 0.6;
-  if (dn) a = st.v > 0.2 ? -17 : -5;
-  a -= 0.0011 * st.v * Math.abs(st.v) + (rough ? 0.9 * st.v : 0.02 * st.v) + Math.sign(st.v) * 0.3;
-  if (hb) a -= Math.sign(st.v) * 9;
-  st.v += a * dt;
-  if (!up && !dn && Math.abs(st.v) < 0.4) st.v = 0;
-  st.v = Math.max(-9, Math.min(60, st.v));
-  sound.update(st.v, up, dn);
-  st.a = a;
-  const target = (lf ? 1 : 0) - (rt ? 1 : 0), ms = 0.62 / (1 + Math.abs(st.v) / 14);
-  st.steer += (target * ms - st.steer) * Math.min(1, dt * (target ? 5 : 8));
-  const yaw = st.v * Math.tan(st.steer) / 2.63 * (hb && Math.abs(st.v) > 4 ? 1.5 : 1);
-  st.h += yaw * dt;
-  st.pos.x += Math.cos(st.h) * st.v * dt; st.pos.z -= Math.sin(st.h) * st.v * dt;
-  const prev = st.idx, n2 = nearest(st.pos); st.idx = n2.i; lapLogic(prev, st.idx);
-  st.roll += (Math.max(-0.045, Math.min(0.045, st.v * yaw * 0.0045)) - st.roll) * Math.min(1, dt * 6);
-  st.pitch += (Math.max(-0.03, Math.min(0.02, a * 0.0018)) - st.pitch) * Math.min(1, dt * 5);
-  st.spin += st.v * dt / 0.308;
-  if (rough && Math.abs(st.v) > 3) st.pitch += (Math.random() - 0.5) * 0.004;
-  return { braking: dn && st.v > 0.2 || hb, reversing: st.v < -0.2 || (dn && st.v <= 0.2 && Math.abs(st.v) < 0.5 && dn) };
-}
-function syncCar(s) {
-  car.position.set(st.pos.x, 0, st.pos.z); car.rotation.set(st.roll, st.h, st.pitch);
-  for (const w of wheels) w.w.rotation.set(0, w.base + (w.front ? st.steer : 0), w.side > 0 ? -st.spin : st.spin);
-  if (swFace) swFace.rotation.z = st.steer * 4;
-  const tail = head ? 1.8 : 0;
-  C.tailMat.emissiveIntensity = s.braking ? 7 : tail; C.cbrakeMat.emissiveIntensity = s.braking ? 7 : 0;
-  C.revMat.emissiveIntensity = s.reversing ? 5 : 0;
+  const k = readKeys(keys), rough = nearest(st.pos).d > HW + 1.6, prev = st.idx;
+  const s = step(st, k, dt, { vmax: rough ? 15 : 52, drag: rough ? 0.9 : 0.02, rough }, TUNE);
+  sound.update(st.v, k.up, k.dn);
+  st.idx = nearest(st.pos).i; lapLogic(prev, st.idx);
+  if (k.dn && st.v <= 0.2 && Math.abs(st.v) < 0.5) s.reversing = true; // reverse lamp on while holding brake at a standstill
+  return s;
 }
 function setLights() {
-  C.headMat.emissiveIntensity = head ? 6 : 0; if (window.__drl) window.__drl.emissiveIntensity = head ? 6 : 0;
+  C.headMat.emissiveIntensity = head ? 6 : 0; C.drlMat.emissiveIntensity = head ? 6 : 0;
   C.lights.low.forEach(l => { l.intensity = head ? 260 : 0; l.visible = head; });
   C.lights.high.forEach(l => { l.intensity = head && night ? 900 : 0; l.visible = head && night; });
 }
@@ -205,25 +174,12 @@ function setNight(n) {
 }
 setNight(false);
 function updateCam(dt) {
-  const f = V(Math.cos(st.h), 0, -Math.sin(st.h));
-  if (camMode === 0) {
-    const want = st.pos.clone().addScaledVector(f, -8.5 - Math.max(0, st.v) * 0.04).add(V(0, 3.0, 0));
-    camPos.lerp(want, 1 - Math.exp(-dt * 4.5)); camera.position.copy(camPos);
-    camera.lookAt(st.pos.clone().addScaledVector(f, 4).add(V(0, 1.1, 0)));
-    camera.fov = 58 + Math.max(0, st.v) * 0.18; camera.near = 0.1;
-  } else {
-    car.updateMatrixWorld(true);
-    camera.position.copy(car.localToWorld(V(-0.18, 1.2, -0.37)));
-    camera.lookAt(car.localToWorld(V(20, 0.75, -0.37)));
-    camera.fov = 68; camera.near = 0.02;
-  }
-  camera.updateProjectionMatrix();
+  cam.update(st, camMode, dt);
   sun.position.copy(st.pos).add(SUN_OFF); sun.target.position.copy(st.pos);
 }
 const el = id => document.getElementById(id), kmh = el('kmh'), gear = el('gear'), lapT = el('lapT'), lastT = el('lastT'), bestT = el('bestT'), lapN = el('lapN');
 function hud(s) {
-  kmh.textContent = Math.round(Math.abs(st.v) * 3.6);
-  gear.textContent = s.reversing && st.v < 0 ? 'R' : st.v === 0 ? 'N' : 'D';
+  speedHud(kmh, gear, st, s);
   lapT.textContent = lap.running ? fmt(clock - lap.t0) : '0:00.0';
   lastT.textContent = fmt(lap.last); bestT.textContent = fmt(lap.best); lapN.textContent = lap.n;
 }
@@ -253,7 +209,7 @@ let last = performance.now(), lastS = { braking: false, reversing: false };
 renderer.setAnimationLoop(now => {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (started) { clock += dt; lastS = update(dt); }
-  syncCar(lastS); updateCam(dt); hud(lastS);
+  syncCar(rig, st, lastS, head); updateCam(dt); hud(lastS);
   renderer.render(scene, camera);
 });
 
