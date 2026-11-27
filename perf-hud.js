@@ -10,21 +10,22 @@ export const percentile = (xs, p) => { if (!xs.length) return 0; const s = [...x
 export function perfHud(renderer, extra = () => '', start = false) {
   let el = null, on = start || /[?&]perf\b/.test(location.search), last = 0, shown = 0, heard = () => {};
   const gaps = [], cpu = [], laps = new Map(); let mark = 0;
+  renderer.info.autoReset = false; // (a frame can be several renders: post-processing passes, a probe face; count them all)
   addEventListener('keydown', e => { if (e.code === 'KeyP' && e.shiftKey && !e.repeat) heard(on = !on); });
   frame.show = v => { on = !!v; }; frame.onToggle = fn => { heard = fn; }; frame.isOn = () => on;
   frame.begin = () => { mark = performance.now(); };
   frame.lap = name => { const t = performance.now(); let l = laps.get(name); if (!l) laps.set(name, l = []); l.push(t - (mark || t)); if (l.length > 240) l.shift(); mark = t; };
   return frame;
   function frame(start) {
-    const now = performance.now(); mark = 0;
+    const now = performance.now(); mark = 0; const { render: r, memory: m, programs } = renderer.info, drawn = { calls: r.calls, triangles: r.triangles }; renderer.info.reset();
     if (last) { gaps.push(now - last); cpu.push(now - start); if (gaps.length > 240) { gaps.shift(); cpu.shift(); } }
     last = now;
     if (!on) { if (el) el.hidden = true; return; }
     if (now - shown < 500) return; shown = now;
     if (!el) { el = document.body.appendChild(document.createElement('pre')); el.style.cssText = 'position:fixed;left:8px;top:52px;z-index:20;margin:0;padding:6px 9px;border-radius:6px;background:#000b;color:#cfe;font:11px/1.45 ui-monospace,monospace;pointer-events:none;white-space:pre'; }
-    const { render: r, memory: m, programs } = renderer.info, p50 = percentile(gaps, 0.5);
+    const p50 = percentile(gaps, 0.5);
     el.hidden = false;
     el.textContent = (1000 / (p50 || 1)).toFixed(0) + ' fps · frame p50 ' + p50.toFixed(1) + ' p95 ' + percentile(gaps, 0.95).toFixed(1) + ' ms · cpu ' + percentile(cpu, 0.5).toFixed(1) + ' ms\n' +
-      r.calls + ' calls · ' + (r.triangles / 1000).toFixed(0) + 'k tris · ' + (programs?.length ?? 0) + ' programs · ' + m.geometries + ' geometries · ' + m.textures + ' textures' + (laps.size ? '\n' + [...laps].map(([k, l]) => k + ' ' + percentile(l, 0.5).toFixed(1)).join(' · ') : '') + (extra() ? '\n' + extra() : '');
+      drawn.calls + ' calls · ' + (drawn.triangles / 1000).toFixed(0) + 'k tris · ' + (programs?.length ?? 0) + ' programs · ' + m.geometries + ' geometries · ' + m.textures + ' textures' + (laps.size ? '\n' + [...laps].map(([k, l]) => k + ' ' + percentile(l, 0.5).toFixed(1)).join(' · ') : '') + (extra() ? '\n' + extra() : '');
   }
 }

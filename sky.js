@@ -167,7 +167,7 @@ export function createSky(renderer, scene, lat, { shadow = 4096, drops = 9000 } 
     scene.fog.color.copy(hor); scene.fog.near = THREE.MathUtils.lerp(night ? 80 : 110 + 50 * ss(e, -3, 10), 5, haze); scene.fog.far = THREE.MathUtils.lerp(night ? 650 : 760 + 190 * ss(e, -3, 10), 140, haze);
     renderer.toneMappingExposure = exposure = (night ? 1.1 : e < 0 ? 1.25 : 1 + 0.08 * warm + 0.12 * low) * (1 - 0.2 * gloom);
     kind = w.kind; fall.set(kind === 'storm' ? 'rain' : kind, w.amount || 0, hor.clone().lerp(new THREE.Color(1, 1, 1), night ? 0.1 : 0.45));
-    return { night, e, lowLight: night || e < -0.5, murky: haze > 0.4 };
+    return { night, e, lowLight: night || e < -0.5, murky: haze > 0.4, post: { night: night || e < -1, low, cover } }; // post: for post-fx.js look()
   }
 
   function update(dt, cam) {
