@@ -72,7 +72,8 @@ Spend the money in the garage (G): a stronger engine, better brakes, all-weather
 
 ## What gets built from the map (real-map page)
 
-- **Roads** at their tagged width, sidewalks, lane markings (centre line, edge lines, lane dividers from `lanes=*`), zebra crossings, railings on bridges.
+- **Elevation** comes from Mapzen Terrain Tiles. Roads follow local hills and the car responds to the grade. If terrain cannot load, the area opens flat and the HUD shows “elevation unavailable”.
+- **Roads** at their tagged width, sidewalks, lane markings (centre line, edge lines, lane dividers from `lanes=*`), zebra crossings, and raised water crossings with graded approaches, deck slabs, girders, and railings.
 - Teal street signs mark junctions where named roads meet. Brown roadside signs identify nearby mapped parks, stations and shops by name.
 - Cars start and reset in a travel lane. Connected junctions have rounded corners, gaps in the lane markings and stop lines at mapped stops.
 - **Buildings** from footprints and height/level tags, with `roof:shape` roofs (gabled, hipped, pyramidal, skillion, dome, onion). Untagged houses get a pitched roof unless mappers in the area mostly tag flat roofs. `building:part` pieces replace their outline, so landmarks with 3D tagging come out properly. `building:colour`/`material` and `roof:colour`/`material` are used.

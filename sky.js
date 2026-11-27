@@ -77,7 +77,7 @@ function createSkyReflections(renderer) {
 }
 
 // Rain streaks or snowflakes in a box that follows the camera. Drops keep world positions, so you drive through them.
-function precipitation(scene) {
+function precipitation(scene, height) {
   const N = 9000, R = 20, H = 16, drops = new Float32Array(N * 3), rainAt = new Float32Array(N * 6), snowAt = new Float32Array(N * 3);
   for (let i = 0; i < N; i++) { drops[i * 3] = (Math.random() - 0.5) * 2 * R; drops[i * 3 + 1] = Math.random() * H; drops[i * 3 + 2] = (Math.random() - 0.5) * 2 * R; }
   const geo = a => new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(a, 3).setUsage(THREE.DynamicDrawUsage));
@@ -95,6 +95,7 @@ function precipitation(scene) {
     },
     update(dt, cam) {
       if (!n) return; t += dt;
+      const base = height(cam.x, cam.z);
       const isRain = rain.visible, v = isRain ? 15 : 1.4;
       for (let i = 0; i < n; i++) {
         const k = i * 3; let x = drops[k], y = drops[k + 1] - v * dt, z = drops[k + 2];
@@ -102,7 +103,8 @@ function precipitation(scene) {
         if (!isRain) { x += Math.sin(t * 0.7 + i) * 0.5 * dt; z += Math.cos(t * 0.5 + i * 1.3) * 0.5 * dt; } // flakes drift
         const dx = wrap(x - cam.x), dz = wrap(z - cam.z); x = cam.x + dx; z = cam.z + dz; // keep every drop in the box around the camera
         drops[k] = x; drops[k + 1] = y; drops[k + 2] = z;
-        if (dx * dx + dz * dz < 2.2) y = -50; // none right at the lens, or inside the car from the driver's seat
+        y += base;
+        if (dx * dx + dz * dz < 2.2) y = base - 50; // none right at the lens, or inside the car from the driver's seat
         if (isRain) { const j = i * 6; rainAt[j] = rainAt[j + 3] = x; rainAt[j + 1] = y; rainAt[j + 4] = y + 0.8; rainAt[j + 2] = rainAt[j + 5] = z; rainAt[j + 3] += 0.04; }
         else { snowAt[k] = x; snowAt[k + 1] = y; snowAt[k + 2] = z; }
       }
@@ -115,7 +117,7 @@ function precipitation(scene) {
 // set(h, forceNight, weather, snow) lights the scene for local solar hour h and a weather from weather.js ({ kind, amount });
 // snow (0–1) is how much of the ground is white, which brightens the light bouncing up from it;
 // update(dt, cameraPosition) moves the rain or snow each frame; placeShadow(x, z) centres the shadow box on a point.
-export function createSky(renderer, scene, lat, now = new Date()) {
+export function createSky(renderer, scene, lat, now = new Date(), height = () => 0) {
   const DOY = Math.round((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - Date.UTC(now.getUTCFullYear(), 0, 0)) / 864e5);
   const DEC = 23.44 * Math.PI / 180 * Math.sin(2 * Math.PI * (284 + DOY) / 365), PHI = lat * Math.PI / 180;
   const sunAt = h => { const H = (h - 12) * Math.PI / 12, c = Math.cos(DEC); return V(-c * Math.sin(H), Math.sin(DEC) * Math.sin(PHI) + c * Math.cos(H) * Math.cos(PHI), c * Math.cos(H) * Math.sin(PHI) - Math.sin(DEC) * Math.cos(PHI)).normalize(); };
@@ -134,7 +136,7 @@ export function createSky(renderer, scene, lat, now = new Date()) {
   scene.fog = new THREE.Fog(0xdfe9ef, 160, 950);
   let skyT = null;
 
-  const fall = precipitation(scene); let kind = 'clear', exposure = 1, flash = 0, nextFlash = 3;
+  const fall = precipitation(scene, height); let kind = 'clear', exposure = 1, flash = 0, nextFlash = 3;
   function set(h, forceNight, w = { kind: 'clear' }, snow = 0) {
     const sd = sunAt(h); let e = Math.asin(sd.y) * 180 / Math.PI;
     const night = forceNight || e < -7; if (night) e = Math.min(e, -14);
@@ -179,7 +181,7 @@ export function createSky(renderer, scene, lat, now = new Date()) {
 
   const shC = V(), lx = V(), ly = V();
   function placeShadow(x, z) { // centre the shadow box on (x, z), snapped to whole shadow-map texels so edges don't crawl
-    shC.set(x, 0, z);
+    shC.set(x, height(x, z), z);
     lx.crossVectors(UPV, lightDir); if (lx.lengthSq() < 1e-6) lx.set(1, 0, 0); lx.normalize(); ly.crossVectors(lightDir, lx);
     const sc = sun.shadow.camera, tx = (sc.right - sc.left) / SH_MAP, ty = (sc.top - sc.bottom) / SH_MAP; // texels on each axis
     const a = Math.round(shC.dot(lx) / tx) * tx, b = Math.round(shC.dot(ly) / ty) * ty, c = shC.dot(lightDir);

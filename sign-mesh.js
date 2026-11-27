@@ -55,12 +55,12 @@ function paintTile(ctx, { kind, label }, left, top) {
   };
 }
 
-function addPlate({ positions, uvs, indices }, { x, z, dx, dz }, tile) {
+function addPlate({ positions, uvs, indices }, { x, z, dx, dz }, tile, ground) {
   const w = tile.width / 2, h = tile.height / 2, cut = 0.045, depth = 0.026;
   const corners = [[-w + cut, -h], [w - cut, -h], [w, -h + cut], [w, h - cut],
     [w - cut, h], [-w + cut, h], [-w, h - cut], [-w, -h + cut]];
   function vertex([a, b], offset, u, v) {
-    positions.push(x + a * dx - offset * dz, CENTRE_Y + b, z + a * dz + offset * dx);
+    positions.push(x + a * dx - offset * dz, ground + CENTRE_Y + b, z + a * dz + offset * dx);
     uvs.push(u, v);
   }
   for (const side of [1, -1]) {
@@ -84,7 +84,7 @@ function addPlate({ positions, uvs, indices }, { x, z, dx, dz }, tile) {
   }
 }
 
-export function addSignMeshes(scene, signs) {
+export function addSignMeshes(scene, signs, height = () => 0) {
   if (!signs.length) return;
   const group = new THREE.Group(); group.name = 'map_signs';
   const metal = new THREE.MeshStandardMaterial({ color: 0x899997, roughness: 0.55, metalness: 0.55 });
@@ -108,8 +108,9 @@ export function addSignMeshes(scene, signs) {
       page.forEach((copies, i) => {
         const tile = paintTile(ctx, copies[0], (i % columns) * CELL_W, Math.floor(i / columns) * CELL_H);
         for (const sign of copies) {
-          addPlate(buffers, sign, tile);
-          matrix.makeScale(1, CENTRE_Y - tile.height / 2 + 0.012, 1).setPosition(sign.x, 0, sign.z);
+          const ground = height(sign.x, sign.z);
+          addPlate(buffers, sign, tile, ground);
+          matrix.makeScale(1, CENTRE_Y - tile.height / 2 + 0.012, 1).setPosition(sign.x, ground, sign.z);
           posts.setMatrixAt(postIndex++, matrix);
         }
       });
