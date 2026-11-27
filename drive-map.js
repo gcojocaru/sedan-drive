@@ -418,6 +418,7 @@ async function startGame(lat0, lon0, placeName) {
   $('changePlace').addEventListener('click', backToMap);
   const tune = radio(radioHud(), () => stationsNear(lat0, lon0, fetch), sound.tuningStatic);
   addEventListener('keydown', e => {
+    if (e.isTrusted) sound.activate(); // (a pad-only start can't turn the sound on: the first real key does)
     if (paused()) return; // a dialog has the keys (Esc closes the settings again)
     if (e.code === 'Escape') { e.preventDefault(); clearKeys(); settings.showModal(); return; } // preventDefault: the same press would close it again
     if (e.code === 'KeyG' && !e.repeat) { e.preventDefault(); openGarage(); return; }

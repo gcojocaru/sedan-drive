@@ -197,6 +197,7 @@ function begin() {
 startEl.addEventListener('click', begin);
 const tune = radio(radioHud(), undefined, sound.tuningStatic);
 addEventListener('keydown', e => {
+  if (e.isTrusted) sound.activate(); // (a pad-only start can't turn the sound on: the first real key does)
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   keys[e.code] = true; if (e.repeat) return;
   begin();

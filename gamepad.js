@@ -4,9 +4,10 @@
 // vibrationActuator; on touch screens navigator.vibrate for crashes. Without a pad, or the API, poll() gives null.
 import { tyreSound } from './driving-audio.js';
 
-// [button, code, shift]: standard mapping B horn, X camera, Y reset, LB / RB radio down / up, Back delivery, Start settings,
+// [button, code, shift]: standard mapping B horn, X camera, Y reset, LB / RB radio down / up, Back delivery (not Start → settings:
+// a pad can't close the dialog again),
 // d-pad up lights. Any other pad: axis 0 steers, buttons 0–3 are gas, brake, handbrake and camera.
-const STD = [[1, 'KeyB'], [2, 'KeyC'], [3, 'KeyR'], [4, 'KeyQ', true], [5, 'KeyQ'], [8, 'KeyJ'], [9, 'Escape'], [12, 'KeyH']], RAW = [[3, 'KeyC']];
+const STD = [[1, 'KeyB'], [2, 'KeyC'], [3, 'KeyR'], [4, 'KeyQ', true], [5, 'KeyQ'], [8, 'KeyJ'], [12, 'KeyH']], RAW = [[3, 'KeyC']];
 const stick = x => { const a = Math.abs(x); return a < 0.12 ? 0 : Math.sign(x) * ((a - 0.12) / 0.88) ** 1.6; }; // deadzone, finer near the middle
 const trigger = x => x < 0.05 ? 0 : Math.min(1, (x - 0.05) / 0.95);
 

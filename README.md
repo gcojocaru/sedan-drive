@@ -56,7 +56,7 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | G | Garage (real-map page): spend delivery money on upgrades and paint. Driving pauses while it's open |
 | M | Choose another place (real-map page) |
 
-Gamepad: left stick steers, RT gas, LT brake/reverse, A handbrake, B horn, X camera, Y reset, LB/RB radio, Back delivery, Start settings, d-pad up lights. Pads that support it rumble on crashes, slides and rough ground.
+Gamepad: left stick steers, RT gas, LT brake/reverse, A handbrake, B horn, X camera, Y reset, LB/RB radio, Back delivery, d-pad up lights. Pads that support it rumble on crashes, slides and rough ground.
 
 On phones and tablets only the driving controls appear on screen: steer on the left, gas and brake/reverse on the right. The ••• button above the brake opens the rest (handbrake, lights, time of day or night, weather, settings, garage, camera, horn, radio, reset).
 
