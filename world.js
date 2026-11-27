@@ -111,7 +111,7 @@ const isBridge = t => t.bridge && t.bridge !== 'no';
 // reflectLamps(x, z), called as the camera moves, lets the lit street lamps nearest it glint in wet roads.
 // terrain: terrain.js loadTerrain() (or nothing: flat); q: { lampLights, facadeDepth }: how many street lamps near the car really
 // light it, and whether windows are set back with rooms behind them (quality.js)
-export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { lampLights = 0, facadeDepth = false } = {}) {
+export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { lampLights = 0, facadeDepth = false } = {}, finishCorner) {
   const height = terrain?.height ?? (() => 0);
   await say('Building the streets…');
   const { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts, landmarks, furniture, addressPoints } = parseElements(elements, lat0, lon0);
@@ -192,7 +192,8 @@ export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { la
   const signFree = (x,z) => clear(x,z) && !hit(x,z,0,0.35,0.35);
   const signs = planSigns(layout.junctions, landmarks, roadAt, signFree);
   addSignMeshes(scene, signs, landHeight);
-  return { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs), lampLight };
+  const lightFront = await finishCorner?.({ scene, road: LAYERS.road[0], markings: LAYERS.marks[0], wear, height: landHeight, buildings: polys });
+  return { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps: on => { setLamps(on); lightFront?.(on); }, setGround: wx.set, reflectLamps: wx.follow, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs), lampLight };
 }
 
 // what the chase camera keeps out of, as geom.js pointGrid points [x, z, r, y0, y1]: tree trunks (not the crowns, which

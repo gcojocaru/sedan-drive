@@ -24,6 +24,7 @@ import { touchControls } from './touch.js';
 import { toasts } from './toast.js';
 import { resultCard } from './result-card.js';
 import { gamepad } from './gamepad.js';
+import { cloudReady } from './cloud-layer.js';
 import { createSky } from './sky.js';
 import { WEATHERS, weatherNow, solarHour, groundOf } from './weather.js';
 import { laneGraph, createTraffic, ranRed, LEVELS } from './traffic.js';
@@ -60,7 +61,11 @@ $('retry').onclick = () => location.reload();
 $('pickAgain').onclick = backToMap;
 
 const hm = location.hash.match(/^#(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)(?:\|(.*))?$/);
-if (hm) startGame(snap(+hm[1]), snap(+hm[2]), hm[3] ? decodeURIComponent(hm[3]) : '');
+const cornerPreview = /^#russian-hill(?:-rain)?$/.test(location.hash);
+if (cornerPreview) {
+  import('./russian-hill.js').then(corner => startGame(...corner.origin, 'Lombard & Larkin, San Francisco', corner))
+    .catch(error => showLoadError(error.message));
+} else if (hm) startGame(snap(+hm[1]), snap(+hm[2]), hm[3] ? decodeURIComponent(hm[3]) : '');
 else showPicker();
 
 // ---------------- Map picker ----------------
@@ -94,6 +99,9 @@ function showPicker() {
   const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery © Esri, Maxar, Earthstar Geographics' });
   L.control.layers({ Street: street, Satellite: sat }, null, { position: 'topright' }).addTo(map);
   let marker = null, rect = null, chosen = null;
+  for (const link of document.querySelectorAll('[data-corner]')) link.onclick = () => {
+    location.hash = link.dataset.corner; location.reload();
+  };
   const go = $('go'), info = $('placeInfo');
   const carSel = $('car'); carSel.value = localStorage.getItem(LS_CAR) || 'sedan'; carSel.onchange = () => localStorage.setItem(LS_CAR, carSel.value);
   function choose(lat, lon, name) {
@@ -153,8 +161,8 @@ function showLoadError(message, visit) {
   }
 }
 
-async function startGame(lat0, lon0, placeName) {
-  const saved = history.state?.visit;
+async function startGame(lat0, lon0, placeName, corner) {
+  const saved = !corner && history.state?.visit;
   const visit = saved?.lat === lat0 && saved?.lon === lon0 ? saved : null;
   const entry = visit?.entry;
   const load = $('loading'), say = t => { $('loadMsg').textContent = t; return new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))); };
@@ -168,10 +176,11 @@ async function startGame(lat0, lon0, placeName) {
     }
     startCooldown();
   }
-  const terrainRequest = loadTerrain(lat0, lon0);
-  const liveReq = weatherNow(lat0, lon0, fetch).catch(e => (console.warn('No live weather', e), null)); // while the map loads
+  const snapshot = corner && await corner.loadCorner();
+  const terrainRequest = snapshot?.terrain ?? loadTerrain(lat0, lon0);
+  const liveReq = corner ? null : weatherNow(lat0, lon0, fetch).catch(e => (console.warn('No live weather', e), null)); // while the map loads
   await say('Checking for a saved map…');
-  const { data, err, fallback, full } = await loadArea(lat0, lon0, say);
+  const { data, err, fallback, full } = snapshot ?? await loadArea(lat0, lon0, say);
   if (!data) {
     showLoadError('The map servers could not load this area' + (err ? ' (' + err.message + ')' : '') + '.', visit);
     return;
@@ -192,10 +201,10 @@ async function startGame(lat0, lon0, placeName) {
   fx = postFx(renderer, scene, camera, Q); const draw = () => fx ? fx.render() : renderer.render(scene, camera); // glow and colour grade (post-fx.js), or straight to the screen on Low
 
   await say('Preparing terrain…');
-  const terrain = await terrainRequest;
+  const [terrain] = await Promise.all([terrainRequest, cloudReady]);
   const sky = createSky(renderer, scene, lat0, Q, undefined, terrain.height), { TIMES, NIGHT } = sky;
 
-  const { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint, lampLight } = await buildWorld(data.elements, lat0, lon0, scene, say, terrain, Q);
+  const { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint, lampLight } = await buildWorld(data.elements, lat0, lon0, scene, say, terrain, Q, corner?.finishCorner);
 
   // ---- car ----
   await say('Placing the car…');
@@ -239,8 +248,9 @@ async function startGame(lat0, lon0, placeName) {
     cam.reset(st);
   }
   const corners = [[2.2, 0.86], [2.2, -0.86], [0, 0.88], [0, -0.88], [-2.18, 0.86], [-2.18, -0.86]];
-  const start = laneSpawn(layout.spawnSegments, entry?.x ?? 0, entry?.z ?? 0, entry?.h, HALF, furnitureHit);
-  if (entry && !blocked(entry.x, entry.z, entry.h)) place(entry.x, entry.z, entry.h);
+  const spawn = entry ?? corner?.approach;
+  const start = laneSpawn(layout.spawnSegments, spawn?.x ?? 0, spawn?.z ?? 0, spawn?.h, HALF, furnitureHit);
+  if (spawn && !blocked(spawn.x, spawn.z, spawn.h)) place(spawn.x, spawn.z, spawn.h);
   else if (start) place(start.x, start.z, start.h);
   else {
     // On a car park with no mapped lanes the origin can be an occupied bay.
@@ -270,7 +280,8 @@ async function startGame(lat0, lon0, placeName) {
 
   // ---- time of day and weather ----
   // 'live' follows the clock and the weather at this place right now; otherwise an index into TIMES / WEATHERS.
-  let live = await liveReq, tSel = entry?.time ?? 'live', dayIdx = entry?.day ?? 'live', wSel = entry?.weather ?? 'live', lowLight = false, dim = false, grip = 1;
+  const rainyPreview = location.hash === '#russian-hill-rain';
+  let live = await liveReq, tSel = entry?.time ?? (corner ? (rainyPreview ? 4 : 1) : 'live'), dayIdx = entry?.day ?? tSel, wSel = entry?.weather ?? (corner ? (rainyPreview ? 4 : 1) : 'live'), lowLight = false, dim = false, grip = 1;
   const clock = h => { const m = Math.round((((h % 24) + 24) % 24) * 60); return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
   const offset = () => live ? live.offset : Math.round(lon0 / 15) * 3600; // the place's UTC offset (s), guessed from its longitude without live data
   const hourOf = () => tSel === 'live' ? solarHour(Date.now(), lon0) : TIMES[tSel][1];
@@ -280,7 +291,7 @@ async function startGame(lat0, lon0, placeName) {
   wxSel.append(new Option('Live weather', 'live'), ...WEATHERS.map((w, i) => new Option(w.label, i)));
   timeSel.onchange = () => { tSel = pick(timeSel.value); applyTime(); };
   wxSel.onchange = () => { wSel = pick(wxSel.value); applyTime(); };
-  const trafficSel = $('trafficSel'), storedLevel = Number(localStorage.getItem(LS_TRAFFIC) ?? 2);
+  const trafficSel = $('trafficSel'), storedLevel = Number(localStorage.getItem(LS_TRAFFIC) ?? (corner ? 1 : 2));
   trafficSel.append(...LEVELS.map(([name], i) => new Option(name, i)));
   trafficSel.value = LEVELS[storedLevel] ? storedLevel : 2;
   trafficSel.onchange = () => { localStorage.setItem(LS_TRAFFIC, trafficSel.value); traffic.setLevel(+trafficSel.value, st.pos.x, st.pos.z); };
@@ -515,7 +526,7 @@ async function startGame(lat0, lon0, placeName) {
       Object.assign(me, { x: st.pos.x, z: st.pos.z, h: st.h, v: st.v });
       people.step(dt, me, traffic.cars, graph.signals); lap('people'); traffic.step(dt, me, people.crossing); lap('traffic'); // (traffic keeps from the people in the road)
     }
-    trafficView.sync(traffic.cars, dim); lightsView.sync(dim); figures.sync(people.people); lap('sync');
+    trafficView.sync(traffic.cars, dim, camera.position); lightsView.sync(dim); figures.sync(people.people); lap('sync');
     camera.getWorldDirection(look); const flat = Math.hypot(look.x, look.z) || 1;
     Object.assign(ear, { x: camera.position.x, z: camera.position.z, fx: look.x / flat, fz: look.z / flat, vx: Math.cos(st.h) * st.v, vz: -Math.sin(st.h) * st.v });
     sound.traffic(traffic.cars, ear); lap('sound');

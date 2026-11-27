@@ -124,7 +124,8 @@ area-travel.js        adjacent map areas, boundary prompts and load cooldown
 driving-audio.js      synthesized engine, tyre, crash, horn, traffic and radio tuning sounds for both drive pages
 minimap.js            north-up driving minimap drawn from the loaded world geometry
 traffic.js            traffic: lanes and junctions from the road layout, cars that follow them and take turns at junctions
-traffic-cars.js       the traffic cars on screen (one instanced car body, paint, brake lights, night glows)
+traffic-cars.js       instanced moving and parked fleets, distance-based wheel detail, brake lights and night glows
+traffic-models.js     exterior geometry for the sedan, hatchback and estate, alloy wheels and tinted glazing
 traffic-lights.js     traffic light poles and signal heads on screen
 pedestrians.js        pedestrians: sidewalks, crossings and footways as a walk network, people who walk it and cross with care
 pedestrian-figures.js the pedestrians on screen (simple instanced figures with swinging arms and legs)
@@ -146,3 +147,7 @@ three-d-stage.js      <three-d-stage> web component: renderer, studio lights, or
 The model was matched against third-party reference photos (Logan front 3/4, front, interior, wheel, underbody). They aren't in the repo for copyright reasons; keep local copies in `reference/`, which git ignores.
 
 Originally made in Claude Design; moved here to keep developing it as code.
+
+### Russian Hill graphics prototype
+
+On the real-map picker, **Russian Hill prototype** opens a drivable study of Lombard and Larkin. **Midday** and **Wet dusk** start at the same position. Esc opens the usual weather and time controls. The preview includes a local map and elevation snapshot, photographed asphalt, and a detailed southwest curb and residential frontage. [Prototype data and asset credits](prototype/README.md).
