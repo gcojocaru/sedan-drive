@@ -30,6 +30,11 @@ import { trafficLights } from './traffic-lights.js';
 import { walkGraph, createPedestrians, PEOPLE } from './pedestrians.js';
 import { pedestrianFigures } from './pedestrian-figures.js';
 import { showAppVersion } from './app-version.js';
+import { perfHud } from './perf-hud.js';
+import { mergeStatic } from './car-merge.js';
+import { postFx } from './post-fx.js';
+import { carProbe } from './car-probe.js';
+import { QUALITY, pickQuality, pixelRatio, dynamicRes } from './quality.js';
 
 showAppVersion();
 
@@ -39,6 +44,8 @@ const LS_PLACE = 'sedan-map-last-place-v1';
 const LS_CAR = 'sedan-map-car-v1'; // 'sedan' or 'vaz'
 const LS_TRAFFIC = 'sedan-map-traffic-v1'; // index into LEVELS
 const LS_PEOPLE = 'sedan-map-people-v1'; // index into PEOPLE (pedestrians.js)
+const LS_PERF = 'sedan-perf-v1'; // performance stats shown (true / false); both drive pages
+const LS_QUALITY = 'sedan-quality-v1'; // graphics: 'auto' or an index into QUALITY (quality.js); both drive pages
 const LS_WALLET = 'sedan-map-wallet-v1'; // { cash, earned, jobs }: delivery money to spend, all earned, deliveries made
 const LS_GARAGE = 'sedan-map-garage-v1'; // what the garage fitted: { levels, paints, paint } (garage.js)
 const LS_EARNED = 'sedan-map-earnings-v1'; // before the garage: { total, jobs }, only read to start the wallet
@@ -160,21 +167,24 @@ async function startGame(lat0, lon0, placeName) {
   }
 
   // ---- renderer / scene ----
-  const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
-  renderer.setSize(innerWidth, innerHeight);
+  let qPick = 'auto'; try { qPick = JSON.parse(localStorage.getItem(LS_QUALITY)) ?? 'auto'; } catch { }
+  const coarse = matchMedia('(pointer: coarse)').matches, Q = QUALITY[pickQuality(qPick, { coarse, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory })];
+  const renderer = new THREE.WebGLRenderer({ antialias: Q.msaa && !Q.post, logarithmicDepthBuffer: true }); // (with post-processing the HDR target antialiases)
+  let resScale = 1, fx = null; const fit = () => { renderer.setPixelRatio(pixelRatio(Q, devicePixelRatio, innerWidth, innerHeight, resScale)); renderer.setSize(innerWidth, innerHeight); fx?.setSize(); };
+  fit(); const resTick = dynamicRes(s => { resScale = s; fit(); }); // slow frames lower the resolution a little, smooth ones win it back
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
   document.body.prepend(renderer.domElement);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 5000);
+  fx = postFx(renderer, scene, camera, Q); const draw = () => fx ? fx.render() : renderer.render(scene, camera); // glow and colour grade (post-fx.js), or straight to the screen on Low
 
   await say('Preparing terrain…');
   const terrain = await terrainRequest;
-  const sky = createSky(renderer, scene, lat0, undefined, terrain.height), { TIMES, NIGHT } = sky;
+  const sky = createSky(renderer, scene, lat0, Q, undefined, terrain.height), { TIMES, NIGHT } = sky;
 
-  const { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint } = await buildWorld(data.elements, lat0, lon0, scene, say, terrain);
+  const { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint, lampLight } = await buildWorld(data.elements, lat0, lon0, scene, say, terrain, Q);
 
   // ---- car ----
   await say('Placing the car…');
@@ -186,13 +196,13 @@ async function startGame(lat0, lon0, placeName) {
   const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), probe = new THREE.Sphere(V(), 3); // what the camera sees: traffic comes and goes out of sight
   const graph = laneGraph(roads, layout.junctions, HALF, signalPts), lightsView = trafficLights(scene, graph.signals, glowTex, driveHeight);
   const props = pointGrid(posts.concat(graph.signals.map(s => [s.x, s.z, 0.25, 0, 3.6]))), occluded = (x, z, y) => inBuilding(x, z, y) || props.near(x, z, y, 0.4); // what the chase camera pulls in front of
-  const seen = (x, z) => frustum.intersectsSphere((probe.center.set(x, driveHeight(x,z)+1, z), probe)), coarse = matchMedia('(pointer: coarse)').matches;
-  const traffic = createTraffic(graph, { max: coarse ? 45 : 100, seen });
+  const seen = (x, z) => frustum.intersectsSphere((probe.center.set(x, driveHeight(x,z)+1, z), probe));
+  const traffic = createTraffic(graph, { max: Q.cars, seen });
   const trafficView = trafficCars(scene, 100, glowTex, driveHeight), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
   // shortcut: the VAZ's factory paint is a texture, so it isn't avoided; sample its colour if traffic copies it
   const avoidMine = () => { const c = CAR.paint && !CAR.paint.map ? CAR.paint.color : null; trafficView.avoid(c); parkedPaint(c); }; avoidMine(); // no other car wears the player's paint
   const walks = walkGraph(roads, paths, layout.junctions, { armBack: graph.armBack, roadAt, crossings: crossPts }); // sidewalks, crossings, footways
-  const people = createPedestrians(walks, { max: coarse ? 90 : 280, half: HALF, seen }), figures = pedestrianFigures(scene, coarse ? 90 : 280, driveHeight);
+  const people = createPedestrians(walks, { max: Q.people, half: HALF, seen }), figures = pedestrianFigures(scene, Q.people, driveHeight);
   const ear = { x: 0, z: 0, fx: 1, fz: 0, vx: 0, vz: 0, wet: 0, snow: 0, me }, look = V(0, 0, 0); // the camera, listening to the traffic
   const SOLID = { bld: 'wall', car: 'car', traffic: 'car', post: 'post' }; // what blocked() hits → its crash sound
   let hitCar = null, hitPerson = null; // the traffic car and the pedestrian blocked() last found
@@ -206,6 +216,8 @@ async function startGame(lat0, lon0, placeName) {
   const headGlow = glowMat(0xfff1dc), tailGlow = glowMat(0xff2a1a), tails = [];
   for (const l of CAR.lights.low) { const s = new THREE.Sprite(headGlow); s.position.copy(l.position).add(V(0.12, 0, 0)); s.scale.setScalar(1.1); car.add(s); }
   car.updateMatrixWorld(true); car.traverse(o => { if (o.isMesh && o.name === 'tail_brake') tails.push(new THREE.Box3().setFromObject(o).getCenter(V())); });
+  mergeStatic(car); // the car's still parts in a few draw calls (after the lookups above)
+  const reflect = carProbe(renderer, scene, car, Q.probe); // the car reflects the street around it
   for (const c of tails) { const s = new THREE.Sprite(tailGlow); s.position.copy(car.worldToLocal(c)).add(V(-0.1, 0, 0)); s.scale.setScalar(0.6); car.add(s); }
 
   const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0, slip: 0 };
@@ -264,6 +276,8 @@ async function startGame(lat0, lon0, placeName) {
   const peopleSel = $('peopleSel'), storedPeople = Number(localStorage.getItem(LS_PEOPLE) ?? 2);
   peopleSel.append(...PEOPLE.map(([name], i) => new Option(name, i)));
   peopleSel.value = PEOPLE[storedPeople] ? storedPeople : 2;
+  const gfxSel = $('gfxSel'); gfxSel.append(new Option('Auto (' + QUALITY[pickQuality('auto', { coarse, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory })].name + ')', 'auto'), ...QUALITY.map((q, i) => new Option(q.name, i)));
+  gfxSel.value = String(qPick); gfxSel.onchange = () => { localStorage.setItem(LS_QUALITY, JSON.stringify(gfxSel.value === 'auto' ? 'auto' : +gfxSel.value)); visitArea({ lat: lat0, lon: lon0, name: placeName, entry: pose() }); }; // (antialias is fixed when the renderer is made: reload here)
   peopleSel.onchange = () => { localStorage.setItem(LS_PEOPLE, peopleSel.value); people.setLevel(+peopleSel.value, st.pos.x, st.pos.z); };
   people.setLevel(+peopleSel.value, st.pos.x, st.pos.z);
   function showTime(announce) { // local clock time, also for the presets (they are set in solar time)
@@ -274,7 +288,8 @@ async function startGame(lat0, lon0, placeName) {
   function applyTime(announce) {
     if (tSel !== NIGHT) dayIdx = tSel;
     const w = weatherOf(), ground = groundOf(w); // wet roads, snow on the ground and roofs, and how well the tyres grip
-    let e, murky; ({ night, e, lowLight, murky } = sky.set(hourOf(), tSel === NIGHT, w, ground.snow));
+    let e, murky, post; ({ night, e, lowLight, murky, post } = sky.set(hourOf(), tSel === NIGHT, w, ground.snow)); fx?.look(post);
+    camera.far = scene.fog.far + 30; // nothing past the fog shows, so nothing past it is drawn
     setGround(ground.wet, ground.snow); grip = tuning.grip(ground.grip); ear.wet = ground.wet; ear.snow = ground.snow;
     if (frontMat) frontMat.emissiveIntensity = night ? 0.60 : e < 0 ? 0.25 : 0;
     wallMat.emissiveIntensity = night ? 1.6 : e < 0 ? 0.9 : 0;
@@ -367,7 +382,7 @@ async function startGame(lat0, lon0, placeName) {
     cam.update(st, camMode, dt, occluded);
     if (shake > 0.01) { camera.position.x += (Math.random() - 0.5) * shake * 0.25; camera.position.y += (Math.random() - 0.5) * shake * 0.2; shake *= Math.exp(-dt * 7); }
     sky.placeShadow(st.pos.x + Math.cos(st.h) * 45, st.pos.z - Math.sin(st.h) * 45); // the shadow box reaches further ahead of the car
-    sky.update(dt, camera.position); reflectLamps(camera.position.x, camera.position.z);
+    sky.update(dt, camera.position); reflectLamps(camera.position.x, camera.position.z); lampLight(st.pos.x, st.pos.z, dt); reflect();
   }
 
   // ---- HUD ----
@@ -411,6 +426,10 @@ async function startGame(lat0, lon0, placeName) {
     depart: visitArea
   });
   if (visit?.from) history.replaceState({ ...history.state, visit: { lat: lat0, lon: lon0, entry } }, '');
+  // The car's lamps change which shader programs every lit material needs (three.js counts only visible lights), so
+  // compile them for each lamp state now: H and N then switch programs instead of stalling a drive to compile them.
+  await say('Warming up…');
+  { const was = [head, night]; for (const [h, n] of [[false, false], [true, false], [true, true]]) { head = h; night = n; setLights(); renderer.setRenderTarget(fx?.target ?? null); await renderer.compileAsync(scene, camera).catch(() => {}); renderer.setRenderTarget(null); draw(); } /* (a render too: shadow-map programs are only made by drawing) */ [head, night] = was; setLights(); }
   load.style.display = 'none';
   $('hud').style.display = 'block';
   const startEl = $('start'); startEl.style.display = started ? 'none' : 'flex';
@@ -447,22 +466,27 @@ async function startGame(lat0, lon0, placeName) {
   });
   addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyB') sound.horn(false); });
   addEventListener('blur', () => { clearKeys(); sound.horn(false); });
-  addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+  addEventListener('resize', () => { fit(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
   let last = performance.now(), lastS = { braking: false, reversing: false };
+  const perf = perfHud(renderer, () => Q.name + ' · pixel ratio ' + renderer.getPixelRatio().toFixed(2), localStorage.getItem(LS_PERF) === 'true');
+  const perfChk = $('perfChk'), keepPerf = on => { perfChk.checked = on; localStorage.setItem(LS_PERF, on); };
+  perfChk.checked = perf.isOn(); perfChk.onchange = () => { perf.show(perfChk.checked); keepPerf(perfChk.checked); }; perf.onToggle(keepPerf);
   renderer.setAnimationLoop(now => {
-    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const t0 = performance.now(), lap = perf.lap; perf.begin();
+    if (document.hasFocus()) resTick(now - last); /* (an unfocused window may be held at 30 fps: not a slow GPU) */ const dt = Math.min(0.05, (now - last) / 1000); last = now;
     const p = pad.poll(); if (p?.thr && !started && !paused()) begin(); // (its buttons start the game through their keys)
     if (started && !paused()) lastS = update(dt, p);
+    lap('drive');
     if (!paused()) {
       frustum.setFromProjectionMatrix(view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
       Object.assign(me, { x: st.pos.x, z: st.pos.z, h: st.h, v: st.v });
-      people.step(dt, me, traffic.cars, graph.signals); traffic.step(dt, me, people.crossing); // (traffic keeps from the people in the road)
+      people.step(dt, me, traffic.cars, graph.signals); lap('people'); traffic.step(dt, me, people.crossing); lap('traffic'); // (traffic keeps from the people in the road)
     }
-    trafficView.sync(traffic.cars, dim); lightsView.sync(dim); figures.sync(people.people);
+    trafficView.sync(traffic.cars, dim); lightsView.sync(dim); figures.sync(people.people); lap('sync');
     camera.getWorldDirection(look); const flat = Math.hypot(look.x, look.z) || 1;
     Object.assign(ear, { x: camera.position.x, z: camera.position.z, fx: look.x / flat, fz: look.z / flat, vx: Math.cos(st.h) * st.v, vz: -Math.sin(st.h) * st.v });
-    sound.traffic(traffic.cars, ear);
-    syncCar(rig, st, lastS, head, driveHeight); glows(lastS); updateCam(dt); hud(lastS, dt);
-    renderer.render(scene, camera);
+    sound.traffic(traffic.cars, ear); lap('sound');
+    syncCar(rig, st, lastS, head, driveHeight); glows(lastS); updateCam(dt); lap('camera'); hud(lastS, dt); lap('hud');
+    draw(); lap('render'); perf(t0);
   });
 }

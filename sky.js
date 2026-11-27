@@ -77,8 +77,8 @@ function createSkyReflections(renderer) {
 }
 
 // Rain streaks or snowflakes in a box that follows the camera. Drops keep world positions, so you drive through them.
-function precipitation(scene, height) {
-  const N = 9000, R = 20, H = 16, drops = new Float32Array(N * 3), rainAt = new Float32Array(N * 6), snowAt = new Float32Array(N * 3);
+function precipitation(scene, N, height) {
+  const R = 20, H = 16, drops = new Float32Array(N * 3), rainAt = new Float32Array(N * 6), snowAt = new Float32Array(N * 3);
   for (let i = 0; i < N; i++) { drops[i * 3] = (Math.random() - 0.5) * 2 * R; drops[i * 3 + 1] = Math.random() * H; drops[i * 3 + 2] = (Math.random() - 0.5) * 2 * R; }
   const geo = a => new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(a, 3).setUsage(THREE.DynamicDrawUsage));
   const flake = makeTex(32, 32, x => { const g = x.createRadialGradient(16, 16, 0, 16, 16, 16); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 32, 32); });
@@ -117,7 +117,8 @@ function precipitation(scene, height) {
 // set(h, forceNight, weather, snow) lights the scene for local solar hour h and a weather from weather.js ({ kind, amount });
 // snow (0–1) is how much of the ground is white, which brightens the light bouncing up from it;
 // update(dt, cameraPosition) moves the rain or snow each frame; placeShadow(x, z) centres the shadow box on a point.
-export function createSky(renderer, scene, lat, now = new Date(), height = () => 0) {
+// quality: { shadow, drops } from quality.js (shadow map size, most rain drops / snowflakes); height(x, z): the ground
+export function createSky(renderer, scene, lat, { shadow = 4096, drops = 9000 } = {}, now = new Date(), height = () => 0) {
   const DOY = Math.round((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - Date.UTC(now.getUTCFullYear(), 0, 0)) / 864e5);
   const DEC = 23.44 * Math.PI / 180 * Math.sin(2 * Math.PI * (284 + DOY) / 365), PHI = lat * Math.PI / 180;
   const sunAt = h => { const H = (h - 12) * Math.PI / 12, c = Math.cos(DEC); return V(-c * Math.sin(H), Math.sin(DEC) * Math.sin(PHI) + c * Math.cos(H) * Math.cos(PHI), c * Math.cos(H) * Math.sin(PHI) - Math.sin(DEC) * Math.cos(PHI)).normalize(); };
@@ -129,14 +130,14 @@ export function createSky(renderer, scene, lat, now = new Date(), height = () =>
   const sun = new THREE.DirectionalLight(0xfff0d8, 2.8); sun.castShadow = true;
   // one shadow map over a box that reaches further ahead of the car than behind it (see placeShadow), fitted in set() to
   // the ground within SH_R of its centre and walls up to SH_UP m tall, so a low sun's long shadows get finer texels
-  const SH_R = 90, SH_UP = 60, SH_MAP = renderer.capabilities.maxTextureSize >= 4096 ? 4096 : 2048;
+  const SH_R = 90, SH_UP = 60, SH_MAP = Math.min(shadow, renderer.capabilities.maxTextureSize >= 4096 ? 4096 : 2048);
   sun.shadow.mapSize.set(SH_MAP, SH_MAP); Object.assign(sun.shadow.camera, { left: -SH_R, right: SH_R, top: SH_R, bottom: -SH_R, near: 1, far: 900 });
   sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.05; scene.add(sun, sun.target);
   const lightDir = V(0, 1, 0); // towards the sun (or moon)
   scene.fog = new THREE.Fog(0xdfe9ef, 160, 950);
   let skyT = null;
 
-  const fall = precipitation(scene, height); let kind = 'clear', exposure = 1, flash = 0, nextFlash = 3;
+  const fall = precipitation(scene, drops, height); let kind = 'clear', exposure = 1, flash = 0, nextFlash = 3;
   function set(h, forceNight, w = { kind: 'clear' }, snow = 0) {
     const sd = sunAt(h); let e = Math.asin(sd.y) * 180 / Math.PI;
     const night = forceNight || e < -7; if (night) e = Math.min(e, -14);
@@ -168,7 +169,7 @@ export function createSky(renderer, scene, lat, now = new Date(), height = () =>
     scene.fog.color.copy(hor); scene.fog.near = THREE.MathUtils.lerp(night ? 80 : 110 + 50 * ss(e, -3, 10), 5, haze); scene.fog.far = THREE.MathUtils.lerp(night ? 650 : 760 + 190 * ss(e, -3, 10), 140, haze);
     renderer.toneMappingExposure = exposure = (night ? 1.1 : e < 0 ? 1.25 : 1 + 0.08 * warm + 0.12 * low) * (1 - 0.2 * gloom);
     kind = w.kind; fall.set(kind === 'storm' ? 'rain' : kind, w.amount || 0, hor.clone().lerp(new THREE.Color(1, 1, 1), night ? 0.1 : 0.45));
-    return { night, e, lowLight: night || e < -0.5, murky: haze > 0.4 };
+    return { night, e, lowLight: night || e < -0.5, murky: haze > 0.4, post: { night: night || e < -1, low, cover } }; // post: for post-fx.js look()
   }
 
   function update(dt, cam) {

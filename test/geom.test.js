@@ -100,3 +100,14 @@ test('pointGrid finds round obstacles by distance, pad and height, across cell e
   assert.ok(g.near(-10.3, -9.8, 2.5) && !g.near(-10.3, -9.8, 1.5));
   assert.ok(!pointGrid([]).near(0, 0, 0, 1));
 });
+
+test('splitByTile puts each triangle, with all its attributes, in the tile of its centre', async () => {
+  const { splitByTile, gkey } = await import('../geom.js');
+  const tri = (x, z) => [x, 0, z, x + 1, 0, z, x, 1, z + 1]; // centre ≈ (x + 1/3, z + 1/3)
+  const B = { p: [...tri(1, 1), ...tri(10, 1), ...tri(-5, 2)], n: Array(27).fill(0), c: [...Array(9).fill(1), ...Array(9).fill(2), ...Array(9).fill(3)], f: [...Array(6).fill(7), ...Array(6).fill(8), ...Array(6).fill(9)] };
+  const T = splitByTile(B, 8);
+  assert.deepEqual([...T.keys()].sort((a, b) => a - b), [gkey(-1, 0), gkey(0, 0), gkey(1, 0)].sort((a, b) => a - b));
+  assert.deepEqual(T.get(gkey(1, 0)).p, tri(10, 1)); assert.deepEqual(T.get(gkey(1, 0)).c, Array(9).fill(2)); assert.deepEqual(T.get(gkey(1, 0)).f, Array(6).fill(8));
+  assert.equal(T.get(gkey(0, 0)).uv, undefined); // attributes it hasn't stay out
+  const all = [...T.values()]; assert.equal(all.reduce((s, t) => s + t.p.length, 0), B.p.length); assert.equal(all.reduce((s, t) => s + t.f.length, 0), B.f.length);
+});
