@@ -4,6 +4,7 @@ import { readKeys, rigCar, step, syncCar, chaseCamera, speedHud } from './drive-
 import { radio, radioHud } from './radio.js';
 import { drivingAudio } from './driving-audio.js';
 import { touchControls } from './touch.js';
+import { toasts } from './toast.js';
 import { showAppVersion } from './app-version.js';
 
 showAppVersion();
@@ -141,15 +142,14 @@ placeOnTrack(N - 14);
 const BEST_KEY = 'sedan-drive-best-v1';
 let lap = { running: false, t0: 0, n: 0, cps: new Set(), last: null, best: +localStorage.getItem(BEST_KEY) || null };
 const fmt = s => s == null ? '–' : Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0');
-const msgEl = document.getElementById('msg'); let msgTimer;
-function flash(t) { msgEl.textContent = t; msgEl.style.opacity = 1; clearTimeout(msgTimer); msgTimer = setTimeout(() => msgEl.style.opacity = 0, 1800); }
+const flash = toasts(); // flash(text, tone, key)
 let clock = 0;
 function lapLogic(prev, cur) {
   const q = N / 4; for (const c of [1, 2, 3]) if (Math.abs(cur - c * q) < 30) lap.cps.add(c);
   if (prev > N - 80 && cur < 80) { // crossed start line forwards
     if (lap.running && lap.cps.size === 3) { const t = clock - lap.t0; lap.last = t; lap.n++;
-      if (!lap.best || t < lap.best) { lap.best = t; localStorage.setItem(BEST_KEY, t); flash('New best lap  ' + fmt(t)); } else flash('Lap ' + fmt(t)); }
-    else if (!lap.running) flash('Go');
+      if (!lap.best || t < lap.best) { lap.best = t; localStorage.setItem(BEST_KEY, t); flash('New best lap  ' + fmt(t), 'gold'); } else flash('Lap ' + fmt(t)); }
+    else if (!lap.running) flash('Go', 'good');
     lap.running = true; lap.t0 = clock; lap.cps.clear();
   }
   if (prev < 80 && cur > N - 80) lap.cps.clear();
@@ -203,7 +203,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyN') setNight(!night);
   if (e.code === 'KeyC') camMode = 1 - camMode;
   if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);
-  if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on');
+  if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on', '', 'sound');
   if (e.code === 'KeyR') { const n = nearest(st.pos, true); st.idx = n.i; placeOnTrack(n.i); }
 });
 addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyB') sound.horn(false); });

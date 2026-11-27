@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deliveryNetwork, createDelivery, allowedTime, afterCrash, deliveryPay, receiptText, FINE, KNOCK_FINE, JOB_LEVELS, CARGO, levelOf, levelText } from '../delivery.js';
+import { deliveryNetwork, createDelivery, allowedTime, afterCrash, deliveryPay, receiptText, stars, FINE, KNOCK_FINE, JOB_LEVELS, CARGO, levelOf, levelText } from '../delivery.js';
 import { laneGraph } from '../traffic.js';
 import { prepareRoads } from '../road-layout.js';
 
@@ -69,8 +69,21 @@ test('pay rewards arriving early and undamaged, and takes off for lateness, dama
   assert.equal(damaged.damage, -7); assert.equal(damaged.total, 7);
   assert.equal(deliveryPay({ ...job, taken: 75, condition: 0 }).total, 0, 'a ruined parcel pays nothing');
   assert.equal(deliveryPay({ ...job, taken: 75, fines: 2 * FINE }).total, 0, 'and fines never make it negative');
-  assert.deepEqual(receiptText({ ...deliveryPay({ ...job, taken: 40, condition: 0.9, fines: FINE }), taken: 40 }),
-    { title: 'Delivered in 0:40 · $5', detail: '$14 pay · +$3 early · −$2 damage · −$10 red light' });
+  const text = receiptText({ ...deliveryPay({ ...job, taken: 40, condition: 0.9, fines: FINE }), taken: 40 });
+  assert.deepEqual({ title: text.title, detail: text.detail }, { title: 'Delivered in 0:40 · $5', detail: '$14 pay · +$3 early · −$2 damage · −$10 red light' });
+  assert.equal(text.head, 'Delivered in 0:40');
+  assert.deepEqual(text.lines, [[14, '$14 pay'], [3, '+$3 early'], [-2, '−$2 damage'], [-10, '−$10 red light']]);
+});
+
+test('a delivery earns stars: none ruined, one late or fined, two on time and clean, three early and nearly unscathed', () => {
+  const r = (taken, condition = 1, fines = 0) => ({ taken, allowed: 100, condition, fines: -fines });
+  assert.equal(stars(r(50, 0)), 0, 'ruined');
+  assert.equal(stars(r(130)), 1, 'late');
+  assert.equal(stars(r(60, 1, FINE)), 1, 'on time but fined');
+  assert.equal(stars(r(95, 0.6)), 1, 'on time but battered');
+  assert.equal(stars(r(95)), 2, 'on time and clean');
+  assert.equal(stars(r(70, 0.9)), 2, 'early but knocked about');
+  assert.equal(stars(r(70)), 3, 'early and clean');
 });
 
 test('the clock, damage and fines start once the parcel is aboard, and the receipt adds them up', () => {
@@ -87,6 +100,7 @@ test('the clock, damage and fines start once the parcel is aboard, and the recei
   const r = job.receipt;
   assert.ok(r.taken === 10 && r.condition < 0.7 && r.fines === -FINE && r.bonus > 0 && r.damage < 0);
   assert.equal(r.total, Math.max(0, r.base + r.bonus + r.late + r.damage + r.fines));
+  assert.ok(r.allowed > r.taken && stars(r) === 1, 'the receipt keeps the time allowed, for the stars');
   assert.equal(job.load, null);
 });
 

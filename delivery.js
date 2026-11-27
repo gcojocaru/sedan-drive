@@ -111,12 +111,19 @@ export const money = n => (n < 0 ? '−$' : '$') + Math.abs(n);
 export const minutes = s => { s = Math.round(Math.abs(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 // A delivery's receipt for the HUD: what it paid and how long it took, then the pay and each adjustment there was
 // (fined: what each fine was for, 'red light' or 'pedestrian'; red lights when not known; drops and kind: how many of
-// what, one parcel when not known)
+// what, one parcel when not known). head: the title without the pay; lines: [amount, text] for each part, in order.
 export function receiptText(r) {
   const why = r.fined || [], reds = why.every(f => f === 'red light'), n = r.drops || 1;
   const parts = [[r.base, 'pay'], [r.bonus, 'early'], [r.late, 'late'], [r.damage, 'damage'], [r.fines, !reds ? (why.length > 1 ? 'fines' : 'pedestrian hit') : r.fines === -FINE ? 'red light' : 'red lights']];
   const what = n > 1 ? n + ' ' + CARGO[r.kind || 'parcel'].many + ' ' : r.kind && r.kind !== 'parcel' ? 'the ' + CARGO[r.kind].one + ' ' : '';
-  return { title: 'Delivered ' + what + 'in ' + minutes(r.taken) + ' · ' + money(r.total), detail: parts.filter(([n]) => n).map(([n, what], i) => (i && n > 0 ? '+' : '') + money(n) + ' ' + what).join(' · ') };
+  const head = 'Delivered ' + what + 'in ' + minutes(r.taken), lines = parts.filter(([n]) => n).map(([n, what], i) => [n, (i && n > 0 ? '+' : '') + money(n) + ' ' + what]);
+  return { title: head + ' · ' + money(r.total), detail: lines.map(l => l[1]).join(' · '), head, lines };
+}
+// A delivery's grade, 0 to 3 stars: none for a ruined load, one for delivering it, a second for doing so on time,
+// in good condition (70%) and with no fines, a third for doing that in at most 80% of the time, nearly unscathed (95%).
+export function stars(r) {
+  const clean = !r.fines && r.condition >= 0.7;
+  return r.condition <= 0 ? 0 : 1 + (clean && r.taken <= r.allowed) + (clean && r.condition >= 0.95 && r.taken <= 0.8 * r.allowed);
 }
 
 // A job: pick the load up, then drop it off, a parcel at each drop-off in turn. start(x, z, level, kind) plans it for
@@ -176,7 +183,7 @@ export function createDelivery(stops, random = Math.random) {
         return 'collected';
       }
       if (next < drops.length - 1) { next++; return 'dropped'; }
-      receipt = { ...deliveryPay({ ...load, taken: t - load.since }), taken: t - load.since, condition: load.condition, fined: load.fined, drops: load.drops, kind };
+      receipt = { ...deliveryPay({ ...load, taken: t - load.since }), taken: t - load.since, allowed: load.allowed, condition: load.condition, fined: load.fined, drops: load.drops, kind };
       this.cancel();
       return 'delivered';
     }

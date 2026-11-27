@@ -17,6 +17,8 @@ import { buildWorld, TYPE_LABEL, HARD } from './world.js';
 import { makeTex } from './world-kit.js';
 import { radio, radioHud, stationsNear } from './radio.js';
 import { touchControls } from './touch.js';
+import { toasts } from './toast.js';
+import { resultCard } from './result-card.js';
 import { createSky } from './sky.js';
 import { WEATHERS, weatherNow, solarHour, groundOf } from './weather.js';
 import { laneGraph, createTraffic, ranRed, LEVELS } from './traffic.js';
@@ -232,8 +234,7 @@ async function startGame(lat0, lon0, placeName) {
     }
     CAR.lights.high.forEach(l => { l.intensity = head && night ? 900 : 0; l.visible = head && night; });
   }
-  const msgEl = $('msg'); let msgTimer;
-  function flash(t) { msgEl.textContent = t; msgEl.style.opacity = 1; clearTimeout(msgTimer); msgTimer = setTimeout(() => msgEl.style.opacity = 0, 2200); }
+  const flash = toasts(); // flash(text, tone, key)
 
   // ---- time of day and weather ----
   // 'live' follows the clock and the weather at this place right now; otherwise an index into TIMES / WEATHERS.
@@ -260,7 +261,7 @@ async function startGame(lat0, lon0, placeName) {
   function showTime(announce) { // local clock time, also for the presets (they are set in solar time)
     const w = weatherOf(), real = wSel === 'live' && live, lying = !real ? '' : live.snowDepth >= 0.01 ? ', ' + Math.round(live.snowDepth * 100) + ' cm on the ground' : groundOf(w).wet > 0.3 && !['rain', 'storm', 'snow'].includes(w.kind) ? ', wet roads' : '';
     const text = (tSel === 'live' ? '' : TIMES[tSel][0] + ' · ') + clock(hourOf() - lon0 / 15 + offset() / 3600) + ' · ' + w.label + (real ? ', ' + Math.round(live.temp) + '°C' : '') + lying;
-    $('tod').textContent = text; if (announce) flash(text);
+    $('tod').textContent = text; if (announce) flash(text, '', 'time');
   }
   function applyTime(announce) {
     if (tSel !== NIGHT) dayIdx = tSel;
@@ -305,9 +306,11 @@ async function startGame(lat0, lon0, placeName) {
     $('wallet').textContent = '$' + wallet.cash + ' · ' + wallet.jobs + (wallet.jobs === 1 ? ' delivery' : ' deliveries') + ' · ' + JOB_LEVELS[i].name + (up ? ' (' + (up.from - wallet.jobs) + ' to level ' + (i + 2) + ')' : '');
   };
   showWallet();
+  const results = resultCard((kind, i) => sound.chime(kind, i));
   const delivery = deliveryHud(scene, graph, furnitureHit, $('jobButton'), $('jobStage'), $('jobDistance'), flash, receipt => {
     const was = levelOf(wallet.jobs); wallet = earn(wallet, receipt.total); keep(LS_WALLET, wallet); showWallet();
-    const now = levelOf(wallet.jobs); if (now > was) flash('Level ' + (now + 1) + ' · ' + JOB_LEVELS[now].name + ': ' + levelText(now));
+    const now = levelOf(wallet.jobs), up = now > was ? 'Level ' + (now + 1) + ' · ' + JOB_LEVELS[now].name + ': ' + levelText(now) : '';
+    results.show(receipt, wallet.jobs, up); if (up) flash(up, 'gold'); // (the toast waits under the card, for when it's closed early)
   }, () => levelOf(wallet.jobs));
   function toggleDelivery() {
     if (started && !paused()) delivery.toggle(st.pos.x,st.pos.z);
@@ -333,7 +336,7 @@ async function startGame(lat0, lon0, placeName) {
       if (hit === 'person') { // they stumble out of the way; the car pulls up
         const imp = Math.abs(st.v), fresh = hitPerson.state !== 'stagger';
         people.bump(hitPerson, st.pos.x, st.pos.z); st.v *= 0.2; sound.impact(imp, 'person');
-        if (fresh && imp > 2 && !delivery.knocked()) flash('Watch out!');
+        if (fresh && imp > 2 && !delivery.knocked()) flash('Watch out!', 'bad');
       }
       else if (SOLID[hit]) {
         const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20);
@@ -344,7 +347,7 @@ async function startGame(lat0, lon0, placeName) {
       return !!hit;
     });
     if (ranRed(graph.signals, was[0], was[1], st.pos.x, st.pos.z)) delivery.ranRed();
-    if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v, dt);
+    if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v, dt, dim);
     sound.update(st.v, !paused() && k.up, !paused() && k.dn, { hb: !paused() && k.hb, steer: st.steer, slip: st.slip, rough: !onHard, wet: ear.wet, snow: ear.snow, grip });
     return s;
   }
@@ -426,7 +429,7 @@ async function startGame(lat0, lon0, placeName) {
     if (e.code === 'KeyT') { tSel = next(tSel, TIMES.length); applyTime(true); }
     if (e.code === 'KeyE') { wSel = next(wSel, WEATHERS.length); applyTime(true); }
     if (e.code === 'KeyC') camMode = 1 - camMode;
-    if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on');
+    if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on', '', 'sound');
     if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);
     if (e.code === 'KeyR') { const s = laneSpawn(layout.spawnSegments, st.pos.x, st.pos.z, st.h, HALF, furnitureHit); if (s) { traffic.clear(s.x, s.z, 8); people.clear(s.x, s.z, 6); place(s.x, s.z, s.h); } }
   });
