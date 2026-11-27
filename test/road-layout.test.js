@@ -94,3 +94,24 @@ test('a blocked spawn finds a clear pose on the same lane', () => {
   assert.ok(s && !occupied(s.x) && Math.abs(s.x) <= 8);
   assert.equal(laneSpawn(spawnSegments,0,0,0,500,()=>true),null);
 });
+
+test('the first start picks a long straight lane over a nearer stub that ends at a junction', () => {
+  const main = street([[-80,0],[0,0],[80,0]], { nodes: [1,2,3] }), stub = street([[0,0],[0,-16]], { nodes: [2,4] });
+  const { spawnSegments } = prepareRoads([main, stub], 'right');
+  const p = laneSpawn(spawnSegments, 0, -12, undefined, 500);
+  assert.ok(Math.abs(p.z) < 4 && Math.abs(Math.cos(p.h)) > 0.99, JSON.stringify(p));
+  const seg = spawnSegments.find(s => s.road === main && s.dx > 0 && s.a[0] > 0);
+  assert.ok(seg.run[0] > 60 && seg.run[1] > 60); // straight run across the whole arm
+  // with only long lanes, the nearest point still wins
+  const q = laneSpawn(prepareRoads([street([[-200,0],[200,0]])], 'right').spawnSegments, 10, 3, undefined, 500);
+  assert.ok(Math.abs(q.x - 10) < 1e-6);
+});
+
+test('a reset keeps its heading but backs off a junction just ahead', () => {
+  const { main, layout } = crossroads();
+  const end = Math.max(...layout.spawnSegments.filter(s => s.road === main && s.a[0] < 0).map(s => s.a[0] + s.dx * s.length));
+  const p = laneSpawn(layout.spawnSegments, end - 1, 0, 0, 500);
+  near(Math.cos(p.h), 1);
+  assert.ok(p.x < end - 4, p.x + ' vs ' + end);
+  near(laneSpawn(layout.spawnSegments, -25, 0, 0, 500).x, -25);
+});
