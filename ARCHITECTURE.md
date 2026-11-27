@@ -55,6 +55,9 @@ how each part works; this file says how the parts may fit together.
 | `building-fronts.js` | — | Facade layout (style, storeys, window bays, doors, shop windows) and atlas drawing on a supplied canvas context |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
 | `radio.js` | 53 | Car radio for both drive pages: `stationsNear()` (radio-browser.info, real-map page), Romanian presets (test track), `radio(show, find, tuningStatic)` player, `radioHud()` station display |
+| `gamepad.js` | — | Gamepad for both drive pages: analogue steer, gas and brake, buttons that press keys, rumble |
+| `toast.js` | — | Short messages (toasts) on both drive pages |
+| `result-card.js` | — | The results card after a delivery: receipt, pay, stars, level progress |
 | `touch.js` | 57 | On-screen driving buttons for touch screens, both drive pages: `touchControls(extras)` sends the keydown/keyup each button's key would |
 | `osm-query.js` | 37 | Overpass query, cache key, start-point grid, servers; shared with the proxy |
 | `proxy/worker.js` | 69 | Cloudflare Worker that caches map downloads |
@@ -74,12 +77,13 @@ root, one copy each. Page URLs don't change.
 | Module | Owns | May import |
 |---|---|---|
 | `drive-map.js` | Real-map page entry: picker, loading screen, time of day, game loop wiring | everything below |
-| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch`, `app-version` |
+| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch`, `toast`, `gamepad`, `world-kit`, `app-version` |
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model`, `app-version` |
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`, `brake`), and `repaint(C, hex)` colours the car's `paint`; the ground under the car (`vmax`, `drag`, `rough`, `grip`) and collisions | nothing (works on the three.js objects it is given) |
 | `app-version.js` | Show the current release on the three game pages | nothing |
 | `delivery.js` | Select reachable stops and advance an area-local job, a round of drop-offs; `JOB_LEVELS`, `levelOf`, `levelText`, `CARGO`; `allowedTime`, `afterCrash` (with the padding's cushion), `deliveryPay`, `receiptText`; fines for red lights and knocking into pedestrians (`FINE`, `KNOCK_FINE`) | nothing |
-| `delivery-hud.js` | Drive the HUD (job, countdown, damage and fines, receipt) and place the active stop in the scene; `paid(receipt)` hands the pay to the page, `level()` says what level to plan jobs at, `cargo` is what's aboard | `delivery`, three |
+| `result-card.js` | `resultCard(chime)` → `show(receipt, jobs, levelUp)`, `hide`: the results card after a delivery | `delivery` |
+| `delivery-hud.js` | Drive the HUD (job, countdown, damage and fines, the stop's ring and beam) and place the active stop in the scene; `paid(receipt)` hands the pay to the page, `level()` says what level to plan jobs at, `cargo` is what's aboard | `delivery`, three |
 | `garage-panel.js` | `garagePanel(root, choose)` → `draw(garage, wallet)`: the shop in the garage dialog | `garage` |
 | `garage.js` | `UPGRADES`, `PAINTS`, `readGarage`, `readWallet`, `earn`, `price`, `buy`, `carTuning`: what delivery money buys and what it does to the car | nothing |
 | `minimap.js` | Cached raster of real-map geometry, car and goal markers, traffic as dots | `minimap-labels`, `delivery` |
@@ -105,6 +109,8 @@ root, one copy each. Page URLs don't change.
 | `driving-audio.js` | Synthesized engine, tyre (`tyreSound`), crash (`impactSound`, `impact`), horn and tuning sounds on both driving pages, and the traffic around the camera (`trafficVoices`, `traffic(cars, ear)`, `honkAt`) | nothing |
 | `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find, tuningStatic)` → `tune(step)`; station playback | nothing |
 | `weather.js` | `weatherNow(lat, lon, fetch)` → `{ kind, label, amount, temp, offset, snowDepth?, recent? }`, `weatherOf(code)`, `WEATHERS`, `groundOf(w)` → `{ wet, snow, grip }`, `solarHour(ms, lon)` | nothing |
+| `toast.js` | `toasts()` → `show(text, tone, key)`: readable short messages on both drive pages | nothing |
+| `gamepad.js` | `gamepad()` → `poll()` (analogue controls for `readKeys`; buttons press keys), `crash(speed)`, `feel(speed, braking, ride)`: rumble; `padControls(gp)` | `driving-audio` |
 | `touch.js` | `touchControls(extras)`: on-screen buttons for touch screens that press keys (synthetic keydown/keyup), so pages handle touch and keyboard the same way | nothing |
 | `geom.js` | Pure geometry on plain arrays (`ribbon`, `obb`, `clipHalf`, `offsetRing`, `joinRings`, `seaPolys`, `trimLine`, `pointAt`, …). Triangulating polygons needs three.js, so `fillPoly` is in `world-kit.js` | nothing |
 | `osm-query.js` | Query, cache key, grid, servers, proxy address | nothing |
