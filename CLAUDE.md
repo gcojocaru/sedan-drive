@@ -8,6 +8,8 @@ Context for working on this repo. See README.md for what the pages do and how to
 
 The public game version lives in `package.json`. All three game pages use `app-version.js` to display it.
 
+**Every PR bumps the version and adds a changelog entry:** `npm version minor --no-git-tag-version` for features (`patch` for fixes only), and a dated section at the top of `CHANGELOG.md` saying what changed for players, in plain words. A PR stacked on another takes the next version after it.
+
 ## Stack
 
 - Plain HTML + native ES modules. No bundler, no npm dependencies, no TypeScript.
