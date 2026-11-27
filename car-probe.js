@@ -16,7 +16,7 @@ export function carProbe(renderer, scene, car, size, hide = []) {
   const cams = cube.children; let face = 0, wait = 2;
   return function update() {
     if (wait > 0) { wait--; return; } // (first let the page draw a normal frame or two: the sun's shadow map must exist before a face renders without it)
-    cube.position.set(car.position.x, 1.1, car.position.z); cube.updateMatrixWorld(true);
+    cube.position.set(car.position.x, car.position.y + 1.1, car.position.z); cube.updateMatrixWorld(true);
     const auto = renderer.shadowMap.autoUpdate, was = renderer.getRenderTarget(), shown = [car, ...hide].map(o => o.visible);
     renderer.shadowMap.autoUpdate = false; car.visible = false; for (const o of hide) o.visible = false;
     renderer.setRenderTarget(rt, face); renderer.render(scene, cams[face]);

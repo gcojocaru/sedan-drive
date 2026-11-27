@@ -42,6 +42,9 @@ patch for fixes) and adds its entry at the top. Versions before 0.4.0 are in the
 
 ## 0.4.0 — 2026-11-27
 
+- **Hills:** the real map follows the real terrain. Roads, ground, buildings and trees sit on the hills, and the car slows
+  going up and picks up speed going down. Bridges over water are raised on decks with ramps, girders and railings. If
+  the elevation can't load, the area opens flat and the status line says so.
 - **Camera:** the chase camera stays close behind the car at any speed, swings out to show a slide, and moves in front
   of poles, signs and tree trunks instead of sitting behind them.
 - **Start:** the car starts on a lane with a long straight road ahead; R no longer faces you into a junction.

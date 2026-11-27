@@ -25,6 +25,11 @@ how each part works; this file says how the parts may fit together.
 | `world.js` | 421 | Road/area tag tables and `buildWorld()`, which runs one builder per feature (`layRoads`, `roadLookup`, `paintCrossings`, `layRailways`, `buildWalls`, `plantTrees`, `streetLamps`, …) |
 | `buildings.js` | 364 | `buildBuildings()`: building tag tables, walls and roofs per footprint (parapets, eaves), building parts, shopfronts, the facade shader and roof textures, `inBuilding` |
 | `world-kit.js` | 87 | three.js and tag helpers shared by the two above: `fillPoly`, `makeTex`, `tagColor`, `num`, …, and `weatherLook()`, the wet and snowy surface shader |
+| `terrain.js` | — | Decode Mapzen Terrarium tiles and sample a centre-relative height grid |
+| `bridge-decks.js`, `bridge-mesh.js` | — | Grade bridge approaches and their banks, place the deck, bearings and railings |
+| `water-levels.js` | — | Estimate a shared level for adjoining water polygons |
+| `terrain-surface.js` | — | Fit mapped surfaces to the triangles of the terrain grid |
+| `car-ground.js` | — | Wheelbase grade and cross-slope for the player and traffic |
 | `map-data.js` | 55 | `loadArea()`: IndexedDB cache, proxy, Overpass servers, vector fallback |
 | `geom.js` | 204 | Pure geometry: strips, polygons, oriented boxes, roof clipping, coastline → sea |
 | `drive-track.js` | 215 | Test-track page (`Drive.html`): track, surface, lap timing, sky |
@@ -85,7 +90,7 @@ root, one copy each. Page URLs don't change.
 | `drive-map.js` | Real-map page entry: picker, loading screen, time of day, game loop wiring | everything below |
 | `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch`, `toast`, `gamepad`, `world-kit`, `quality`, `perf-hud`, `car-merge`, `post-fx`, `car-probe`, `car-fx`, `app-version` |
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model`, `app-version` |
-| `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`, `brake`), and `repaint(C, hex)` colours the car's `paint`; the ground under the car (`vmax`, `drag`, `rough`, `grip`) and collisions | nothing (works on the three.js objects it is given) |
+| `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`, `brake`), and `repaint(C, hex)` colours the car's `paint`; the ground under the car (`vmax`, `drag`, `rough`, `grip`, optional `height(x,z)`) and collisions | `car-ground` |
 | `app-version.js` | Show the current release on the three game pages | nothing |
 | `delivery.js` | Select reachable stops and advance an area-local job, a round of drop-offs; `JOB_LEVELS`, `levelOf`, `levelText`, `CARGO`; `allowedTime`, `afterCrash` (with the padding's cushion), `deliveryPay`, `receiptText`; fines for red lights and knocking into pedestrians (`FINE`, `KNOCK_FINE`) | nothing |
 | `result-card.js` | `resultCard(chime)` → `show(receipt, jobs, levelUp)`, `hide`: the results card after a delivery | `delivery` |
@@ -94,13 +99,13 @@ root, one copy each. Page URLs don't change.
 | `garage.js` | `UPGRADES`, `PAINTS`, `readGarage`, `readWallet`, `earn`, `price`, `buy`, `carTuning`: what delivery money buys and what it does to the car | nothing |
 | `minimap.js` | Cached raster of real-map geometry, car and goal markers, traffic as dots | `minimap-labels`, `delivery` |
 | `minimap-labels.js` | Nearby names and address numbers on the supplied canvas | `geom` |
-| `traffic-cars.js` | `trafficCars(scene, max, glowTex)` → `sync(cars, lit)`: instanced car bodies posed from `traffic.js` cars | `world-kit`, three |
+| `traffic-cars.js` | `trafficCars(scene, max, glowTex, height)` → `sync(cars, lit)`: instanced car bodies posed from `traffic.js` cars | `car-ground`, `world-kit`, three |
 | `traffic-lights.js` | `trafficLights(scene, signals, glowTex)` → `sync(lit)`: the signal heads in `graph.signals`, showing their `state`, and the pedestrian signals their `walk` | three |
 | `pedestrian-figures.js` | `pedestrianFigures(scene, max)` → `sync(people)`: instanced figures posed from `pedestrians.js` people | `world-kit`, three |
 | `pedestrians.js` | `walkGraph(roads, paths, junctions, { armBack, roadAt, crossings })` → `{ nodes, edges }`, `createPedestrians(walks, { rand, max, radius, half, seen })` → `people`, `crossing`, `step(dt, player, cars, signals)`, `hit`, `bump`, `clear`, `setLevel`; `PEOPLE`, `SIDEWALK`, `CROSSWALK` | `road-layout`, `geom` |
 | `traffic.js` | `laneGraph(roads, junctions, half, signals)` → lanes, nodes, `signals` (light heads) and `armBack(road, i, direction)` (how far each junction's stop lines stand back), `lightAt(signal, t)`, `walkLeft(ctrl, t)`, `ranRed(signals, ax, az, bx, bz)`, `createTraffic(graph, { rand, max, seen })` → `step(dt, player, others)`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
-| `sky.js` | `createSky(renderer, scene, lat, { shadow, drops })` → `TIMES`, `sunAt`, `set(h, forceNight, weather, snow)`, `update(dt, cameraPosition)`, `placeShadow(x, z)`: sun, sky, lights, fog, exposure, rain and snow | `world-kit`, `geom`, three |
-| `world.js` | `buildWorld(elements, lat0, lon0, scene, say, { lampLights })` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`), mapped traffic signals and crossings (`signalPts`, `crossPts`), wet and snowy surfaces (`setGround(wet, snow)`, `reflectLamps(x, z)`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, `sign-layout`, `sign-mesh`, `street-furniture`, `furniture-mesh`, three |
+| `sky.js` | `createSky(renderer, scene, lat, { shadow, drops }, now, height)` → `TIMES`, `sunAt`, `set(h, forceNight, weather, snow)`, `update(dt, cameraPosition)`, `placeShadow(x, z)`: sun, sky, lights, fog, exposure, rain and snow | `world-kit`, `geom`, three |
+| `world.js` | `buildWorld(elements, lat0, lon0, scene, say, terrain, { lampLights })` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`), mapped traffic signals and crossings (`signalPts`, `crossPts`), wet and snowy surfaces (`setGround(wet, snow)`, `reflectLamps(x, z)`). One builder function per feature, called in order; road/area tag tables | `terrain-surface`, `buildings`, `world-kit`, `geom`, `road-layout`, `sign-layout`, `sign-mesh`, `street-furniture`, `furniture-mesh`, three |
 | `street-furniture.js` | Plan parked cars and mapped furnishings and provide the player collision lookup | `geom`, `osm-query` |
 | `furniture-mesh.js` | Draw static parking and street furniture | `traffic-cars`, `world-kit`, three |
 | `sign-layout.js` | Choose sign positions at named junctions and near mapped landmarks | `geom`, `osm-query` |
@@ -144,7 +149,7 @@ and every `integrity` hash matches its file in `vendor/`.
    import. Where they need slightly different behaviour, pass the difference in (an argument, a callback such as
    `surface(x, z)` or `blocked(x, z, h)`); don't fork the code.
 2. **Respect the dependency table.** No upward imports, no new DOM or three.js use in the Node-importable modules, no
-   network or storage calls outside `app-version.js` (local package metadata), `map-data.js`, `vector-fallback.js`, `weather.js` (through a passed-in `fetch`), `radio.js` (station search through a passed-in
+   network or storage calls outside `app-version.js` (local package metadata), `map-data.js`, `terrain.js` (Terrarium tiles), `vector-fallback.js`, `weather.js` (through a passed-in `fetch`), `radio.js` (station search through a passed-in
    `fetch`, and the stream itself), `vaz-model.js` (its own model file), `buildings.js` (its own photo textures in `textures/`), the proxy and the page entries.
 3. **New logic goes in its module, not in a page and not in `startGame()`.** A new world feature is its own function
    in `world.js` that `buildWorld()` calls, not more lines inside `buildWorld()`. No new inline

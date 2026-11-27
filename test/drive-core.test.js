@@ -208,3 +208,25 @@ test('before the start the camera orbits the car, 7 to 11 m out and 1.6 to 4.5 m
     assert.deepEqual([camera.look.x, camera.look.z], [5, -3]);
   }
 });
+
+test('opposite headings on the same hill change coasting speed in opposite directions', () => {
+  const hill = { ...ROAD, height: x => 50 + 0.15 * x };
+  const uphill = { ...car(), v: 12 }, downhill = { ...car(), v: 12, h: Math.PI };
+  drive(uphill, {}, 2, hill);
+  drive(downhill, {}, 2, hill);
+  assert.ok(uphill.v < 10 && downhill.v > 13);
+  assert.equal(drive(car(), { hb: true }, 2, hill).reversing, false);
+});
+
+test('a sedan facing across the slope banks toward the low side', async () => {
+  const { groundPose } = await import('../car-ground.js');
+  const height = (x, z) => 41 + x * 0.2 - z * 0.12;
+  for (const h of [0, Math.PI / 2, Math.PI, 1.213]) {
+    const p = groundPose(height, -20, 35, h);
+    assert.equal(p.y, height(-20, 35));
+    const forward = Math.tan(p.pitch) / Math.cos(p.roll);
+    const sideways = -Math.tan(p.roll);
+    assert.ok(Math.abs(forward - (0.2 * Math.cos(h) + 0.12 * Math.sin(h))) < 1e-10);
+    assert.ok(Math.abs(sideways - (0.2 * Math.sin(h) - 0.12 * Math.cos(h))) < 1e-10);
+  }
+});

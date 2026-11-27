@@ -1,5 +1,5 @@
 // Driving shared by both drive pages: controls, the physics step, posing the car, the chase camera and the speed HUD.
-// It only works on the three.js objects it is given (no import), so the physics can be tested in Node.
+import { groundPose, roadGrade } from './car-ground.js';
 
 // held keys (by KeyboardEvent.code) → controls; pad (gamepad.js poll(), optional) adds analogue steer (left 1 … right -1),
 // thr and brk (0–1), which held keys override at full
@@ -42,6 +42,10 @@ export function step(st, k, dt, surf, tune, collide) {
   if (k.up) a = (st.v < -0.2 ? 18 * g : Math.min(tune.power * Math.max(0, 1 - Math.max(0, st.v) / surf.vmax) + tune.idle, 10 * g)) * (k.thr ?? 1);
   if (k.dn) a = (st.v > 0.2 ? -17 * g * (tune.brake ?? 1) : -Math.min(5, 10 * g)) * (k.brk ?? 1);
   a -= 0.0011 * st.v * Math.abs(st.v) + surf.drag * st.v + Math.sign(st.v) * 0.3;
+  if (surf.height) {
+    const grade = roadGrade(surf.height, st.pos.x, st.pos.z, st.h + slip);
+    a -= 9.81 * grade / Math.hypot(1, grade);
+  }
   if (k.hb) a -= Math.sign(st.v) * 9 * g;
   const v = Math.abs(st.v), hold = DRY * g * (k.hb && v > 4 ? 0.3 : 1) * (1 - 0.25 * clamp(-a * Math.sign(st.v || 1) / 17, 0, 1)) * (sliding && k.up ? 0.75 : 1);
   if (slip) a -= Math.sign(st.v) * Math.min(hold, 12) * Math.abs(Math.sin(slip)) * (k.up ? 0.5 : 1); // sliding sideways scrubs speed
@@ -90,8 +94,10 @@ export function repaint(C, hex) {
 }
 
 // Pose the car, its wheels and steering wheel, and light the brake, tail and reverse lamps.
-export function syncCar({ C, car, wheels, swFace }, st, s, head) {
-  car.position.set(st.pos.x, 0, st.pos.z); car.rotation.set(st.roll, st.h, st.pitch);
+export function syncCar({ C, car, wheels, swFace }, st, s, head, height) {
+  const ground = height && groundPose(height, st.pos.x, st.pos.z, st.h);
+  car.position.set(st.pos.x, ground?.y ?? 0, st.pos.z);
+  car.rotation.set(st.roll + (ground?.roll ?? 0), st.h, st.pitch + (ground?.pitch ?? 0));
   for (const w of wheels) w.w.rotation.set(0, w.base + (w.front ? st.steer : 0), w.side > 0 ? -st.spin : st.spin);
   if (swFace) swFace.rotation.z = st.steer * 4;
   C.tailMat.emissiveIntensity = s.braking ? 7 : head ? 1.8 : 0; C.cbrakeMat.emissiveIntensity = s.braking ? 7 : 0;
@@ -103,14 +109,15 @@ export function syncCar({ C, car, wheels, swFace }, st, s, head) {
 // distance holds at any speed. Faster, it sits a little closer and lower, looks further ahead and widens its view.
 // occluded(x, z, y), if given, says whether a point of the sightline is inside something: the camera pulls in fast in
 // front of the nearest one (never staying behind it) and eases back out slowly.
-export function chaseCamera(camera, car) {
+export function chaseCamera(camera, car, height = () => 0) {
   const look = camera.position.clone(), REST = 7.8; let yaw = 0, dist = REST;
   return {
     reset(st) { yaw = st.h; dist = REST; },
     // before the drive starts: a slow orbit round the car (once in 40 s), swinging between 7 and 11 m out and 1.6 and 4.5 m up
     orbit(st, t) {
       const a = st.h + Math.PI + t * 2 * Math.PI / 40, r = 9 + 2 * Math.sin(t * 0.37), y = 3.05 + 1.45 * Math.sin(t * 0.23);
-      camera.position.set(st.pos.x + Math.cos(a) * r, y, st.pos.z - Math.sin(a) * r); camera.lookAt(st.pos.x, 0.9, st.pos.z);
+      const x = st.pos.x + Math.cos(a) * r, z = st.pos.z - Math.sin(a) * r; // (above the ground, on hills too)
+      camera.position.set(x, y + Math.max(height(x, z), height(st.pos.x, st.pos.z)), z); camera.lookAt(st.pos.x, height(st.pos.x, st.pos.z) + 0.9, st.pos.z);
       camera.fov = 50; camera.near = 0.1; camera.updateProjectionMatrix(); yaw = st.h; dist = REST;
     },
     update(st, mode, dt, occluded) {
@@ -126,7 +133,8 @@ export function chaseCamera(camera, car) {
         dist += (target - dist) * (1 - Math.exp(-(target < dist ? 25 : 2.5) * dt));
         if (free < Infinity) dist = Math.min(dist, Math.max(2.5, free - 0.6)); // (the boom is sampled every 0.5 m)
         camera.position.set(st.pos.x - fx * dist, Math.min(high, 2.2 + 0.12 * dist), st.pos.z - fz * dist);
-        camera.lookAt(st.pos.x + fx * ahead, 1.0, st.pos.z + fz * ahead);
+        camera.position.y += height(camera.position.x, camera.position.z);
+        camera.lookAt(st.pos.x + fx * ahead, height(st.pos.x + fx * ahead, st.pos.z + fz * ahead) + 1, st.pos.z + fz * ahead);
         camera.fov = 58 + 14 * sp; camera.near = 0.1;
       } else {
         yaw = st.h; dist = REST; // back to the chase view from behind the car
