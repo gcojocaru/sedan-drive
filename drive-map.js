@@ -17,6 +17,7 @@ import { buildWorld, TYPE_LABEL, HARD } from './world.js';
 import { makeTex } from './world-kit.js';
 import { radio, radioHud, stationsNear } from './radio.js';
 import { touchControls } from './touch.js';
+import { gamepad } from './gamepad.js';
 import { createSky } from './sky.js';
 import { WEATHERS, weatherNow, solarHour, groundOf } from './weather.js';
 import { laneGraph, createTraffic, ranRed, LEVELS } from './traffic.js';
@@ -323,8 +324,8 @@ async function startGame(lat0, lon0, placeName) {
   });
   function openGarage() { if (paused()) return; clearKeys(); shop.draw(garage, wallet); garageEl.showModal(); }
   $('garageButton').onclick = () => { openGarage(); $('garageButton').blur(); };
-  function update(dt) {
-    const k = readKeys(keys), was = [st.pos.x, st.pos.z], ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
+  function update(dt, p) {
+    const k = readKeys(keys, p), was = [st.pos.x, st.pos.z], ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
     const cargo = delivery.cargo; // a heavy load takes some of the engine and the brakes
     TUNE.power = 7.4 * tuning.power * (cargo?.power ?? 1); TUNE.brake = tuning.brake * (cargo?.brake ?? 1);
     const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard, grip }, TUNE, (nx, nz, nh) => {
@@ -337,7 +338,7 @@ async function startGame(lat0, lon0, placeName) {
       }
       else if (SOLID[hit]) {
         const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20);
-        sound.impact(imp, SOLID[hit]); if (hit === 'traffic' && imp > 2) sound.honkAt(hitCar, ear); // and the other driver lets you know
+        sound.impact(imp, SOLID[hit]); pad.crash(imp); if (hit === 'traffic' && imp > 2) sound.honkAt(hitCar, ear); // and the other driver lets you know
         delivery.crash(imp, tuning.cushion);
       }
       else if (hit) { st.v = 0; boundary.offer(hit); } // the edge of the area
@@ -345,7 +346,8 @@ async function startGame(lat0, lon0, placeName) {
     });
     if (ranRed(graph.signals, was[0], was[1], st.pos.x, st.pos.z)) delivery.ranRed();
     if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v, dt);
-    sound.update(st.v, !paused() && k.up, !paused() && k.dn, { hb: !paused() && k.hb, steer: st.steer, slip: st.slip, rough: !onHard, wet: ear.wet, snow: ear.snow, grip });
+    const ride = { hb: !paused() && k.hb, steer: st.steer, slip: st.slip, rough: !onHard, wet: ear.wet, snow: ear.snow, grip };
+    sound.update(st.v, !paused() && k.up, !paused() && k.dn, ride); pad.feel(st.v, s.braking, ride);
     return s;
   }
   function glows(s) {
@@ -383,7 +385,7 @@ async function startGame(lat0, lon0, placeName) {
   }
 
   const dialog = $('edgeDialog'), settings = $('settings'), paused = () => dialog.open || settings.open || garageEl.open;
-  const sound = drivingAudio();
+  const sound = drivingAudio(), pad = gamepad();
   const clearKeys = () => { for (const k in keys) keys[k] = false; };
   const pose = () => ({ x: st.pos.x, z: st.pos.z, h: st.h, camera: camMode, day: dayIdx, time: tSel, weather: wSel, headlights: head });
   const boundary = edgePrompt({
@@ -436,7 +438,8 @@ async function startGame(lat0, lon0, placeName) {
   let last = performance.now(), lastS = { braking: false, reversing: false };
   renderer.setAnimationLoop(now => {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    if (started && !paused()) lastS = update(dt);
+    const p = pad.poll(); if (p?.thr && !started && !paused()) begin(); // (its buttons start the game through their keys)
+    if (started && !paused()) lastS = update(dt, p);
     if (!paused()) {
       frustum.setFromProjectionMatrix(view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
       Object.assign(me, { x: st.pos.x, z: st.pos.z, h: st.h, v: st.v });

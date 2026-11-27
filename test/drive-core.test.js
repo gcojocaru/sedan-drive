@@ -103,3 +103,29 @@ test('better brakes stop the car shorter', () => {
   assert.ok(stopAt(1.25) < stopAt(1) * 0.85 && stopAt(1.25) > stopAt(1) * 0.7, stopAt(1) + ' → ' + stopAt(1.25));
   assert.equal(stopAt(undefined), stopAt(1), 'stock brakes when the tune says nothing');
 });
+
+// ---- gamepad: analogue steer, throttle and brake (gamepad.js → readKeys(keys, pad)) ----
+const PAD = { steer: 0, thr: 0, brk: 0, hb: false };
+test('readKeys merges a pad; held keys override it at full; no pad gives the keys alone', () => {
+  assert.deepEqual(readKeys({ ArrowUp: true }), readKeys({ ArrowUp: true }, null));
+  const k = readKeys({}, { ...PAD, steer: -0.4, thr: 0.6, hb: true });
+  assert.deepEqual([k.up, k.dn, k.hb, k.steer, k.thr, k.brk], [true, false, true, -0.4, 0.6, 0]);
+  const both = readKeys({ ArrowUp: true, ArrowLeft: true, ArrowDown: true }, { ...PAD, steer: -0.4, thr: 0.3, brk: 0.2 });
+  assert.deepEqual([both.steer, both.thr, both.brk, both.lf], [undefined, 1, 1, true]);
+});
+
+test('a full pad drives exactly like the keys; an idle one is like no keys', () => {
+  const a = car(), b = car(), c = car(), d = car();
+  drive(a, readKeys({ ArrowUp: true, ArrowLeft: true }), 4); drive(b, readKeys({}, { ...PAD, steer: 1, thr: 1 }), 4);
+  assert.deepEqual(a, b);
+  c.v = d.v = 10; drive(c, readKeys({}), 3); drive(d, readKeys({}, PAD), 3);
+  assert.deepEqual(c, d);
+});
+
+test('half stick turns about half as fast; half throttle and brake pull about half as hard', () => {
+  const yaw = steer => { const st = { ...car(), v: 10 }; drive(st, { steer }, 1); const h = st.h; step(st, { steer }, 1 / 60, ROAD, TUNE); return st.h - h; };
+  const r = yaw(0.5) / yaw(1); assert.ok(r > 0.42 && r < 0.58, 'yaw ratio ' + r);
+  const dv = k => { const st = { ...car(), v: 10 }; step(st, k, 1 / 60, ROAD, TUNE); return st.v - 10; }, coast = dv({});
+  const gas = (dv({ up: true, thr: 0.5 }) - coast) / (dv({ up: true }) - coast), brake = (dv({ dn: true, brk: 0.5 }) - coast) / (dv({ dn: true }) - coast);
+  assert.ok(Math.abs(gas - 0.5) < 0.05 && Math.abs(brake - 0.5) < 0.05, 'gas ' + gas + ', brake ' + brake);
+});

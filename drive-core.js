@@ -1,8 +1,14 @@
 // Driving shared by both drive pages: controls, the physics step, posing the car, the chase camera and the speed HUD.
 // It only works on the three.js objects it is given (no import), so the physics can be tested in Node.
 
-// held keys (by KeyboardEvent.code) → controls
-export const readKeys = k => ({ up: k.KeyW || k.ArrowUp, dn: k.KeyS || k.ArrowDown, lf: k.KeyA || k.ArrowLeft, rt: k.KeyD || k.ArrowRight, hb: k.Space });
+// held keys (by KeyboardEvent.code) → controls; pad (gamepad.js poll(), optional) adds analogue steer (left 1 … right -1),
+// thr and brk (0–1), which held keys override at full
+export function readKeys(k, pad) {
+  const c = { up: k.KeyW || k.ArrowUp, dn: k.KeyS || k.ArrowDown, lf: k.KeyA || k.ArrowLeft, rt: k.KeyD || k.ArrowRight, hb: k.Space };
+  if (!pad) return c;
+  return { up: c.up || pad.thr > 0, dn: c.dn || pad.brk > 0, lf: c.lf, rt: c.rt, hb: c.hb || pad.hb,
+    steer: c.lf || c.rt ? undefined : pad.steer, thr: c.up ? 1 : pad.thr, brk: c.dn ? 1 : pad.brk };
+}
 
 // Set up a buildCar()-shaped car for driving: lamps off, shadows only from the body, wheels found by name.
 export function rigCar(C) {
@@ -17,8 +23,8 @@ export function rigCar(C) {
 
 // One physics step of st = { pos, h, v, steer, spin, roll, pitch, slip } (m, rad, m/s; heading 0 = +x; slip: the angle
 // from the heading to the way the car is actually moving, 0 unless it slides).
-// k: controls from readKeys. surf: the ground under the car, { vmax, drag, rough, grip }. tune: the page's car,
-// { power, idle, vtop, brake } (brake: how much harder than stock the brakes bite, default 1).
+// k: controls from readKeys (steer, thr and brk, when there, set the steering lock and scale the engine and brakes).
+// surf: the ground under the car, { vmax, drag, rough, grip }. tune: the page's car, { power, idle, vtop, brake } (brake: how much harder than stock the brakes bite, default 1).
 // grip (default 1, dry) is the share of dry tyre grip left on wet or snowy ground: brakes and handbrake bite by that share,
 // the engine can't pull harder than 10 * grip m/s², and the tyres hold the car's path to 8 * grip / (1 - grip) m/s²
 // sideways (no limit when dry). Corner harder than that and the car slides wide, scrubbing speed, until its path lines
@@ -27,8 +33,8 @@ export function rigCar(C) {
 export function step(st, k, dt, surf, tune, collide) {
   const g = Math.max(0.05, Math.min(1, surf.grip ?? 1)), slip = st.slip || 0;
   let a = 0;
-  if (k.up) a = st.v < -0.2 ? 18 * g : Math.min(tune.power * Math.max(0, 1 - Math.max(0, st.v) / surf.vmax) + tune.idle, 10 * g);
-  if (k.dn) a = st.v > 0.2 ? -17 * g * (tune.brake ?? 1) : -Math.min(5, 10 * g);
+  if (k.up) a = (st.v < -0.2 ? 18 * g : Math.min(tune.power * Math.max(0, 1 - Math.max(0, st.v) / surf.vmax) + tune.idle, 10 * g)) * (k.thr ?? 1);
+  if (k.dn) a = (st.v > 0.2 ? -17 * g * (tune.brake ?? 1) : -Math.min(5, 10 * g)) * (k.brk ?? 1);
   a -= 0.0011 * st.v * Math.abs(st.v) + surf.drag * st.v + Math.sign(st.v) * 0.3;
   if (k.hb) a -= Math.sign(st.v) * 9 * g;
   const hold = 8 * g / (1 - g); // Infinity when dry
@@ -36,7 +42,7 @@ export function step(st, k, dt, surf, tune, collide) {
   st.v += a * dt;
   if (!k.up && !k.dn && Math.abs(st.v) < 0.4) st.v = 0;
   st.v = Math.max(-9, Math.min(tune.vtop, st.v));
-  const target = (k.lf ? 1 : 0) - (k.rt ? 1 : 0), ms = 0.62 / (1 + Math.abs(st.v) / 14);
+  const target = k.steer ?? (k.lf ? 1 : 0) - (k.rt ? 1 : 0), ms = 0.62 / (1 + Math.abs(st.v) / 14);
   st.steer += (target * ms - st.steer) * Math.min(1, dt * (target ? 5 : 8));
   const yaw = st.v * Math.tan(st.steer) / 2.63 * (k.hb && Math.abs(st.v) > 4 ? 1.5 : 1);
   let nh = st.h + yaw * dt, path = nh, turn = yaw; // the body's new heading, the direction it moves in, and how fast that turns
