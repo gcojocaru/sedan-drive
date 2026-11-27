@@ -7,8 +7,8 @@ const name = (m, n) => (m.name = n, m);
 const Std = (n, color, r, m = 0, extra = {}) => name(new THREE.MeshStandardMaterial({ color, roughness: r, metalness: m, ...extra }), n);
 const Phys = (n, o) => name(new THREE.MeshPhysicalMaterial(o), n);
 const flakeTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d'); x.fillStyle = '#808080'; x.fillRect(0, 0, 256, 256); for (let i = 0; i < 9000; i++) { const v = 90 + Math.random() * 80 | 0; x.fillStyle = `rgb(${v},${v},${v})`; x.fillRect(Math.random() * 256, Math.random() * 256, 1, 1); } const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(6, 6); return t; })();
-const paint = Phys('paint_red', { color: 0x7a0f1c, roughness: 0.32, metalness: 0.55, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 1.25 });
-const glass = Phys('glass', { color: 0x141b1f, roughness: 0.02, metalness: 0.1, transparent: true, opacity: 0.55, envMapIntensity: 1.6, clearcoat: 1, clearcoatRoughness: 0 });
+const paint = Phys('paint_red', { color: 0x7a0f1c, roughness: 0.32, metalness: 0.55, clearcoat: 1, clearcoatRoughness: 0.1, envMapIntensity: 1.1 }); // (a mirror-sharp coat turned lamps and the sun into blinding points)
+const glass = Phys('glass', { color: 0x141b1f, roughness: 0.02, metalness: 0.1, transparent: true, opacity: 0.55, envMapIntensity: 1.3, clearcoat: 1, clearcoatRoughness: 0.05 });
 const lensClear = Phys('lens_clear', { color: 0xffffff, roughness: 0.02, transparent: true, opacity: 0.22 });
 const plastic = Std('black_plastic', 0x1a1b1d, 0.72);
 const rubber = Std('tire_rubber', 0x161616, 0.9, 0, { side: THREE.DoubleSide });

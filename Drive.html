@@ -8,7 +8,11 @@
     "three/addons/controls/OrbitControls.js": "./vendor/three-0.184.0/examples/jsm/controls/OrbitControls.js",
     "three/addons/exporters/OBJExporter.js": "./vendor/three-0.184.0/examples/jsm/exporters/OBJExporter.js",
     "three/addons/exporters/GLTFExporter.js": "./vendor/three-0.184.0/examples/jsm/exporters/GLTFExporter.js",
-    "three/addons/loaders/GLTFLoader.js": "./vendor/three-0.184.0/examples/jsm/loaders/GLTFLoader.js"
+    "three/addons/loaders/GLTFLoader.js": "./vendor/three-0.184.0/examples/jsm/loaders/GLTFLoader.js",
+    "three/addons/postprocessing/UnrealBloomPass.js": "./vendor/three-0.184.0/examples/jsm/postprocessing/UnrealBloomPass.js",
+    "three/addons/postprocessing/OutputPass.js": "./vendor/three-0.184.0/examples/jsm/postprocessing/OutputPass.js",
+    "three/addons/postprocessing/ShaderPass.js": "./vendor/three-0.184.0/examples/jsm/postprocessing/ShaderPass.js",
+    "three/addons/postprocessing/FXAAPass.js": "./vendor/three-0.184.0/examples/jsm/postprocessing/FXAAPass.js"
   },
   "integrity": {
     "./vendor/three-0.184.0/build/three.module.js": "sha384-8FCZ1eVO6it4+pbec2aDtnTrwjWXZLJRC+MAGCIPDgsYnUrl/E0A2YlF8ioMKI/J",
@@ -18,7 +22,16 @@
     "./vendor/three-0.184.0/examples/jsm/exporters/GLTFExporter.js": "sha384-VofkvpG6HERhFCYbsUOHeNXBCqID2nfqkQqnVzE1jc/oPcz+qJ13ADdXH08hE+cQ",
     "./vendor/three-0.184.0/examples/jsm/loaders/GLTFLoader.js": "sha384-3CnKaFWE2emo2DOUQi/yFm4SMemUgSZ9IAJe/V2pyJTw9KXWYSmR0MiX/7RoPyiJ",
     "./vendor/three-0.184.0/examples/jsm/utils/BufferGeometryUtils.js": "sha384-7hDmXj1Pzh+247/oGQWqojXH2XGbc0fOGrcNmbi5ly2QK0IC1ouPa/niSKBka6nl",
-    "./vendor/three-0.184.0/examples/jsm/utils/SkeletonUtils.js": "sha384-Pozn8j5+YFr3ak8Pm90ayqDrGYn/DV7vVs/YIIqzJhzeJT0LQksoS1fZQ5lfsYlw"
+    "./vendor/three-0.184.0/examples/jsm/utils/SkeletonUtils.js": "sha384-Pozn8j5+YFr3ak8Pm90ayqDrGYn/DV7vVs/YIIqzJhzeJT0LQksoS1fZQ5lfsYlw",
+    "./vendor/three-0.184.0/examples/jsm/postprocessing/Pass.js": "sha384-927X5fcqlqKPsXZV1w3tv5BZx797OXX3D/TDJk0FHwJd12z58B5aqS77g5LZoprI",
+    "./vendor/three-0.184.0/examples/jsm/postprocessing/UnrealBloomPass.js": "sha384-HZL+5ILFcHlBFu9mQNWD9y0+a1Soe3WyoO6G350cB6WhhmkttNSftznMx5wP2QWd",
+    "./vendor/three-0.184.0/examples/jsm/postprocessing/OutputPass.js": "sha384-3IFYrRLOw90S3gt5Xi3JVTJrETpklthjLSmnmeyqxQmh1knUIaGPwbRsk35kgNoW",
+    "./vendor/three-0.184.0/examples/jsm/postprocessing/ShaderPass.js": "sha384-0DjIyth2/18aCmCo4x7GEOqSJTu3uNx5ptRg+rlkZ7zs9MlNfUXVEhbUuzVzglaG",
+    "./vendor/three-0.184.0/examples/jsm/postprocessing/FXAAPass.js": "sha384-CrJQKsgMW3KYQLZSb2ePYOt/LHDsTg0ozmjIrNjXm0t5UeTiTw9ceyrvpdbSR4gb",
+    "./vendor/three-0.184.0/examples/jsm/shaders/CopyShader.js": "sha384-Hxod3deUgRexb42wOr+7J8ySu/QNr1oXlCfY9bivrSKBseng+R34eirHq/Rvvxee",
+    "./vendor/three-0.184.0/examples/jsm/shaders/LuminosityHighPassShader.js": "sha384-pJrfb1+CmauCtIjocA5YIJaosvBlTpTYBJLn6km9pktlMGoyTXhviuXjgzV2jcns",
+    "./vendor/three-0.184.0/examples/jsm/shaders/OutputShader.js": "sha384-7B5u2okAR4bArb4emcYnTiZPFpV3wPNvV3ZY9xre0xp3cNKs2TeaYiOyMDa/bDAi",
+    "./vendor/three-0.184.0/examples/jsm/shaders/FXAAShader.js": "sha384-6cc/cezSIrcisjAF9qPbr5UZUum+Ydjxv40YtryKSy8PvjvtJ6eW+k4Af6iOe5Nw"
   }
 }
 </script>
@@ -39,7 +52,7 @@ a{color:inherit} a:hover{opacity:.8}
 #back{position:fixed;left:20px;top:18px;font-size:13px;text-decoration:none;background:rgba(0,0,0,.35);padding:7px 11px;border-radius:8px;backdrop-filter:blur(6px)}
 #keys{left:50%;top:22px;transform:translateX(-50%);font-size:12px;opacity:.8;letter-spacing:.02em;text-align:center;max-width:calc(100vw - 420px);transition:opacity .8s}
 @media (max-width:900px){#keys{display:none}}
-#start{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,14,20,.45);backdrop-filter:blur(3px);cursor:pointer}
+#start{position:fixed;inset:0;display:flex;align-items:flex-end;justify-content:flex-start;padding:24px;box-sizing:border-box;background:linear-gradient(to top right,rgba(10,14,20,.7),transparent 60%);cursor:pointer}
 #start .card{background:rgba(18,20,24,.88);padding:28px 32px;border-radius:14px;display:flex;flex-direction:column;gap:16px;max-width:360px}
 #start h1{margin:0;font-size:26px;font-weight:600}
 #start dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 18px;font-size:14px}

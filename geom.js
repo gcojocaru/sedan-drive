@@ -85,11 +85,19 @@ export function runs(g, ok) { // split a polyline into the pieces whose segment 
 export function openRing(r) { const o = []; for (const p of r) if (!o.length || !same(o[o.length - 1], p)) o.push(p); if (o.length > 1 && same(o[0], o[o.length - 1])) o.pop(); return o; }
 export function signedArea(r) { let s = 0; for (let i = 0, j = r.length - 1; i < r.length; j = i++) s += r[j][0] * r[i][1] - r[i][0] * r[j][1]; return s / 2; }
 // an open ring with every edge moved outward by d (inward when d < 0); corners are mitred, the mitre capped at 2|d|
+// d: metres for every edge, or a list with one per edge (edge i runs from r[i] to r[i + 1]; 0 leaves it in place)
 export function offsetRing(r, d) {
   const n = r.length, k = signedArea(r) > 0 ? 1 : -1, N = r.map((a, i) => { const b = r[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) || 1; return [k * dz / L, -k * dx / L]; });
   return r.map((p, i) => {
-    const A = N[(i + n - 1) % n], B = N[i], mx = A[0] + B[0], mz = A[1] + B[1], c = 1 + A[0] * B[0] + A[1] * B[1]; // c = |m|² / 2
-    const s = c < 0.5 ? 2 * d / Math.sqrt(2 * c || 1) : d / c;
+    const A = N[(i + n - 1) % n], B = N[i], da = d[(i + n - 1) % n] ?? d, db = d[i] ?? d;
+    if (da !== db) { // where the two moved edges cross (capped at 2d like a mitre), or halfway when they are nearly in line
+      const det = A[0] * B[1] - A[1] * B[0];
+      if (Math.abs(det) < 0.2) return [p[0] + (A[0] * da + B[0] * db) / 2, p[1] + (A[1] * da + B[1] * db) / 2];
+      const x = (da * B[1] - A[1] * db) / det, z = (A[0] * db - da * B[0]) / det, s = Math.min(1, 2 * Math.max(Math.abs(da), Math.abs(db)) / Math.hypot(x, z));
+      return [p[0] + x * s, p[1] + z * s];
+    }
+    const mx = A[0] + B[0], mz = A[1] + B[1], c = 1 + A[0] * B[0] + A[1] * B[1]; // c = |m|² / 2
+    const s = c < 0.5 ? 2 * da / Math.sqrt(2 * c || 1) : da / c;
     return [p[0] + mx * s, p[1] + mz * s];
   });
 }
@@ -229,4 +237,16 @@ export function pointGrid(points, cell = 4) {
       return false;
     }
   };
+}
+// A buffer of separate triangles (B.p: x, y, z per vertex, plus per-vertex attributes in `sizes` that it has) split into
+// square tiles `size` m wide by each triangle's centre: Map(tile key → buffer of the same shape). One mesh per tile lets
+// the renderer skip the tiles out of view and out of the shadow box, instead of drawing the whole area every pass.
+export function splitByTile(B, size, sizes = { p: 3, n: 3, c: 3, uv: 2, f: 2 }) {
+  const out = new Map(), keys = Object.keys(sizes).filter(k => B[k]?.length);
+  for (let t = 0, n = B.p.length / 9; t < n; t++) {
+    const p = B.p, i = t * 9, k = gkey(Math.floor((p[i] + p[i + 3] + p[i + 6]) / 3 / size), Math.floor((p[i + 2] + p[i + 5] + p[i + 8]) / 3 / size));
+    let T = out.get(k); if (!T) out.set(k, T = Object.fromEntries(keys.map(a => [a, []])));
+    for (const a of keys) { const w = 3 * sizes[a]; for (let j = t * w; j < t * w + w; j++) T[a].push(B[a][j]); }
+  }
+  return out;
 }

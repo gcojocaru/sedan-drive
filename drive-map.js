@@ -8,12 +8,14 @@ import { drivingAudio } from './driving-audio.js';
 import { crossedEdge, nextArea, cooldownSeconds, startCooldown, visitArea, cooldownButton, edgePrompt } from './area-travel.js';
 import { buildCar } from './sedan-model.js';
 import { readKeys, rigCar, repaint, step, syncCar, chaseCamera, speedHud } from './drive-core.js';
-import { readGarage, readWallet, earn, buy, carTuning } from './garage.js';
+import { readGarage, readWallet, earn, buy, carTuning, price, UPGRADES, PAINTS } from './garage.js';
 import { garagePanel } from './garage-panel.js';
 import { loadVaz } from './vaz-model.js';
 import { HALF, snap } from './osm-query.js';
 import { FALLBACK_CREDIT } from './vector-fallback.js';
 import { loadArea } from './map-data.js';
+import { FEATURED, readRecent, addRecent, surprise } from './places.js';
+import { nextHint, readShown } from './hints.js';
 import { buildWorld, TYPE_LABEL, HARD } from './world.js';
 import { blobTex } from './world-kit.js';
 import { pointGrid } from './geom.js';
@@ -31,6 +33,12 @@ import { trafficLights } from './traffic-lights.js';
 import { walkGraph, createPedestrians, PEOPLE } from './pedestrians.js';
 import { pedestrianFigures } from './pedestrian-figures.js';
 import { showAppVersion } from './app-version.js';
+import { perfHud } from './perf-hud.js';
+import { mergeStatic } from './car-merge.js';
+import { postFx } from './post-fx.js';
+import { carProbe } from './car-probe.js';
+import { carFx } from './car-fx.js';
+import { QUALITY, pickQuality, pixelRatio, dynamicRes } from './quality.js';
 
 showAppVersion();
 
@@ -39,7 +47,11 @@ const $ = id => document.getElementById(id);
 const LS_PLACE = 'sedan-map-last-place-v1';
 const LS_CAR = 'sedan-map-car-v1'; // 'sedan' or 'vaz'
 const LS_TRAFFIC = 'sedan-map-traffic-v1'; // index into LEVELS
+const LS_HINTS = 'sedan-map-hints-v1'; // the just-in-time hints already shown (hints.js ids)
+const LS_RECENT = 'sedan-map-recent-v1'; // the last places driven: [{ lat, lon, name }] (places.js)
 const LS_PEOPLE = 'sedan-map-people-v1'; // index into PEOPLE (pedestrians.js)
+const LS_PERF = 'sedan-perf-v1'; // performance stats shown (true / false); both drive pages
+const LS_QUALITY = 'sedan-quality-v1'; // graphics: 'auto' or an index into QUALITY (quality.js); both drive pages
 const LS_WALLET = 'sedan-map-wallet-v1'; // { cash, earned, jobs }: delivery money to spend, all earned, deliveries made
 const LS_GARAGE = 'sedan-map-garage-v1'; // what the garage fitted: { levels, paints, paint } (garage.js)
 const LS_EARNED = 'sedan-map-earnings-v1'; // before the garage: { total, jobs }, only read to start the wallet
@@ -107,6 +119,12 @@ function showPicker() {
   }
   map.on('click', e => { choose(e.latlng.lat, e.latlng.lng); if (map.getZoom() < 14) map.setView(e.latlng, 15); });
   if (last) choose(last.lat, last.lon, last.name);
+  // one click to a place: featured city centres, a surprise, the player's recent places
+  let recent = []; try { recent = readRecent(JSON.parse(localStorage.getItem(LS_RECENT))); } catch { }
+  const jump = (lat, lon, name) => { map.setView([lat, lon], 15); choose(lat, lon, name); };
+  const chip = (label, fn, cls = '') => { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip ' + cls; b.textContent = label; b.onclick = fn; return b; };
+  $('featured').append(chip('Surprise me', () => { const [n, la, lo] = surprise(Math.random(), last); jump(la, lo, n); }, 'surprise'), ...FEATURED.map(([n, la, lo]) => chip(n.split(' · ')[0], () => jump(la, lo, n))));
+  $('recentK').hidden = !recent.length; $('recent').append(...recent.map(p => chip((p.name || p.lat.toFixed(3) + ', ' + p.lon.toFixed(3)).split(',')[0], () => jump(p.lat, p.lon, p.name))));
   $('searchForm').addEventListener('submit', async e => {
     e.preventDefault();
     const q = $('q').value.trim(); if (!q) return;
@@ -124,7 +142,7 @@ function showPicker() {
     if (!chosen || go.disabled) return;
     go.disabled = true;
     if (!chosen.name) { go.textContent = 'Finding the address…'; chosen.name = await reverseName(chosen.lat, chosen.lon); }
-    localStorage.setItem(LS_PLACE, JSON.stringify(chosen));
+    localStorage.setItem(LS_PLACE, JSON.stringify(chosen)); try { localStorage.setItem(LS_RECENT, JSON.stringify(addRecent(recent, chosen))); } catch { }
     location.hash = chosen.lat.toFixed(4) + ',' + chosen.lon.toFixed(4) + '|' + encodeURIComponent(chosen.name);
     location.reload();
   });
@@ -162,28 +180,31 @@ async function startGame(lat0, lon0, placeName, corner) {
   const terrainRequest = snapshot?.terrain ?? loadTerrain(lat0, lon0);
   const liveReq = corner ? null : weatherNow(lat0, lon0, fetch).catch(e => (console.warn('No live weather', e), null)); // while the map loads
   await say('Checking for a saved map…');
-  const { data, err, fallback } = snapshot ?? await loadArea(lat0, lon0, say);
+  const { data, err, fallback, full } = snapshot ?? await loadArea(lat0, lon0, say);
   if (!data) {
     showLoadError('The map servers could not load this area' + (err ? ' (' + err.message + ')' : '') + '.', visit);
     return;
   }
 
   // ---- renderer / scene ----
-  const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
-  renderer.setSize(innerWidth, innerHeight);
+  let qPick = 'auto'; try { qPick = JSON.parse(localStorage.getItem(LS_QUALITY)) ?? 'auto'; } catch { }
+  const coarse = matchMedia('(pointer: coarse)').matches, Q = QUALITY[pickQuality(qPick, { coarse, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory })];
+  const renderer = new THREE.WebGLRenderer({ antialias: Q.msaa && !Q.post, logarithmicDepthBuffer: true }); // (with post-processing the HDR target antialiases)
+  let resScale = 1, fx = null; const fit = () => { renderer.setPixelRatio(pixelRatio(Q, devicePixelRatio, innerWidth, innerHeight, resScale)); renderer.setSize(innerWidth, innerHeight); fx?.setSize(); };
+  fit(); const resTick = dynamicRes(s => { resScale = s; fit(); }); // slow frames lower the resolution a little, smooth ones win it back
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
   document.body.prepend(renderer.domElement);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 5000);
+  fx = postFx(renderer, scene, camera, Q); const draw = () => fx ? fx.render() : renderer.render(scene, camera); // glow and colour grade (post-fx.js), or straight to the screen on Low
 
   await say('Preparing terrain…');
   const [terrain] = await Promise.all([terrainRequest, cloudReady]);
-  const sky = createSky(renderer, scene, lat0, undefined, terrain.height), { TIMES, NIGHT } = sky;
+  const sky = createSky(renderer, scene, lat0, Q, undefined, terrain.height), { TIMES, NIGHT } = sky;
 
-  const { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint } = await buildWorld(data.elements, lat0, lon0, scene, say, terrain, corner?.finishCorner);
+  const { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint, lampLight } = await buildWorld(data.elements, lat0, lon0, scene, say, terrain, Q, corner?.finishCorner);
 
   // ---- car ----
   await say('Placing the car…');
@@ -195,13 +216,13 @@ async function startGame(lat0, lon0, placeName, corner) {
   const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), probe = new THREE.Sphere(V(), 3); // what the camera sees: traffic comes and goes out of sight
   const graph = laneGraph(roads, layout.junctions, HALF, signalPts), lightsView = trafficLights(scene, graph.signals, glowTex, driveHeight);
   const props = pointGrid(posts.concat(graph.signals.map(s => [s.x, s.z, 0.25, 0, 3.6]))), occluded = (x, z, y) => inBuilding(x, z, y) || props.near(x, z, y, 0.4); // what the chase camera pulls in front of
-  const seen = (x, z) => frustum.intersectsSphere((probe.center.set(x, driveHeight(x,z)+1, z), probe)), coarse = matchMedia('(pointer: coarse)').matches;
-  const traffic = createTraffic(graph, { max: coarse ? 45 : 100, seen });
+  const seen = (x, z) => frustum.intersectsSphere((probe.center.set(x, driveHeight(x,z)+1, z), probe));
+  const traffic = createTraffic(graph, { max: Q.cars, seen });
   const trafficView = trafficCars(scene, 100, glowTex, driveHeight), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
   // shortcut: the VAZ's factory paint is a texture, so it isn't avoided; sample its colour if traffic copies it
   const avoidMine = () => { const c = CAR.paint && !CAR.paint.map ? CAR.paint.color : null; trafficView.avoid(c); parkedPaint(c); }; avoidMine(); // no other car wears the player's paint
   const walks = walkGraph(roads, paths, layout.junctions, { armBack: graph.armBack, roadAt, crossings: crossPts }); // sidewalks, crossings, footways
-  const people = createPedestrians(walks, { max: coarse ? 90 : 280, half: HALF, seen }), figures = pedestrianFigures(scene, coarse ? 90 : 280, driveHeight);
+  const people = createPedestrians(walks, { max: Q.people, half: HALF, seen }), figures = pedestrianFigures(scene, Q.people, driveHeight);
   const ear = { x: 0, z: 0, fx: 1, fz: 0, vx: 0, vz: 0, wet: 0, snow: 0, me }, look = V(0, 0, 0); // the camera, listening to the traffic
   const SOLID = { bld: 'wall', car: 'car', traffic: 'car', post: 'post' }; // what blocked() hits → its crash sound
   let hitCar = null, hitPerson = null; // the traffic car and the pedestrian blocked() last found
@@ -215,6 +236,9 @@ async function startGame(lat0, lon0, placeName, corner) {
   const headGlow = glowMat(0xfff1dc), tailGlow = glowMat(0xff2a1a), tails = [];
   for (const l of CAR.lights.low) { const s = new THREE.Sprite(headGlow); s.position.copy(l.position).add(V(0.12, 0, 0)); s.scale.setScalar(1.1); car.add(s); }
   car.updateMatrixWorld(true); car.traverse(o => { if (o.isMesh && o.name === 'tail_brake') tails.push(new THREE.Box3().setFromObject(o).getCenter(V())); });
+  mergeStatic(car); // the car's still parts in a few draw calls (after the lookups above)
+  const reflect = carProbe(renderer, scene, car, Q.probe); // the car reflects the street around it
+  const carfx = carFx(scene, Q, driveHeight); // tyre smoke, skid marks, spray and sparks
   for (const c of tails) { const s = new THREE.Sprite(tailGlow); s.position.copy(car.worldToLocal(c)).add(V(-0.1, 0, 0)); s.scale.setScalar(0.6); car.add(s); }
 
   const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0, slip: 0 };
@@ -275,6 +299,8 @@ async function startGame(lat0, lon0, placeName, corner) {
   const peopleSel = $('peopleSel'), storedPeople = Number(localStorage.getItem(LS_PEOPLE) ?? 2);
   peopleSel.append(...PEOPLE.map(([name], i) => new Option(name, i)));
   peopleSel.value = PEOPLE[storedPeople] ? storedPeople : 2;
+  const gfxSel = $('gfxSel'); gfxSel.append(new Option('Auto (' + QUALITY[pickQuality('auto', { coarse, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory })].name + ')', 'auto'), ...QUALITY.map((q, i) => new Option(q.name, i)));
+  gfxSel.value = String(qPick); gfxSel.onchange = () => { localStorage.setItem(LS_QUALITY, JSON.stringify(gfxSel.value === 'auto' ? 'auto' : +gfxSel.value)); visitArea({ lat: lat0, lon: lon0, name: placeName, entry: pose() }); }; // (antialias is fixed when the renderer is made: reload here)
   peopleSel.onchange = () => { localStorage.setItem(LS_PEOPLE, peopleSel.value); people.setLevel(+peopleSel.value, st.pos.x, st.pos.z); };
   people.setLevel(+peopleSel.value, st.pos.x, st.pos.z);
   function showTime(announce) { // local clock time, also for the presets (they are set in solar time)
@@ -285,7 +311,8 @@ async function startGame(lat0, lon0, placeName, corner) {
   function applyTime(announce) {
     if (tSel !== NIGHT) dayIdx = tSel;
     const w = weatherOf(), ground = groundOf(w); // wet roads, snow on the ground and roofs, and how well the tyres grip
-    let e, murky; ({ night, e, lowLight, murky } = sky.set(hourOf(), tSel === NIGHT, w, ground.snow));
+    let e, murky, post; ({ night, e, lowLight, murky, post } = sky.set(hourOf(), tSel === NIGHT, w, ground.snow)); fx?.look(post);
+    camera.far = scene.fog.far + 30; // nothing past the fog shows, so nothing past it is drawn
     setGround(ground.wet, ground.snow); grip = tuning.grip(ground.grip); ear.wet = ground.wet; ear.snow = ground.snow;
     if (frontMat) frontMat.emissiveIntensity = night ? 0.60 : e < 0 ? 0.25 : 0;
     wallMat.emissiveIntensity = night ? 1.6 : e < 0 ? 0.9 : 0;
@@ -343,42 +370,59 @@ async function startGame(lat0, lon0, placeName, corner) {
     repaint(CAR, tuning.paint); avoidMine(); applyTime(); // (engine and brakes: TUNE, each frame; tyres: the grip)
     showWallet(); shop.draw(garage, wallet);
   });
-  function openGarage() { if (paused()) return; clearKeys(); shop.draw(garage, wallet); garageEl.showModal(); }
+  function openGarage() { if (paused()) return; hint.garageSeen = true; clearKeys(); shop.draw(garage, wallet); garageEl.showModal(); }
   $('garageButton').onclick = () => { openGarage(); $('garageButton').blur(); };
+  let scraping = false; // sliding along something solid (car-fx sparks it)
+  // just-in-time hints (hints.js): what the player is doing, and the ones already shown
+  const hint = { t: 0, stuck: 0, offRoad: 0, idle: 0, since: 25, check: 0, garageSeen: false, shown: readShown(stored(LS_HINTS)) };
+  const cheapest = () => Math.min(...[...Object.keys(UPGRADES), ...PAINTS.map(p => p[0])].map(i => price(garage, i)).filter(p => p > 0));
+  function hints(dt, k, onHard) {
+    Object.assign(hint, { t: hint.t + dt, since: hint.since + dt, stuck: k.up && Math.abs(st.v) < 0.5 ? hint.stuck + dt : 0, offRoad: onHard ? 0 : hint.offRoad + dt, idle: delivery.target ? 0 : hint.idle + dt });
+    if ((hint.check += dt) < 1) return; hint.check = 0;
+    const h = nextHint({ ...hint, dark: lowLight, headlights: head, job: !!delivery.target, jobs: wallet.jobs, cash: wallet.cash, cheapest: cheapest(), touch: document.documentElement.classList.contains('touch-ui') }, hint.shown, hint.since);
+    if (h) { flash(h.text, '', 'hint'); hint.shown.push(h.id); keep(LS_HINTS, hint.shown); hint.since = 0; }
+  }
   function update(dt, p) {
     const k = readKeys(keys, p), was = [st.pos.x, st.pos.z], ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
     const cargo = delivery.cargo; // a heavy load takes some of the engine and the brakes
     TUNE.power = 7.4 * tuning.power * (cargo?.power ?? 1); TUNE.brake = tuning.brake * (cargo?.brake ?? 1);
+    let contact = null; // what the move ran into first (blocked() also sets hitCar / hitPerson)
     const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard, grip, height: driveHeight }, TUNE, (nx, nz, nh) => {
       const hit = blocked(nx, nz, nh);
-      boundary.move(st.pos.x, st.pos.z);
-      if (hit === 'person') { // they stumble out of the way; the car pulls up
-        const imp = Math.abs(st.v), fresh = hitPerson.state !== 'stagger';
-        people.bump(hitPerson, st.pos.x, st.pos.z); st.v *= 0.2; sound.impact(imp, 'person');
-        if (fresh && imp > 2 && !delivery.knocked()) flash('Watch out!', 'bad');
-      }
-      else if (SOLID[hit]) {
-        const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20);
-        sound.impact(imp, SOLID[hit]); pad.crash(imp); if (hit === 'traffic' && imp > 2) sound.honkAt(hitCar, ear); // and the other driver lets you know
+      if (hit && !contact) contact = { hit, other: hitCar, person: hitPerson };
+      return !hit ? false : SOLID[hit] ? true : 'stop'; // solids can be glanced off; people and the area's edge stop the car
+    });
+    boundary.move(st.pos.x, st.pos.z);
+    if (contact?.hit === 'person') { // they stumble out of the way; the car pulls up
+      const { person } = contact, fresh = person.state !== 'stagger';
+      people.bump(person, st.pos.x, st.pos.z); st.v *= 0.2; sound.impact(s.impact, 'person');
+      if (fresh && s.impact > 2 && !delivery.knocked()) flash('Watch out!', 'bad');
+    }
+    else if (SOLID[contact?.hit]) {
+      const imp = s.impact; if (s.blocked) st.v = -st.v * 0.25; // head-on: bounce back; glancing: the car slides along
+      if (s.blocked || !scraping) { // a new hit (sliding along a wall doesn't count again every frame)
+        shake = Math.min(1, imp / 20); sound.impact(imp, SOLID[contact.hit]); pad.crash(imp); carfx.spark(st, imp);
+        if (contact.hit === 'traffic' && imp > 2) sound.honkAt(contact.other, ear); // and the other driver lets you know
         delivery.crash(imp, tuning.cushion);
       }
-      else if (hit) { st.v = 0; boundary.offer(hit); } // the edge of the area
-      return !!hit;
-    });
+    }
+    else if (contact) { st.v = 0; boundary.offer(contact.hit); } // the edge of the area
+    scraping = !!contact && !s.blocked && SOLID[contact.hit] && Math.abs(st.v) > 1;
     if (ranRed(graph.signals, was[0], was[1], st.pos.x, st.pos.z)) delivery.ranRed();
     if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v, dt, dim);
     const ride = { hb: !paused() && k.hb, steer: st.steer, slip: st.slip, rough: !onHard, wet: ear.wet, snow: ear.snow, grip };
-    sound.update(st.v, !paused() && k.up, !paused() && k.dn, ride); pad.feel(st.v, s.braking, ride);
+    sound.update(st.v, !paused() && k.up, !paused() && k.dn, ride); pad.feel(st.v, s.braking, ride); carfx.frame(dt, st, rig.wheels, ride, s.braking, scraping); if (!paused()) hints(dt, k, onHard);
     return s;
   }
   function glows(s) {
-    headGlow.opacity = head ? (lowLight ? 0.85 : 0.25) : 0; tailGlow.opacity = s.braking ? (lowLight ? 0.9 : 0.4) : head && lowLight ? 0.35 : 0;
+    const k = fx ? 0.5 : 1; // (with post-processing the bloom already glows; the sprites only help, and none by day)
+    headGlow.opacity = head ? (lowLight ? 0.85 * k : fx ? 0 : 0.25) : 0; tailGlow.opacity = (s.braking ? (lowLight ? 0.9 : 0.4) : head && lowLight ? 0.35 : 0) * k;
   }
   function updateCam(dt) {
-    cam.update(st, camMode, dt, occluded);
+    if (started) cam.update(st, camMode, dt, occluded); else cam.orbit(st, performance.now() / 1000); // before the start: show the place round the car
     if (shake > 0.01) { camera.position.x += (Math.random() - 0.5) * shake * 0.25; camera.position.y += (Math.random() - 0.5) * shake * 0.2; shake *= Math.exp(-dt * 7); }
     sky.placeShadow(st.pos.x + Math.cos(st.h) * 45, st.pos.z - Math.sin(st.h) * 45); // the shadow box reaches further ahead of the car
-    sky.update(dt, camera.position); reflectLamps(camera.position.x, camera.position.z);
+    sky.update(dt, camera.position); reflectLamps(camera.position.x, camera.position.z); lampLight(st.pos.x, st.pos.z, dt); reflect();
   }
 
   // ---- HUD ----
@@ -403,9 +447,12 @@ async function startGame(lat0, lon0, placeName, corner) {
   $('startPlace').textContent = shownName;
   if (!start) $('startNote').textContent = 'No drivable roads were found here. You can still drive on the ground, or press M to pick another place.';
   if (fallback) {
-    $('startNote').textContent = ($('startNote').textContent + ' The OpenStreetMap servers are busy, so this is a simplified map from OpenFreeMap: no roof shapes, walls, crossings or single trees. Pick the place again later for full detail.').trim();
+    $('startNote').textContent = ($('startNote').textContent + ' The OpenStreetMap servers are slow, so you start on a simplified map from OpenFreeMap: no roof shapes, walls, crossings or single trees. The full map keeps downloading, and you can switch to it when it arrives.').trim();
     $('stats').textContent += ' · simplified map'; $('attrib').textContent += ' · ' + FALLBACK_CREDIT;
+    full?.then(ok => { if (!ok) return; $('fullMap').hidden = false; flash('Full-detail map ready · U or the Full map button to switch', 'good'); }); // (saved: a reload builds it)
   }
+  const toFullMap = () => { if ($('fullMap').hidden) return; if (delivery.target) { flash('Finish or cancel the delivery first', 'bad'); return; } visitArea({ lat: lat0, lon: lon0, name: placeName, entry: pose() }); };
+  $('fullMap').onclick = () => { $('fullMap').blur(); toFullMap(); };
 
   const dialog = $('edgeDialog'), settings = $('settings'), paused = () => dialog.open || settings.open || garageEl.open;
   const sound = drivingAudio(), pad = gamepad();
@@ -422,13 +469,17 @@ async function startGame(lat0, lon0, placeName, corner) {
     depart: visitArea
   });
   if (visit?.from) history.replaceState({ ...history.state, visit: { lat: lat0, lon: lon0, entry } }, '');
+  // The car's lamps change which shader programs every lit material needs (three.js counts only visible lights), so
+  // compile them for each lamp state now: H and N then switch programs instead of stalling a drive to compile them.
+  await say('Warming up…');
+  { const was = [head, night]; for (const [h, n] of [[false, false], [true, false], [true, true]]) { head = h; night = n; setLights(); renderer.setRenderTarget(fx?.target ?? null); await renderer.compileAsync(scene, camera).catch(() => {}); renderer.setRenderTarget(null); draw(); } /* (a render too: shadow-map programs are only made by drawing) */ [head, night] = was; setLights(); }
   load.style.display = 'none';
   $('hud').style.display = 'block';
   const startEl = $('start'); startEl.style.display = started ? 'none' : 'flex';
   const touch = () => touchControls([['Lights', 'KeyH'], ['Time', 'KeyT'], ['Weather', 'KeyE'], ['Settings', 'Escape'], ['Garage', 'KeyG'], ['Camera', 'KeyC'], ['Horn', 'KeyB'], ['Radio', 'KeyQ'], ['Sound', 'KeyV'], ['Reset', 'KeyR']]);
-  if (started) { $('keys').style.opacity = 0; touch(); } // arrived from the next area: no start screen
+  if (started) touch(); // arrived from the next area: no start screen
   function begin() {
-    sound.activate(); if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => $('keys').style.opacity = 0, 7000);
+    sound.activate(); if (started) return; started = true; startEl.style.display = 'none';
     touch();
   }
   startEl.addEventListener('click', begin);
@@ -442,6 +493,7 @@ async function startGame(lat0, lon0, placeName, corner) {
     if (e.target === $('jobButton') && ['Space','Enter'].includes(e.code)) return;
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     if (e.code === 'KeyM') { backToMap(); return; }
+    if (e.code === 'KeyU' && !e.repeat) { toFullMap(); return; }
     if (!e.repeat) begin();
     if (e.code === 'KeyB') sound.horn(true);
     keys[e.code] = true; if (e.repeat) return;
@@ -458,22 +510,27 @@ async function startGame(lat0, lon0, placeName, corner) {
   });
   addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyB') sound.horn(false); });
   addEventListener('blur', () => { clearKeys(); sound.horn(false); });
-  addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+  addEventListener('resize', () => { fit(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
   let last = performance.now(), lastS = { braking: false, reversing: false };
+  const perf = perfHud(renderer, () => Q.name + ' · pixel ratio ' + renderer.getPixelRatio().toFixed(2), localStorage.getItem(LS_PERF) === 'true');
+  const perfChk = $('perfChk'), keepPerf = on => { perfChk.checked = on; localStorage.setItem(LS_PERF, on); };
+  perfChk.checked = perf.isOn(); perfChk.onchange = () => { perf.show(perfChk.checked); keepPerf(perfChk.checked); }; perf.onToggle(keepPerf);
   renderer.setAnimationLoop(now => {
-    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const t0 = performance.now(), lap = perf.lap; perf.begin();
+    if (document.hasFocus()) resTick(now - last); /* (an unfocused window may be held at 30 fps: not a slow GPU) */ const dt = Math.min(0.05, (now - last) / 1000); last = now;
     const p = pad.poll(); if (p?.thr && !started && !paused()) begin(); // (its buttons start the game through their keys)
     if (started && !paused()) lastS = update(dt, p);
+    lap('drive');
     if (!paused()) {
       frustum.setFromProjectionMatrix(view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
       Object.assign(me, { x: st.pos.x, z: st.pos.z, h: st.h, v: st.v });
-      people.step(dt, me, traffic.cars, graph.signals); traffic.step(dt, me, people.crossing); // (traffic keeps from the people in the road)
+      people.step(dt, me, traffic.cars, graph.signals); lap('people'); traffic.step(dt, me, people.crossing); lap('traffic'); // (traffic keeps from the people in the road)
     }
-    trafficView.sync(traffic.cars, dim, camera.position); lightsView.sync(dim); figures.sync(people.people);
+    trafficView.sync(traffic.cars, dim, camera.position); lightsView.sync(dim); figures.sync(people.people); lap('sync');
     camera.getWorldDirection(look); const flat = Math.hypot(look.x, look.z) || 1;
     Object.assign(ear, { x: camera.position.x, z: camera.position.z, fx: look.x / flat, fz: look.z / flat, vx: Math.cos(st.h) * st.v, vz: -Math.sin(st.h) * st.v });
-    sound.traffic(traffic.cars, ear);
-    syncCar(rig, st, lastS, head, driveHeight); glows(lastS); updateCam(dt); hud(lastS, dt);
-    renderer.render(scene, camera);
+    sound.traffic(traffic.cars, ear); lap('sound');
+    syncCar(rig, st, lastS, head, driveHeight); glows(lastS); updateCam(dt); lap('camera'); hud(lastS, dt); lap('hud');
+    draw(); lap('render'); perf(t0);
   });
 }

@@ -8,7 +8,11 @@
     "three/addons/controls/OrbitControls.js": "./vendor/three-0.184.0/examples/jsm/controls/OrbitControls.js",
     "three/addons/exporters/OBJExporter.js": "./vendor/three-0.184.0/examples/jsm/exporters/OBJExporter.js",
     "three/addons/exporters/GLTFExporter.js": "./vendor/three-0.184.0/examples/jsm/exporters/GLTFExporter.js",
-    "three/addons/loaders/GLTFLoader.js": "./vendor/three-0.184.0/examples/jsm/loaders/GLTFLoader.js"
+    "three/addons/loaders/GLTFLoader.js": "./vendor/three-0.184.0/examples/jsm/loaders/GLTFLoader.js",
+    "three/addons/postprocessing/UnrealBloomPass.js": "./vendor/three-0.184.0/examples/jsm/postprocessing/UnrealBloomPass.js",
+    "three/addons/postprocessing/OutputPass.js": "./vendor/three-0.184.0/examples/jsm/postprocessing/OutputPass.js",
+    "three/addons/postprocessing/ShaderPass.js": "./vendor/three-0.184.0/examples/jsm/postprocessing/ShaderPass.js",
+    "three/addons/postprocessing/FXAAPass.js": "./vendor/three-0.184.0/examples/jsm/postprocessing/FXAAPass.js"
   },
   "integrity": {
     "./vendor/three-0.184.0/build/three.module.js": "sha384-8FCZ1eVO6it4+pbec2aDtnTrwjWXZLJRC+MAGCIPDgsYnUrl/E0A2YlF8ioMKI/J",
@@ -18,7 +22,16 @@
     "./vendor/three-0.184.0/examples/jsm/exporters/GLTFExporter.js": "sha384-VofkvpG6HERhFCYbsUOHeNXBCqID2nfqkQqnVzE1jc/oPcz+qJ13ADdXH08hE+cQ",
     "./vendor/three-0.184.0/examples/jsm/loaders/GLTFLoader.js": "sha384-3CnKaFWE2emo2DOUQi/yFm4SMemUgSZ9IAJe/V2pyJTw9KXWYSmR0MiX/7RoPyiJ",
     "./vendor/three-0.184.0/examples/jsm/utils/BufferGeometryUtils.js": "sha384-7hDmXj1Pzh+247/oGQWqojXH2XGbc0fOGrcNmbi5ly2QK0IC1ouPa/niSKBka6nl",
-    "./vendor/three-0.184.0/examples/jsm/utils/SkeletonUtils.js": "sha384-Pozn8j5+YFr3ak8Pm90ayqDrGYn/DV7vVs/YIIqzJhzeJT0LQksoS1fZQ5lfsYlw"
+    "./vendor/three-0.184.0/examples/jsm/utils/SkeletonUtils.js": "sha384-Pozn8j5+YFr3ak8Pm90ayqDrGYn/DV7vVs/YIIqzJhzeJT0LQksoS1fZQ5lfsYlw",
+    "./vendor/three-0.184.0/examples/jsm/postprocessing/Pass.js": "sha384-927X5fcqlqKPsXZV1w3tv5BZx797OXX3D/TDJk0FHwJd12z58B5aqS77g5LZoprI",
+    "./vendor/three-0.184.0/examples/jsm/postprocessing/UnrealBloomPass.js": "sha384-HZL+5ILFcHlBFu9mQNWD9y0+a1Soe3WyoO6G350cB6WhhmkttNSftznMx5wP2QWd",
+    "./vendor/three-0.184.0/examples/jsm/postprocessing/OutputPass.js": "sha384-3IFYrRLOw90S3gt5Xi3JVTJrETpklthjLSmnmeyqxQmh1knUIaGPwbRsk35kgNoW",
+    "./vendor/three-0.184.0/examples/jsm/postprocessing/ShaderPass.js": "sha384-0DjIyth2/18aCmCo4x7GEOqSJTu3uNx5ptRg+rlkZ7zs9MlNfUXVEhbUuzVzglaG",
+    "./vendor/three-0.184.0/examples/jsm/postprocessing/FXAAPass.js": "sha384-CrJQKsgMW3KYQLZSb2ePYOt/LHDsTg0ozmjIrNjXm0t5UeTiTw9ceyrvpdbSR4gb",
+    "./vendor/three-0.184.0/examples/jsm/shaders/CopyShader.js": "sha384-Hxod3deUgRexb42wOr+7J8ySu/QNr1oXlCfY9bivrSKBseng+R34eirHq/Rvvxee",
+    "./vendor/three-0.184.0/examples/jsm/shaders/LuminosityHighPassShader.js": "sha384-pJrfb1+CmauCtIjocA5YIJaosvBlTpTYBJLn6km9pktlMGoyTXhviuXjgzV2jcns",
+    "./vendor/three-0.184.0/examples/jsm/shaders/OutputShader.js": "sha384-7B5u2okAR4bArb4emcYnTiZPFpV3wPNvV3ZY9xre0xp3cNKs2TeaYiOyMDa/bDAi",
+    "./vendor/three-0.184.0/examples/jsm/shaders/FXAAShader.js": "sha384-6cc/cezSIrcisjAF9qPbr5UZUum+Ydjxv40YtryKSy8PvjvtJ6eW+k4Af6iOe5Nw"
   }
 }
 </script>
@@ -45,6 +58,9 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 #searchForm input:focus{border-color:rgba(255,255,255,.45)}
 #searchForm button{padding:10px 14px;background:rgba(255,255,255,.14)}
 #searchMsg:empty{display:none}
+.places{display:flex;flex-direction:column;gap:6px} .chips{display:flex;flex-wrap:wrap;gap:6px}
+#picker .chip{font-size:12.5px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.1);font-weight:500} #picker .chip:hover{background:rgba(255,255,255,.2)}
+#picker .chip.surprise{background:#c8102e;font-weight:600} #picker .chip.surprise:hover{background:#a80d26}
 #car{font:inherit;font-size:14px;padding:6px 8px;border-radius:7px;border:1px solid rgba(255,255,255,.18);background:#2a2d33;color:#fff}
 .chosen{display:flex;flex-direction:column;gap:4px;font-size:14px;padding:12px;border-radius:9px;background:rgba(255,255,255,.06)}
 .k{opacity:.6;text-transform:uppercase;font-size:11px;letter-spacing:.08em}
@@ -139,7 +155,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 #stats{font-size:12px;opacity:.8}
 #tod{font-size:13px;font-weight:600}
 #changePlace{font-size:13px;padding:7px 11px;border-radius:8px;background:rgba(0,0,0,.4);backdrop-filter:blur(6px);font-weight:500}
-#jobButton,#garageButton{font-size:13px;min-height:36px;padding:7px 12px;background:#1b3739;color:#c5fff2;border:1px solid #76c7b7}
+#jobButton,#garageButton,#fullMap{font-size:13px;min-height:36px;padding:7px 12px;background:#1b3739;color:#c5fff2;border:1px solid #76c7b7}
 #jobButton:hover,#garageButton:hover{background:#294c4d}
 .garage-cash{margin:10px 0 4px;color:#dbe6e2;font-size:14px} .garage-cash strong{color:#ffbd66;font-size:18px}
 .garage-item{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid #33464a}
@@ -160,10 +176,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 #jobStatus strong,#jobStatus small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #jobStatus strong{font-size:13px} #jobStatus small{color:#a6efdf;font-size:12px;margin-top:3px}
 #jobStatus.late{border-right-color:#ff8a6b} #jobStatus.late small{color:#ffc1ad}
-#wallet{font-size:12px;color:#c5fff2}
-#back{position:fixed;left:20px;top:18px;font-size:13px;text-decoration:none;background:rgba(0,0,0,.4);padding:7px 11px;border-radius:8px;backdrop-filter:blur(6px)}
-#keys{left:50%;top:22px;transform:translateX(-50%);font-size:12px;opacity:.85;text-align:center;max-width:calc(100vw - 520px);transition:opacity .8s}
-@media (max-width:1000px){#keys{display:none}}
+#wallet{font-size:13px;color:#c5fff2;font-weight:600}
 #mapHud{position:fixed;right:8px;bottom:6px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}
 #attrib,#terrainCredit,#wxCredit{pointer-events:auto;font-size:11px;opacity:.85;background:rgba(0,0,0,.35);padding:3px 7px;border-radius:5px;text-decoration:none}
 #minimap{position:relative;margin-right:clamp(0px,1vw,12px);width:clamp(142px,25vmin,196px);overflow:hidden;border:1px solid rgba(235,244,240,.6);border-radius:12px;background:#253237;box-shadow:0 2px 12px rgba(0,0,0,.35)}
@@ -175,14 +188,18 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 .touch-ui #minimap{margin-right:0;width:clamp(142px,24vmin,180px)}
 .touch-ui #street{left:50%;bottom:30px;transform:translateX(-50%);max-width:calc(100vw - 400px)}
 @media (orientation:portrait){.touch-ui #street{left:14px;bottom:186px;transform:none;max-width:calc(100vw - 28px)}}
-#start{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,14,20,.45);backdrop-filter:blur(3px);cursor:pointer;z-index:1500}
-#start .card{max-width:380px}
+#start{position:fixed;inset:0;display:none;align-items:flex-end;justify-content:flex-start;padding:24px;box-sizing:border-box;background:linear-gradient(to top right,rgba(10,14,20,.7),transparent 60%);cursor:pointer;z-index:1500}
+#start .card{max-width:380px;max-height:100%;overflow:auto} /* (bottom left, so the orbit round the car shows) */
 #start h1{margin:0;font-size:24px;font-weight:600}
 #start dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 18px;font-size:14px}
 #start dt{opacity:.65} #start dd{margin:0}
 #start p{margin:0;font-size:14px;opacity:.85;text-wrap:pretty}
 #startNote:empty{display:none}
 .setting[hidden]{display:none}
+.map-stats{font-size:13px;color:#a9bab6} .map-stats a{color:#ffbd66}
+.setting input[type=checkbox]{width:20px;height:20px;accent-color:#ffbd66;cursor:pointer}
+.controls{margin-top:16px;font-size:14px;color:#dbe6e2} .controls summary{cursor:pointer;font-size:15px;font-weight:600}
+.controls dl{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:10px 0 0} .controls dt{color:#ffbd66;white-space:nowrap} .controls dd{margin:0}
 .setting[data-app-version]{padding-top:12px;border-top:1px solid #465557}
 .setting[data-app-version] span{font-variant-numeric:tabular-nums}
 </style></head><body>
@@ -194,6 +211,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
     <p>Search for a place or click anywhere on the map. The square shows the 1 km area that will be built in 3D.</p>
     <form id="searchForm"><input id="q" placeholder="Search a place or address" autocomplete="off"><button type="submit">Search</button></form>
     <div id="searchMsg" class="small"></div>
+    <div class="places"><span class="k">Go to</span><div id="featured" class="chips"></div><span class="k" id="recentK" hidden>Recent</span><div id="recent" class="chips"></div></div>
     <div class="chosen"><span class="k">Start point</span><span id="placeInfo">Not chosen yet</span></div>
     <label class="chosen"><span class="k">Car</span><select id="car"><option value="sedan">Sedan (Logan-style)</option><option value="vaz">VAZ-2101 Zhiguli</option></select></label>
     <button id="go" disabled>Drive here</button>
@@ -226,6 +244,30 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
     <label class="setting">Weather<select id="wxSel"></select></label>
     <label class="setting">Traffic<select id="trafficSel"></select></label>
     <label class="setting">People<select id="peopleSel"></select></label>
+    <label class="setting">Graphics<select id="gfxSel"></select></label>
+    <label class="setting">Performance stats<input type="checkbox" id="perfChk"></label>
+    <details class="controls"><summary>Controls</summary>
+      <dl>
+        <dt>W / ↑</dt><dd>Accelerate</dd>
+        <dt>S / ↓</dt><dd>Brake, then reverse</dd>
+        <dt>A D / ← →</dt><dd>Steer</dd>
+        <dt>Space</dt><dd>Handbrake</dd>
+        <dt>H</dt><dd>Headlights</dd>
+        <dt>B</dt><dd>Horn (hold for a long blast)</dd>
+        <dt>C</dt><dd>Camera: chase or driver's seat</dd>
+        <dt>R</dt><dd>Back on the road</dd>
+        <dt>J · G</dt><dd>Start or cancel a delivery · garage</dd>
+        <dt>T · E · N</dt><dd>Time of day · weather · night on/off</dd>
+        <dt>Q · Shift+Q</dt><dd>Radio: next · previous station</dd>
+        <dt>V</dt><dd>Driving sounds on/off</dd>
+        <dt>M</dt><dd>Choose another place</dd>
+        <dt>Esc</dt><dd>Settings</dd>
+        <dt>Shift+P</dt><dd>Performance stats on/off</dd>
+        <dt>Gamepad</dt><dd>Left stick steers, RT gas, LT brake/reverse, A handbrake, B horn, X camera, Y reset, LB/RB radio, Back delivery, d-pad up lights</dd>
+        <dt>Touch</dt><dd>Steer on the left, gas and brake on the right; ••• for the rest</dd>
+      </dl>
+    </details>
+    <div class="setting map-stats"><span id="stats"></span><a href="Sedan.html">Model viewer</a></div>
     <div class="setting" data-app-version hidden>Game version<span></span></div>
     <div class="travel-actions"><button autofocus>Back to driving</button></div>
   </form>
@@ -238,15 +280,14 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
   </form>
 </dialog>
 <div id="hud" style="display:none">
-  <a id="back" href="Sedan.html">← Model viewer</a>
   <div class="hud" id="speed"><b id="kmh">0</b><span>km/h</span><span id="gear">N</span></div>
   <div class="hud" id="street"></div>
-  <div class="hud" id="where"><span id="place"></span><span id="stats"></span><span id="tod"></span><button id="changePlace">Change place (M)</button>
+  <div class="hud" id="where"><span id="place"></span><span id="tod"></span><button id="changePlace">Change place (M)</button>
+    <button type="button" id="fullMap" hidden>Full map ready (U)</button>
     <button type="button" id="jobButton" aria-keyshortcuts="J">Start delivery</button>
     <button type="button" id="garageButton" aria-keyshortcuts="G">Garage</button>
     <div id="jobStatus" hidden><strong id="jobStage" aria-live="polite"></strong><small id="jobDistance"></small></div>
     <small id="wallet" hidden></small></div>
-  <div class="hud" id="keys">W/↑ accelerate · S/↓ brake &amp; reverse · A/D steer · Space handbrake · H lights · B horn · T time of day · E weather · N night · C camera · Esc settings · V driving sounds · Q radio · J delivery · G garage · R back on road · M map</div>
   <div id="mapHud">
     <div id="minimap" role="img" aria-label="North-up minimap with street names, house numbers and an arrow toward the active delivery"><canvas width="360" height="360"></canvas><span class="north" aria-hidden="true">N</span></div>
     <a id="terrainCredit" hidden href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">Terrain © Mapzen and contributors</a>
@@ -258,18 +299,10 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
   <h1>Ready to drive</h1>
   <p id="startPlace"></p>
   <dl>
-    <dt>W / ↑</dt><dd>Accelerate</dd>
-    <dt>S / ↓</dt><dd>Brake, then reverse</dd>
-    <dt>A D / ← →</dt><dd>Steer</dd>
+    <dt>W A S D</dt><dd>Drive and steer (or the arrow keys)</dd>
     <dt>Space</dt><dd>Handbrake</dd>
-    <dt>H · C</dt><dd>Headlights · camera</dd>
-    <dt>T · E · N</dt><dd>Time of day · weather · night</dd>
-    <dt>Esc</dt><dd>Settings: choose the time and weather</dd>
-    <dt>V</dt><dd>Toggle driving sounds</dd>
-    <dt>Q</dt><dd>Radio: next station (Shift+Q back)</dd>
-    <dt>J</dt><dd>Start or cancel a delivery job: once the parcel is aboard the clock runs; crashes damage it and red lights cost $10</dd>
-    <dt>G</dt><dd>Garage: spend what deliveries earn on upgrades and paint</dd>
-    <dt>R · M</dt><dd>Back on the road · choose another place</dd>
+    <dt>J</dt><dd>Start a delivery and earn money</dd>
+    <dt>Esc</dt><dd>Settings and all the controls</dd>
   </dl>
   <p id="startNote"></p>
   <p style="opacity:1;font-weight:600">Tap, click or press any key to start</p>

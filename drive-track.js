@@ -7,23 +7,34 @@ import { touchControls } from './touch.js';
 import { toasts } from './toast.js';
 import { gamepad } from './gamepad.js';
 import { showAppVersion } from './app-version.js';
+import { perfHud } from './perf-hud.js';
+import { mergeStatic } from './car-merge.js';
+import { postFx } from './post-fx.js';
+import { carProbe } from './car-probe.js';
+import { carFx } from './car-fx.js';
+import { QUALITY, pickQuality, pixelRatio, dynamicRes } from './quality.js';
 import { blobTex } from './world-kit.js';
 
 showAppVersion();
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
 const C = buildCar(), rig = rigCar(C), car = C.car;
+mergeStatic(car); // the car's still parts in a few draw calls
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
-renderer.setSize(innerWidth, innerHeight);
+// graphics quality: the real-map page's setting (sedan-quality-v1), or this device's tier
+let qPick = 'auto'; try { qPick = JSON.parse(localStorage.getItem('sedan-quality-v1')) ?? 'auto'; } catch { }
+const Q = QUALITY[pickQuality(qPick, { coarse: matchMedia('(pointer: coarse)').matches, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory })];
+const renderer = new THREE.WebGLRenderer({ antialias: Q.msaa && !Q.post });
+let resScale = 1, fx = null; const fit = () => { renderer.setPixelRatio(pixelRatio(Q, devicePixelRatio, innerWidth, innerHeight, resScale)); renderer.setSize(innerWidth, innerHeight); fx?.setSize(); };
+fit(); const resTick = dynamicRes(s => { resScale = s; fit(); });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 4000);
-scene.add(car);
+fx = postFx(renderer, scene, camera, Q); // glow and colour grade (post-fx.js), or straight to the screen on Low
+scene.add(car); const reflect = carProbe(renderer, scene, car, Q.probe), carfx = carFx(scene, Q); // the car reflects what's around it
 
 // ---------- Sky + environment ----------
 function skyTex(night) {
@@ -140,7 +151,7 @@ function nearest(p, full) { let best = 1e9, bi = st.idx; const rng = full ? N : 
 placeOnTrack(N - 14);
 
 // laps
-const BEST_KEY = 'sedan-drive-best-v1';
+const BEST_KEY = 'sedan-drive-best-v2'; // (v2: grip limits from 0.7.0 changed lap times)
 let lap = { running: false, t0: 0, n: 0, cps: new Set(), last: null, best: +localStorage.getItem(BEST_KEY) || null };
 const fmt = s => s == null ? '–' : Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0');
 const flash = toasts(); // flash(text, tone, key)
@@ -161,7 +172,7 @@ const pad = gamepad();
 function update(dt, p) {
   const k = readKeys(keys, p), rough = nearest(st.pos).d > HW + 1.6, prev = st.idx;
   const s = step(st, k, dt, { vmax: rough ? 15 : 52, drag: rough ? 0.9 : 0.02, rough }, TUNE);
-  const ride = { hb: k.hb, steer: st.steer, slip: st.slip, rough }; sound.update(st.v, k.up, k.dn, ride); pad.feel(st.v, s.braking, ride);
+  const ride = { hb: k.hb, steer: st.steer, slip: st.slip, rough }; sound.update(st.v, k.up, k.dn, ride); pad.feel(st.v, s.braking, ride); carfx.frame(dt, st, rig.wheels, ride, s.braking, false);
   st.idx = nearest(st.pos).i; lapLogic(prev, st.idx);
   if (k.dn && st.v <= 0.2 && Math.abs(st.v) < 0.5) s.reversing = true; // reverse lamp on while holding brake at a standstill
   return s;
@@ -175,11 +186,11 @@ function setNight(n) {
   night = n; scene.background = n ? SKY.night : SKY.day; scene.environment = n ? ENV.night : ENV.day; scene.environmentIntensity = n ? 0.35 : 1;
   sun.intensity = n ? 0.12 : 2.8; sun.color.set(n ? 0x9fb3ff : 0xfff0d8); hemi.intensity = n ? 0.08 : 0.7;
   scene.fog.color.set(n ? 0x1a2131 : 0xdfe9ef); scene.fog.near = n ? 60 : 140; scene.fog.far = n ? 600 : 1300;
-  head = n || head; setLights();
+  head = n || head; setLights(); fx?.look({ night: n });
 }
 setNight(false);
 function updateCam(dt) {
-  cam.update(st, camMode, dt);
+  if (started) cam.update(st, camMode, dt); else cam.orbit(st, performance.now() / 1000); // before the start: round the car
   sun.position.copy(st.pos).add(SUN_OFF); sun.target.position.copy(st.pos);
 }
 const el = id => document.getElementById(id), kmh = el('kmh'), gear = el('gear'), lapT = el('lapT'), lastT = el('lastT'), bestT = el('bestT'), lapN = el('lapN');
@@ -211,13 +222,16 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyB') sound.horn(false); });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; sound.horn(false); });
-addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+addEventListener('resize', () => { fit(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
 let last = performance.now(), lastS = { braking: false, reversing: false };
+const perf = perfHud(renderer, () => Q.name + ' · pixel ratio ' + renderer.getPixelRatio().toFixed(2), localStorage.getItem('sedan-perf-v1') === 'true');
+perf.onToggle(on => localStorage.setItem('sedan-perf-v1', on));
 renderer.setAnimationLoop(now => {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const t0 = performance.now();
+  if (document.hasFocus()) resTick(now - last); /* (an unfocused window may be held at 30 fps: not a slow GPU) */ const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const p = pad.poll(); if (p?.thr && !started) begin(); // (its buttons start the game through their keys)
   if (started) { clock += dt; lastS = update(dt, p); }
   syncCar(rig, st, lastS, head); updateCam(dt); hud(lastS);
-  renderer.render(scene, camera);
+  reflect(); if (fx) fx.render(); else renderer.render(scene, camera); perf(t0);
 });
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { drivingSide, laneLayout, laneSpawn, mappedStops, prepareRoads } from '../road-layout.js';
+import { countryCode, drivingSide, laneLayout, laneSpawn, mappedStops, prepareRoads } from '../road-layout.js';
 import { overpassQuery } from '../osm-query.js';
 
 function street(g, opts = {}) {
@@ -15,6 +15,8 @@ function crossroads() {
 function near(a, b) { assert.ok(Math.abs(a - b) < 1e-8, a + ' differs from ' + b); }
 
 test('travel lanes track the regional side, road override and reset heading', () => {
+  assert.equal(countryCode([{type:'area', tags:{'ISO3166-1':'FR', admin_level:'2'}}, {type:'way', tags:{}}]), 'FR');
+  assert.equal(countryCode([]), '');
   for (const [country, sign] of [['RO', 1], ['GB', -1]]) {
     const side = drivingSide([{type:'area', tags:{'ISO3166-1':country}}]);
     const road = street([[-30,0],[30,0]]);

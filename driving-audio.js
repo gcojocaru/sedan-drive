@@ -45,7 +45,7 @@ export function trafficVoices(cars, ear, n = 4) {
 // state and the ground under the car); braking: the brakes are on against the motion.
 export function tyreSound(speed, braking, ride = {}) {
   const v = Math.abs(speed), wet = ride.wet || 0, snow = ride.snow || 0, hard = !ride.rough && snow < 0.5;
-  const turning = v * v * Math.abs(Math.tan(ride.steer || 0)) / 2.63, limit = 8.5 * (ride.grip ?? 1), clamp = x => Math.max(0, Math.min(1, x));
+  const turning = v * v * Math.abs(Math.tan(ride.steer || 0)) / 2.63, limit = 15 * (ride.grip ?? 1) /* DRY in drive-core.js: the sideways grip */, clamp = x => Math.max(0, Math.min(1, x));
   let squeal = 0;
   if (hard && v > 3) squeal = Math.max(braking ? clamp((v - 6) / 12) * 0.8 : 0, ride.hb ? clamp((v - 3) / 8) : 0,
     clamp((turning - 0.7 * limit) / (0.5 * limit)), clamp(Math.abs(Math.sin(ride.slip || 0)) * v / 4)) * (1 - 0.5 * wet);

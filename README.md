@@ -28,7 +28,7 @@ While driving on a real map, the minimap shows 240 metres across with north at t
 
 ## Release version
 
-On the real map, open **Settings** with Esc or the touch menu and look for **Game version**. The test track and model viewer also display the version from `package.json`. Use `npm version patch --no-git-tag-version` for a fix, or replace `patch` with `minor` for a feature or `major` for a breaking change. Commit the manifest with the release. Both the repository-root site and the production build read the same file.
+On the real map, open **Settings** with Esc or the touch menu and look for **Game version**. The test track and model viewer also display the version from `package.json`. Use `npm version patch --no-git-tag-version` for a fix, or replace `patch` with `minor` for a feature or `major` for a breaking change. Every pull request bumps the version and adds its entry at the top of [CHANGELOG.md](CHANGELOG.md). Both the repository-root site and the production build read the same file.
 
 ## Deploy
 
@@ -55,6 +55,7 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | J | Start or cancel a parcel delivery (real-map page). You can also use the Start delivery button. |
 | G | Garage (real-map page): spend delivery money on upgrades and paint. Driving pauses while it's open |
 | M | Choose another place (real-map page) |
+| U | Switch to the full-detail map when it has finished downloading (real-map page, after starting on the simplified one) |
 
 Gamepad: left stick steers, RT gas, LT brake/reverse, A handbrake, B horn, X camera, Y reset, LB/RB radio, Back delivery, d-pad up lights. Pads that support it rumble on crashes, slides and rough ground.
 
