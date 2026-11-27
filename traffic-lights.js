@@ -15,7 +15,7 @@ function mergeTwo([a, b]) { // two non-indexed copies of a lamp disc as one geom
 }
 
 // signals: traffic.js graph.signals ([{ x, z, h, state, walk, cx, cz }]); sync(lit) shows each one's state (lit: dusk or night)
-export function trafficLights(scene, signals, glowTex) {
+export function trafficLights(scene, signals, glowTex, height = () => 0) {
   const n = signals.length;
   if (!n) return { sync() { } };
   const metal = new THREE.MeshStandardMaterial({ color: '#2a2d2f', roughness: 0.55, metalness: 0.5 });
@@ -33,9 +33,10 @@ export function trafficLights(scene, signals, glowTex) {
   const walkLamps = walkers.slice(1);
   for (const im of lamps.concat(walkLamps)) im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
   const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1);
+  const heights = signals.map(s => height(s.x, s.z));
   signals.forEach((s, i) => {
-    Q.setFromAxisAngle(Y, s.h); M.compose(new THREE.Vector3(s.x, 0, s.z), Q, ONE); for (const im of parts) im.setMatrixAt(i, M);
-    Q.setFromAxisAngle(Y, Math.atan2(-(s.cz - s.z), s.cx - s.x)); M.compose(new THREE.Vector3(s.x, 0, s.z), Q, ONE); for (const im of walkers) im.setMatrixAt(i, M);
+    Q.setFromAxisAngle(Y, s.h); M.compose(new THREE.Vector3(s.x, heights[i], s.z), Q, ONE); for (const im of parts) im.setMatrixAt(i, M);
+    Q.setFromAxisAngle(Y, Math.atan2(-(s.cz - s.z), s.cx - s.x)); M.compose(new THREE.Vector3(s.x, heights[i], s.z), Q, ONE); for (const im of walkers) im.setMatrixAt(i, M);
   });
   // one glow per head, in front of the lamp that's on
   const pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
@@ -51,7 +52,7 @@ export function trafficLights(scene, signals, glowTex) {
         const on = LAMPS.findIndex(([name]) => name === s.state), cs = Math.cos(s.h), sn = Math.sin(s.h);
         lamps.forEach((im, k) => im.setColorAt(i, k === on ? ON[k] : OFF[k]));
         const go = walking(s); walkLamps.forEach((im, k) => im.setColorAt(i, (k === 1) === go ? WALKERS[k].on : WALKERS[k].off));
-        pos.set([s.x + 0.25 * cs, LAMPS[on][1], s.z - 0.25 * sn], i * 3);
+        pos.set([s.x + 0.25 * cs, heights[i] + LAMPS[on][1], s.z - 0.25 * sn], i * 3);
         col.set(GLOW[on].toArray().map(v => v * (lit ? 0.9 : 0)), i * 3);
       });
       for (const im of lamps.concat(walkLamps)) im.instanceColor.needsUpdate = true;

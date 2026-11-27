@@ -1,3 +1,4 @@
+import { loadTerrain } from './terrain.js';
 import * as THREE from 'three';
 import { laneSpawn } from './road-layout.js';
 import { deliveryHud } from './delivery-hud.js';
@@ -156,6 +157,7 @@ async function startGame(lat0, lon0, placeName) {
     }
     startCooldown();
   }
+  const terrainRequest = loadTerrain(lat0, lon0);
   const liveReq = weatherNow(lat0, lon0, fetch).catch(e => (console.warn('No live weather', e), null)); // while the map loads
   await say('Checking for a saved map…');
   const { data, err, fallback } = await loadArea(lat0, lon0, say);
@@ -178,9 +180,11 @@ async function startGame(lat0, lon0, placeName) {
   const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 5000);
   fx = postFx(renderer, scene, camera, Q); const draw = () => fx ? fx.render() : renderer.render(scene, camera); // glow and colour grade (post-fx.js), or straight to the screen on Low
 
-  const sky = createSky(renderer, scene, lat0, Q), { TIMES, NIGHT } = sky;
+  await say('Preparing terrain…');
+  const terrain = await terrainRequest;
+  const sky = createSky(renderer, scene, lat0, Q, undefined, terrain.height), { TIMES, NIGHT } = sky;
 
-  const { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint, lampLight } = await buildWorld(data.elements, lat0, lon0, scene, say, Q);
+  const { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint, lampLight } = await buildWorld(data.elements, lat0, lon0, scene, say, terrain, Q);
 
   // ---- car ----
   await say('Placing the car…');
@@ -190,15 +194,15 @@ async function startGame(lat0, lon0, placeName) {
   let wallet = readWallet(stored(LS_WALLET), stored(LS_EARNED)), garage = readGarage(stored(LS_GARAGE)), tuning = carTuning(garage); // delivery money, and what it bought
   repaint(CAR, tuning.paint);
   const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), probe = new THREE.Sphere(V(), 3); // what the camera sees: traffic comes and goes out of sight
-  const graph = laneGraph(roads, layout.junctions, HALF, signalPts), lightsView = trafficLights(scene, graph.signals, glowTex);
+  const graph = laneGraph(roads, layout.junctions, HALF, signalPts), lightsView = trafficLights(scene, graph.signals, glowTex, driveHeight);
   const props = pointGrid(posts.concat(graph.signals.map(s => [s.x, s.z, 0.25, 0, 3.6]))), occluded = (x, z, y) => inBuilding(x, z, y) || props.near(x, z, y, 0.4); // what the chase camera pulls in front of
-  const seen = (x, z) => frustum.intersectsSphere((probe.center.set(x, 1, z), probe));
+  const seen = (x, z) => frustum.intersectsSphere((probe.center.set(x, driveHeight(x,z)+1, z), probe));
   const traffic = createTraffic(graph, { max: Q.cars, seen });
-  const trafficView = trafficCars(scene, 100, glowTex), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
+  const trafficView = trafficCars(scene, 100, glowTex, driveHeight), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
   // shortcut: the VAZ's factory paint is a texture, so it isn't avoided; sample its colour if traffic copies it
   const avoidMine = () => { const c = CAR.paint && !CAR.paint.map ? CAR.paint.color : null; trafficView.avoid(c); parkedPaint(c); }; avoidMine(); // no other car wears the player's paint
   const walks = walkGraph(roads, paths, layout.junctions, { armBack: graph.armBack, roadAt, crossings: crossPts }); // sidewalks, crossings, footways
-  const people = createPedestrians(walks, { max: Q.people, half: HALF, seen }), figures = pedestrianFigures(scene, Q.people);
+  const people = createPedestrians(walks, { max: Q.people, half: HALF, seen }), figures = pedestrianFigures(scene, Q.people, driveHeight);
   const ear = { x: 0, z: 0, fx: 1, fz: 0, vx: 0, vz: 0, wet: 0, snow: 0, me }, look = V(0, 0, 0); // the camera, listening to the traffic
   const SOLID = { bld: 'wall', car: 'car', traffic: 'car', post: 'post' }; // what blocked() hits → its crash sound
   let hitCar = null, hitPerson = null; // the traffic car and the pedestrian blocked() last found
@@ -217,7 +221,7 @@ async function startGame(lat0, lon0, placeName) {
   for (const c of tails) { const s = new THREE.Sprite(tailGlow); s.position.copy(car.worldToLocal(c)).add(V(-0.1, 0, 0)); s.scale.setScalar(0.6); car.add(s); }
 
   const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0, slip: 0 };
-  const cam = chaseCamera(camera, car);
+  const cam = chaseCamera(camera, car, driveHeight);
   function place(x, z, h) {
     st.pos.set(x, 0, z); st.h = h; st.v = 0; st.steer = 0; st.slip = 0;
     cam.reset(st);
@@ -330,7 +334,7 @@ async function startGame(lat0, lon0, placeName) {
     const was = levelOf(wallet.jobs); wallet = earn(wallet, receipt.total); keep(LS_WALLET, wallet); showWallet();
     const now = levelOf(wallet.jobs), up = now > was ? 'Level ' + (now + 1) + ' · ' + JOB_LEVELS[now].name + ': ' + levelText(now) : '';
     results.show(receipt, wallet.jobs, up); if (up) flash(up, 'gold'); // (toasts show below the card)
-  }, () => levelOf(wallet.jobs));
+  }, () => levelOf(wallet.jobs), driveHeight);
   function toggleDelivery() {
     if (started && !paused()) delivery.toggle(st.pos.x,st.pos.z);
   }
@@ -349,7 +353,7 @@ async function startGame(lat0, lon0, placeName) {
     const k = readKeys(keys, p), was = [st.pos.x, st.pos.z], ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
     const cargo = delivery.cargo; // a heavy load takes some of the engine and the brakes
     TUNE.power = 7.4 * tuning.power * (cargo?.power ?? 1); TUNE.brake = tuning.brake * (cargo?.brake ?? 1);
-    const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard, grip }, TUNE, (nx, nz, nh) => {
+    const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard, grip, height: driveHeight }, TUNE, (nx, nz, nh) => {
       const hit = blocked(nx, nz, nh);
       boundary.move(st.pos.x, st.pos.z);
       if (hit === 'person') { // they stumble out of the way; the car pulls up
@@ -398,6 +402,8 @@ async function startGame(lat0, lon0, placeName) {
   const shownName = placeName || (start && start.name) || lat0.toFixed(4) + ', ' + lon0.toFixed(4); // no address found: the street you start on
   $('place').textContent = shownName;
   $('stats').textContent = roads.length.toLocaleString() + ' streets · ' + nB.toLocaleString() + ' buildings · ' + trees.length.toLocaleString() + ' trees';
+  $('terrainCredit').hidden = !terrain.active;
+  if (!terrain.active) $('stats').textContent += ' · elevation unavailable';
   $('startPlace').textContent = shownName;
   if (!start) $('startNote').textContent = 'No drivable roads were found here. You can still drive on the ground, or press M to pick another place.';
   if (fallback) {
@@ -480,7 +486,7 @@ async function startGame(lat0, lon0, placeName) {
     camera.getWorldDirection(look); const flat = Math.hypot(look.x, look.z) || 1;
     Object.assign(ear, { x: camera.position.x, z: camera.position.z, fx: look.x / flat, fz: look.z / flat, vx: Math.cos(st.h) * st.v, vz: -Math.sin(st.h) * st.v });
     sound.traffic(traffic.cars, ear); lap('sound');
-    syncCar(rig, st, lastS, head); glows(lastS); updateCam(dt); lap('camera'); hud(lastS, dt); lap('hud');
+    syncCar(rig, st, lastS, head, driveHeight); glows(lastS); updateCam(dt); lap('camera'); hud(lastS, dt); lap('hud');
     draw(); lap('render'); perf(t0);
   });
 }

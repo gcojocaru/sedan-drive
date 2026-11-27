@@ -11,18 +11,34 @@ import { furnitureKind, planFurniture } from './street-furniture.js';
 import { addFurniture } from './furniture-mesh.js';
 import { addSignMeshes } from './sign-mesh.js';
 import { drivingSide, prepareRoads, mappedStops } from './road-layout.js';
+import { addBridgeStructures } from './bridge-mesh.js';
+import { levelWaters } from './water-levels.js';
+import { bridgeDecks } from './bridge-decks.js';
+import { drapeSurface } from './terrain-surface.js';
 import { HALF } from './osm-query.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const TILE = 224; // m: buildings, walls and trees are one mesh per tile (a 5 × 5 grid over the area), so the renderer can skip tiles
 
 
-function flatMesh(B, mat, uvScale) {
+function flatMesh(B, mat, uvScale, terrain) {
+  if (terrain?.active) B.p = drapeSurface(B.p, terrain);
   const g = new THREE.BufferGeometry(), n = B.p.length / 3;
   g.setAttribute('position', new THREE.Float32BufferAttribute(B.p, 3));
   const nor = new Float32Array(n * 3), uv = new Float32Array(n * 2);
   for (let i = 0; i < n; i++) { nor[i * 3 + 1] = 1; uv[i * 2] = B.p[i * 3] / uvScale; uv[i * 2 + 1] = B.p[i * 3 + 2] / uvScale; }
   g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  // Sample the grade across each vertex. Neighbouring triangles then share
+  // their light normal along a crease, including separate road/paint meshes.
+  if (terrain?.active) {
+    const height = terrain.height;
+    for (let i = 0; i < B.p.length; i+=3) {
+      const x=B.p[i], z=B.p[i+2];
+      const nx=height(x-3,z)-height(x+3,z), nz=height(x,z-3)-height(x,z+3);
+      const length=Math.hypot(nx,6,nz);
+      nor[i]=nx/length; nor[i+1]=6/length; nor[i+2]=nz/length;
+    }
+  }
   const m = new THREE.Mesh(g, mat); m.receiveShadow = true; return m;
 }
 
@@ -93,18 +109,64 @@ const isBridge = t => t.bridge && t.bridge !== 'no';
 // elements: an Overpass reply's elements; (lat0, lon0) becomes the origin. say(text) shows progress and waits for a repaint.
 // setGround(wet, snow) (0–1 each, from weather.js groundOf) wets roads, roofs and ground or lays snow on them;
 // reflectLamps(x, z), called as the camera moves, lets the lit street lamps nearest it glint in wet roads.
-// q: { lampLights }: how many street lamps near the car really light it (quality.js)
-export async function buildWorld(elements, lat0, lon0, scene, say, { lampLights = 0 } = {}) {
+// terrain: terrain.js loadTerrain() (or nothing: flat); q: { lampLights }: how many street lamps near the car really light it (quality.js)
+export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { lampLights = 0 } = {}) {
+  const height = terrain?.height ?? (() => 0);
   await say('Building the streets…');
   const { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts, landmarks, furniture, addressPoints } = parseElements(elements, lat0, lon0);
   const wx = weatherLook(), { wear } = wx;
-  const G = groundLayers(scene, wear), { LAYERS, BUF } = G;
-  for (const p of polys) if (LAYERS[p.kind]) fillPoly(BUF[p.kind], p.outer, p.holes, LAYERS[p.kind][1]); // area fills
+  const G = groundLayers(scene, wear, terrain), { LAYERS, BUF } = G;
+  if (terrain?.active) levelWaters(polys,height);
+  for (const p of polys) {
+    if (!LAYERS[p.kind]) continue;
+    if (Number.isFinite(p.waterLevel)) {
+      fillPoly(G.levelWater, p.outer, p.holes, p.waterLevel + LAYERS.water[1]);
+    } else fillPoly(BUF[p.kind], p.outer, p.holes, LAYERS[p.kind][1]);
+  }
   const { roads, paths, rivers, rows, rails, barriers, seas, layout } = layRoads(lines, elements, stopNodes, G);
+  const waters = polys.filter(p => p.kind === 'water').concat(seas.map(p => ({...p, waterLevel: terrain?.seaLevel ?? 0})));
+  const riverSegments = rivers.flatMap(r => r.g.slice(1).map(([x,z],i) => {
+    const [ax,az] = r.g[i], dx=x-ax, dz=z-az;
+    return {ax,az,dx,dz,l2:dx*dx+dz*dz || 1, hw:r.hw};
+  }));
+  const shoreBounds = waters.map(p => ({p, bounds:bbox(p.outer)}));
+  function polygonWaterAt(x,z) {
+    let level = -Infinity;
+    for (const {p,bounds:b} of shoreBounds) {
+      if (x<b.x0 || x>b.x1 || z<b.z0 || z>b.z1) continue;
+      if (inPoly(x,z,p.outer) && !p.holes.some(h=>inPoly(x,z,h))) level = Math.max(level,p.waterLevel ?? height(x,z));
+    }
+    return level;
+  }
+  function waterAt(x,z) {
+    const level = polygonWaterAt(x,z);
+    if (Number.isFinite(level)) return level;
+    if (riverSegments.some(s=>Math.abs(x-s.ax)<=Math.abs(s.dx)+s.hw && Math.abs(z-s.az)<=Math.abs(s.dz)+s.hw && segDist(x,z,s)[0]<=s.hw)) return height(x,z);
+    return level;
+  }
+  for (const river of rivers) {
+    for (const part of runs(densify(river.g, 6), (x,z)=>!Number.isFinite(polygonWaterAt(x,z)))) {
+      ribbon(BUF.water,part,river.hw,LAYERS.water[1],true);
+    }
+  }
+  const decks = bridgeDecks([...roads,...paths], height, waterAt);
+  const roadSurface = decks.active ? decks : terrain;
+  const driveHeight = roadSurface?.height ?? height;
+  const land = decks.active ? decks.banks : terrain;
+  const landHeight = land?.height ?? height;
+  const base = newBuf();
+  const edges = [-4000, ...Array.from({length:21},(_,i)=>64*(i-10)),4000];
+  for (let i=1;i<edges.length;i++) for (let j=1;j<edges.length;j++) {
+    const [a,b,c,d]=[edges[i-1],edges[i],edges[j-1],edges[j]];
+    quad(base,[a,c],[b,c],[b,d],[a,d],-0.03);
+  }
+  scene.add(flatMesh(base, wear(new THREE.MeshStandardMaterial({map:G.noise,color:'#8a9468',roughness:1}), 'ground'), 5, land));
+  addBridgeStructures(scene,decks.crossings,driveHeight);
   const look = roadLookup(roads, paths, rails, layout), { roadAt } = look;
   paintCrossings(paths, crossPts, look, G);
   layRailways(rails, look, G);
-  for (const k in LAYERS) if (BUF[k].p.length) scene.add(flatMesh(BUF[k], LAYERS[k][0], k === 'road' || k === 'parking' ? 7 : k === 'water' ? 20 : 5));
+  if (G.levelWater.p.length) scene.add(flatMesh(G.levelWater, LAYERS.water[0], 20));
+  for (const k in LAYERS) if (BUF[k].p.length) scene.add(flatMesh(BUF[k], LAYERS[k][0], k === 'road' || k === 'parking' ? 7 : k === 'water' ? 20 : 5, ['road','sidewalk','marks','dirt','paved'].includes(k) ? roadSurface : k === 'water' ? terrain : land));
   const mkMesh = (B, mat, uv, shadow = true) => { // one mesh per TILE under a group (B.f, when there: the facade attribute)
     const group = new THREE.Group(); scene.add(group);
     for (const T of splitByTile(B, TILE).values()) {
@@ -115,21 +177,21 @@ export async function buildWorld(elements, lat0, lon0, scene, say, { lampLights 
     }
     return group;
   };
-  buildWalls(barriers, roads, paths, look, G.noise, mkMesh, wear);
+  buildWalls(barriers, roads, paths, look, G.noise, mkMesh, wear, driveHeight, waterAt);
   const areaAt = areaLookup(polys, seas);
   const nB = polys.filter(p => p.kind === 'building').length;
   await say('Raising ' + nB.toLocaleString() + ' buildings…');
-  const { blds, inBuilding, frontMat, wallMat } = buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear);
+  const { blds, inBuilding, frontMat, wallMat } = buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear, landHeight);
   await say('Planting trees…');
-  const trees = plantTrees(scene, treePts, rows, polys, G.noise, look, areaAt, inBuilding, wear);
-  const { setLamps, glowTex, lamps, lampLight } = streetLamps(scene, roads, look, areaAt, inBuilding, wx, lampLights);
+  const trees = plantTrees(scene, treePts, rows, polys, G.noise, look, areaAt, inBuilding, wear, landHeight);
+  const { setLamps, glowTex, lamps, lampLight } = streetLamps(scene, roads, look, areaAt, inBuilding, wx, driveHeight, lampLights);
   const clear = signClearance(trees, lamps, look, areaAt, inBuilding);
   const { objects, hit } = planFurniture(furniture, polys, roadAt, clear);
-  const parkedPaint = addFurniture(scene, objects);
+  const parkedPaint = addFurniture(scene, objects, landHeight);
   const signFree = (x,z) => clear(x,z) && !hit(x,z,0,0.35,0.35);
   const signs = planSigns(layout.junctions, landmarks, roadAt, signFree);
-  addSignMeshes(scene, signs);
-  return { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs), lampLight };
+  addSignMeshes(scene, signs, landHeight);
+  return { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs), lampLight };
 }
 
 // what the chase camera keeps out of, as geom.js pointGrid points [x, z, r, y0, y1]: tree trunks (not the crowns, which
@@ -192,7 +254,7 @@ function parseElements(elements, lat0, lon0) {
 // Textures, the flat ground layers (each with its own buffer, filled by the builders below) and the base ground plane.
 // wear(material, kind) lets rain and snow onto them (world-kit.js weatherLook).
 const WORN = { road: 'road', parking: 'road', marks: 'mark', sidewalk: 'pave', paving: 'pave', paved: 'pave', water: null, rail: null }; // the rest: 'ground'
-function groundLayers(scene, wear) {
+function groundLayers(scene, wear, terrain) {
   const noise = makeTex(256, 256, (x, w, h) => { x.fillStyle = '#dcdcdc'; x.fillRect(0, 0, w, h); speckle(x, w, h, 40000, 0.3); });
   const asphalt = makeTex(512, 512, (x, w, h) => { x.fillStyle = '#4b4c4f'; x.fillRect(0, 0, w, h); for (let i = 0; i < 14; i++) { x.fillStyle = 'rgba(0,0,0,' + (0.04 + Math.random() * 0.06) + ')'; x.beginPath(); x.ellipse(Math.random() * w, Math.random() * h, 30 + Math.random() * 80, 20 + Math.random() * 50, Math.random() * 3, 0, Math.PI * 2); x.fill(); } speckle(x, w, h, 80000, 0.24); });
   const slabs = makeTex(256, 256, (x, w, h) => { x.fillStyle = '#bdbab2'; x.fillRect(0, 0, w, h); speckle(x, w, h, 16000, 0.14); x.fillStyle = 'rgba(0,0,0,.16)'; for (let i = 0; i < w; i += 64) { x.fillRect(i, 0, 2, h); x.fillRect(0, i, w, 2); } });
@@ -213,9 +275,6 @@ function groundLayers(scene, wear) {
   for (const k in LAYERS) { const kind = k in WORN ? WORN[k] : 'ground'; if (kind) wear(LAYERS[k][0], kind); }
   const BUF = Object.fromEntries(Object.keys(LAYERS).map(k => [k, newBuf()]));
   // the base ground sits a few cm below the flat layers and is tiled, so it can't win the depth test against them far away
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(8000, 8000, 50, 50), wear(new THREE.MeshStandardMaterial({ map: noise, color: '#8a9468', roughness: 1 }), 'ground'));
-  ground.material.map = noise.clone(); ground.material.map.repeat.set(1600, 1600); ground.material.map.needsUpdate = true;
-  ground.rotation.x = -Math.PI / 2; ground.position.y = -0.03; ground.receiveShadow = true; scene.add(ground);
   // Dashes along a polyline: pieces `on` m long every `on + gap` m, `w` wide, centred `off` m left of the line.
   // ok(s, p) can veto a piece (p = [x, z, nx, nz]); gap 0 draws a continuous line made of pieces.
   function dashLine(g, cum, off, on, gap, w, ok, B = BUF.marks, y = LAYERS.marks[1]) {
@@ -228,12 +287,12 @@ function groundLayers(scene, wear) {
       quad(B, [p[0] + p[2] * (off + hw), p[1] + p[3] * (off + hw)], [p[0] + p[2] * (off - hw), p[1] + p[3] * (off - hw)], [q[0] + q[2] * (off - hw), q[1] + q[3] * (off - hw)], [q[0] + q[2] * (off + hw), q[1] + q[3] * (off + hw)], y);
     }
   }
-  return { noise, LAYERS, BUF, dashLine };
+  return { noise, LAYERS, BUF, dashLine, levelWater: newBuf(), terrain };
 }
 
 // Sorts the lines into roads, paths, rivers, rails, barriers and coast; lays sea, rivers, paths, roads and junction
 // corners into the ground layers; paints lane markings and stop lines.
-function layRoads(lines, elements, stopNodes, { LAYERS, BUF, dashLine }) {
+function layRoads(lines, elements, stopNodes, { LAYERS, BUF, dashLine, levelWater, terrain }) {
   const roads = [], paths = [], rivers = [], rows = [], rails = [], barriers = [], coast = [];
   for (const { t, g, nodes } of lines) {
     if (t.railway && t.railway !== 'platform' && !(t.tunnel && t.tunnel !== 'no')) rails.push({ g, t, tram: t.railway === 'tram' });
@@ -257,13 +316,12 @@ function layRoads(lines, elements, stopNodes, { LAYERS, BUF, dashLine }) {
     } else if (t.natural === 'tree_row') rows.push(g);
   }
   const seas = seaPolys(coast, HALF + 50, 3000);
-  for (const s of seas) fillPoly(BUF.water, s.outer, s.holes, LAYERS.water[1]);
+  for (const s of seas) fillPoly(terrain?.active ? levelWater : BUF.water, s.outer, s.holes, LAYERS.water[1] + (terrain?.seaLevel || 0));
   const layout = prepareRoads(roads, drivingSide(elements));
   for (const {poly, sidewalk} of layout.corners) {
     fillPoly(BUF.road, poly, [], LAYERS.road[1]);
     if (sidewalk) fillPoly(BUF.sidewalk, sidewalk, [], LAYERS.sidewalk[1]);
   }
-  for (const r of rivers) ribbon(BUF.water, r.g, r.hw, LAYERS.water[1], true);
   for (const r of paths) ribbon(DIRT.has(r.type) ? BUF.dirt : BUF.paved, r.g, r.hw, DIRT.has(r.type) ? LAYERS.dirt[1] : LAYERS.paved[1], true);
   for (const r of roads) {
     const yR = LAYERS.road[1], walk = r.walk;
@@ -347,7 +405,7 @@ function layRailways(rails, { onDrive }, { LAYERS, BUF, dashLine }) {
 }
 
 // walls, fences, hedges, guard rails, and railings along bridges (snow settles on the tops of walls and hedges)
-function buildWalls(barriers, roads, paths, { onDrive, onOther, nearRail }, noise, mkMesh, wear) {
+function buildWalls(barriers, roads, paths, { onDrive, onOther, nearRail }, noise, mkMesh, wear, height, waterAt) {
   const SB = { p: [], n: [], c: [], uv: [] }, FB = { p: [], n: [], c: [], uv: [] };
   const BAR = { wall: [1.8, 0.3, '#b9ae9c'], retaining_wall: [1.1, 0.4, '#a29e95'], city_wall: [5, 1.6, '#a99f8c'], hedge: [1.4, 0.9, '#4f6b33'], guard_rail: [0.75, 0.06, '#a8acb0'], fence: [1.5, 0, '#5d6160'] };
   for (const { g, t } of barriers) {
@@ -362,9 +420,10 @@ function buildWalls(barriers, roads, paths, { onDrive, onOther, nearRail }, nois
   const railCol = new THREE.Color('#6b6f72');
   for (const r of roads.concat(paths)) if (isBridge(r.t) && r.type !== 'pier') {
     const off = r.hw + (r.walk ? 2.2 : 0) + 0.1;
-    for (const sg of [1, -1]) for (const part of runs(densify(offsetLine(r.g, sg * off), 2), (x, z) => !onOther(x, z, r) && !nearRail(x, z))) fenceStrip(FB, part, 0, 1.1, railCol);
+    for (const sg of [1, -1]) for (const part of runs(densify(offsetLine(r.g, sg * off), 2), (x, z) => !Number.isFinite(waterAt(x,z)) && !onOther(x, z, r) && !nearRail(x, z))) fenceStrip(FB, part, 0, 1.1, railCol);
   }
   const fenceTex = makeTex(64, 64, (x) => { x.clearRect(0, 0, 64, 64); x.fillStyle = '#fff'; x.fillRect(0, 0, 64, 6); x.fillRect(0, 52, 64, 5); for (let i = 0; i < 64; i += 8) x.fillRect(i + 3, 0, 2, 64); });
+  for (const {p} of [SB,FB]) for (let i=0; i<p.length; i+=3) p[i+1] += height(p[i],p[i+2]);
   if (SB.p.length) mkMesh(SB, wear(new THREE.MeshStandardMaterial({ map: noise, vertexColors: true, roughness: 0.95 }), 'roof'), true);
   if (FB.p.length) mkMesh(FB, new THREE.MeshStandardMaterial({ map: fenceTex, vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.3 }), true);
 }
@@ -402,7 +461,7 @@ function crownGeometry() {
 }
 
 // mapped trees, tree rows, and trees scattered over forests, scrub, parks and gardens (snow settles on the crowns)
-function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, areaAt, inBuilding, wear) {
+function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, areaAt, inBuilding, wear, height) {
   const trees = [], LIM = HALF + 60, within = (x, z) => Math.abs(x) < LIM && Math.abs(z) < LIM;
   const clear = (x, z) => { const r = roadAt(x, z); return !(r.any && r.ae < 1.2) && !inBuilding(x, z, 1) && !areaAt(x, z, NOTREE) && !nearRail(x, z); };
   const roomy = (x, z) => !inBuilding(x + 3, z, 1) && !inBuilding(x - 3, z, 1) && !inBuilding(x, z + 3, 1) && !inBuilding(x, z - 3, 1) && !(roadAt(x, z).ae < 2.5);
@@ -433,7 +492,7 @@ function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, ar
     const T = new THREE.InstancedMesh(trunkG, bark, Math.max(1, trees.length)), R = new THREE.InstancedMesh(crownG, leaf, Math.max(1, nR)), C1 = new THREE.InstancedMesh(coneG, leaf, Math.max(1, nC)), C2 = new THREE.InstancedMesh(cone2, leaf, Math.max(1, nC));
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), S = V(1, 1, 1), c = new THREE.Color(); let r = 0, k = 0;
     trees.forEach((t, i) => {
-      Q.setFromAxisAngle(V(0, 1, 0), Math.random() * 6.28); S.set(t[2], t[2] * (0.9 + Math.random() * 0.3), t[2]); M.compose(V(t[0], 0, t[1]), Q, S); T.setMatrixAt(i, M);
+      Q.setFromAxisAngle(V(0, 1, 0), Math.random() * 6.28); S.set(t[2], t[2] * (0.9 + Math.random() * 0.3), t[2]); M.compose(V(t[0], height(t[0],t[1]), t[1]), Q, S); T.setMatrixAt(i, M);
       c.setHSL(0.22 + Math.random() * 0.08, 0.35 + Math.random() * 0.2, 0.22 + Math.random() * 0.1);
       if (t[3]) { c.offsetHSL(0.04, 0, -0.06); C1.setMatrixAt(k, M); C2.setMatrixAt(k, M); C1.setColorAt(k, c); C2.setColorAt(k, c); k++; } else { R.setMatrixAt(r, M); R.setColorAt(r, c); r++; }
     });
@@ -446,8 +505,8 @@ function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, ar
 
 // street lamps: posts along the streets; from dusk their heads glow and they throw pools of light (setLamps), and wet
 // roads reflect them (wx: world-kit.js weatherLook)
-// n: point lights that follow the lamps nearest the car (lampLight(x, z, dt)), so the car and street really light up
-function streetLamps(scene, roads, { onDrive }, areaAt, inBuilding, wx, n = 0) {
+// height(x, z): the ground; n: point lights that follow the lamps nearest the car (lampLight(x, z, dt)), so the car and street really light up
+function streetLamps(scene, roads, { onDrive }, areaAt, inBuilding, wx, height, n = 0) {
   const glowTex = makeTex(64, 64, (x) => { const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.18, 'rgba(255,255,255,.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); });
   glowTex.wrapS = glowTex.wrapT = THREE.ClampToEdgeWrapping;
   const lamps = [], LG = 12, lgrid = new Map();
@@ -472,8 +531,8 @@ function streetLamps(scene, roads, { onDrive }, areaAt, inBuilding, wx, n = 0) {
     const pools = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: glowTex, color: 0xffaa4c, transparent: true, opacity: n ? 0.38 : 0.55, blending: THREE.AdditiveBlending, depthWrite: false }), nL);
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), one = V(1, 1, 1), pool = V(15, 1, 15), Y = V(0, 1, 0), I = new THREE.Quaternion(), gp = new Float32Array(nL * 3);
     lamps.forEach(([x, z, ax, az], i) => {
-      Q.setFromAxisAngle(Y, Math.atan2(-az, ax)); M.compose(V(x, 0, z), Q, one); for (const m of parts) m.setMatrixAt(i, M); // arm points along (ax, az), over the road
-      const hx = x + ax * 1.5, hz = z + az * 1.5; M.compose(V(hx, 0.075, hz), I, pool); pools.setMatrixAt(i, M); gp.set([hx, 7.08, hz], i * 3);
+      Q.setFromAxisAngle(Y, Math.atan2(-az, ax)); M.compose(V(x, height(x,z), z), Q, one); for (const m of parts) m.setMatrixAt(i, M); // arm points along (ax, az), over the road
+      const hx = x + ax * 1.5, hz = z + az * 1.5; I.setFromUnitVectors(Y, V(height(hx-0.5,hz)-height(hx+0.5,hz), 1, height(hx,hz-0.5)-height(hx,hz+0.5)).normalize()); M.compose(V(hx, height(hx,hz)+0.075, hz), I, pool); pools.setMatrixAt(i, M); gp.set([hx, height(x,z)+7.08, hz], i * 3);
     });
     parts.forEach((m, i) => { m.castShadow = i < 2; m.receiveShadow = true; scene.add(m); });
     const glows = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(gp, 3)), new THREE.PointsMaterial({ map: glowTex, color: 0xffd39a, size: 2.4, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));

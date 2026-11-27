@@ -7,7 +7,7 @@ import { createDelivery, deliveryNetwork, money, minutes, STOP_RADIUS, FINE, KNO
 const cap = s => s[0].toUpperCase() + s.slice(1);
 const away = (t, x, z) => Math.ceil(Math.hypot(t.x-x, t.z-z)) + ' m ' + ['N','NE','E','SE','S','SW','W','NW'][(Math.round(Math.atan2(t.x-x, z-t.z)/(Math.PI/4))+8)%8];
 const AMBER = 0xffbd66, TEAL = 0x68e6d3; // the stop's colour: pickup, drop-off
-export function deliveryHud(scene, graph, occupied, button, stage, detail, flash, paid = () => {}, level = () => 0) {
+export function deliveryHud(scene, graph, occupied, button, stage, detail, flash, paid = () => {}, level = () => 0, height = () => 0) {
   let job, lastTarget, clock = 0, lit = false; // clock: seconds of driving; lit: night (the beam may glow brighter)
   const marker = new THREE.Group();
   const ring = new THREE.Mesh(new THREE.RingGeometry(STOP_RADIUS-0.45, STOP_RADIUS, 64),
@@ -43,7 +43,14 @@ export function deliveryHud(scene, graph, occupied, button, stage, detail, flash
       stage.parentElement.hidden = !target;
       button.textContent = target ? 'Cancel delivery' : 'Start delivery';
       if (target) {
-        marker.position.set(target.x,0.16,target.z);
+        const base = height(target.x, target.z);
+        marker.position.set(target.x, base + 0.16, target.z);
+        const points = ring.geometry.attributes.position;
+        for (let i = 0; i < points.count; i++) {
+          points.setZ(i, height(target.x + points.getX(i), target.z - points.getY(i)) - base);
+        }
+        points.needsUpdate = true;
+        ring.geometry.computeBoundingSphere();
         for (const m of [ring, beam]) m.material.color.set(job.phase === 'pickup' ? AMBER : TEAL);
         const { cargo: C, parcels: n, delivered } = job.job;
         stage.textContent = (job.phase === 'pickup' ? 'Pick up ' + (n > 1 ? n + ' ' + C.many : C.one) : n > 1 ? 'Drop-off ' + (delivered + 1) + ' of ' + n : 'Deliver ' + C.one) + (target.name ? ' · '+target.name : '');

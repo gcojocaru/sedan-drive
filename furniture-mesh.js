@@ -18,8 +18,8 @@ function busPlate() {
 }
 
 // → avoid(color) for the parked cars (traffic-cars.js parkedCars)
-export function addFurniture(scene, objects) {
-  const avoid = parkedCars(scene, objects.filter(o=>o.kind==='car'));
+export function addFurniture(scene, objects, height = () => 0) {
+  const avoid = parkedCars(scene, objects.filter(o=>o.kind==='car'), height);
   function group(kind, build) {
     const poses = objects.filter(o=>o.kind===kind);
     if (!poses.length) return;
@@ -29,7 +29,7 @@ export function addFurniture(scene, objects) {
       const matrix = new THREE.Matrix4(), offset = new THREE.Matrix4();
       let i=0;
       for (const {x,z,h} of poses) for (const [lx,y,lz] of offsets) {
-        matrix.makeRotationY(h).setPosition(x,0,z);
+        matrix.makeRotationY(h).setPosition(x,height(x,z),z);
         mesh.setMatrixAt(i++,matrix.multiply(offset.makeTranslation(lx,y,lz)));
       }
       mesh.castShadow = mesh.receiveShadow = true;
