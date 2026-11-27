@@ -14,9 +14,13 @@ import { HALF, snap } from './osm-query.js';
 import { FALLBACK_CREDIT } from './vector-fallback.js';
 import { loadArea } from './map-data.js';
 import { buildWorld, TYPE_LABEL, HARD } from './world.js';
-import { makeTex } from './world-kit.js';
+import { blobTex } from './world-kit.js';
+import { pointGrid } from './geom.js';
 import { radio, radioHud, stationsNear } from './radio.js';
 import { touchControls } from './touch.js';
+import { toasts } from './toast.js';
+import { resultCard } from './result-card.js';
+import { gamepad } from './gamepad.js';
 import { createSky } from './sky.js';
 import { WEATHERS, weatherNow, solarHour, groundOf } from './weather.js';
 import { laneGraph, createTraffic, ranRed, LEVELS } from './traffic.js';
@@ -166,7 +170,7 @@ async function startGame(lat0, lon0, placeName) {
 
   const sky = createSky(renderer, scene, lat0), { TIMES, NIGHT } = sky;
 
-  const { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex } = await buildWorld(data.elements, lat0, lon0, scene, say);
+  const { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint } = await buildWorld(data.elements, lat0, lon0, scene, say);
 
   // ---- car ----
   await say('Placing the car…');
@@ -177,18 +181,20 @@ async function startGame(lat0, lon0, placeName) {
   repaint(CAR, tuning.paint);
   const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), probe = new THREE.Sphere(V(), 3); // what the camera sees: traffic comes and goes out of sight
   const graph = laneGraph(roads, layout.junctions, HALF, signalPts), lightsView = trafficLights(scene, graph.signals, glowTex);
+  const props = pointGrid(posts.concat(graph.signals.map(s => [s.x, s.z, 0.25, 0, 3.6]))), occluded = (x, z, y) => inBuilding(x, z, y) || props.near(x, z, y, 0.4); // what the chase camera pulls in front of
   const seen = (x, z) => frustum.intersectsSphere((probe.center.set(x, 1, z), probe)), coarse = matchMedia('(pointer: coarse)').matches;
   const traffic = createTraffic(graph, { max: coarse ? 45 : 100, seen });
   const trafficView = trafficCars(scene, 100, glowTex), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
+  // shortcut: the VAZ's factory paint is a texture, so it isn't avoided; sample its colour if traffic copies it
+  const avoidMine = () => { const c = CAR.paint && !CAR.paint.map ? CAR.paint.color : null; trafficView.avoid(c); parkedPaint(c); }; avoidMine(); // no other car wears the player's paint
   const walks = walkGraph(roads, paths, layout.junctions, { armBack: graph.armBack, roadAt, crossings: crossPts }); // sidewalks, crossings, footways
   const people = createPedestrians(walks, { max: coarse ? 90 : 280, half: HALF, seen }), figures = pedestrianFigures(scene, coarse ? 90 : 280);
   const ear = { x: 0, z: 0, fx: 1, fz: 0, vx: 0, vz: 0, wet: 0, snow: 0, me }, look = V(0, 0, 0); // the camera, listening to the traffic
   const SOLID = { bld: 'wall', car: 'car', traffic: 'car', post: 'post' }; // what blocked() hits → its crash sound
   let hitCar = null, hitPerson = null; // the traffic car and the pedestrian blocked() last found
   {
-    const blob = (inner, a) => makeTex(128, 128, (x) => { const g = x.createRadialGradient(64, 64, 64 * inner, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); });
     const mk = (tex, w, d, x, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.07, z); m.renderOrder = 2; car.add(m); };
-    mk(blob(0.35, 0.6), 5.0, 2.1, -0.05, 0); const tb = blob(0.1, 0.8); for (const x of [1.32, -1.31]) for (const z of [0.735, -0.735]) mk(tb, 0.55, 0.34, x, z);
+    mk(blobTex(0.35, 0.6), 5.0, 2.1, -0.05, 0); const tb = blobTex(0.1, 0.8); for (const x of [1.32, -1.31]) for (const z of [0.735, -0.735]) mk(tb, 0.55, 0.34, x, z);
   }
   scene.add(car);
   // glows on the head and tail lights while they are on
@@ -232,8 +238,7 @@ async function startGame(lat0, lon0, placeName) {
     }
     CAR.lights.high.forEach(l => { l.intensity = head && night ? 900 : 0; l.visible = head && night; });
   }
-  const msgEl = $('msg'); let msgTimer;
-  function flash(t) { msgEl.textContent = t; msgEl.style.opacity = 1; clearTimeout(msgTimer); msgTimer = setTimeout(() => msgEl.style.opacity = 0, 2200); }
+  const flash = toasts(); // flash(text, tone, key)
 
   // ---- time of day and weather ----
   // 'live' follows the clock and the weather at this place right now; otherwise an index into TIMES / WEATHERS.
@@ -260,7 +265,7 @@ async function startGame(lat0, lon0, placeName) {
   function showTime(announce) { // local clock time, also for the presets (they are set in solar time)
     const w = weatherOf(), real = wSel === 'live' && live, lying = !real ? '' : live.snowDepth >= 0.01 ? ', ' + Math.round(live.snowDepth * 100) + ' cm on the ground' : groundOf(w).wet > 0.3 && !['rain', 'storm', 'snow'].includes(w.kind) ? ', wet roads' : '';
     const text = (tSel === 'live' ? '' : TIMES[tSel][0] + ' · ') + clock(hourOf() - lon0 / 15 + offset() / 3600) + ' · ' + w.label + (real ? ', ' + Math.round(live.temp) + '°C' : '') + lying;
-    $('tod').textContent = text; if (announce) flash(text);
+    $('tod').textContent = text; if (announce) flash(text, '', 'time');
   }
   function applyTime(announce) {
     if (tSel !== NIGHT) dayIdx = tSel;
@@ -305,9 +310,11 @@ async function startGame(lat0, lon0, placeName) {
     $('wallet').textContent = '$' + wallet.cash + ' · ' + wallet.jobs + (wallet.jobs === 1 ? ' delivery' : ' deliveries') + ' · ' + JOB_LEVELS[i].name + (up ? ' (' + (up.from - wallet.jobs) + ' to level ' + (i + 2) + ')' : '');
   };
   showWallet();
+  const results = resultCard((kind, i) => sound.chime(kind, i));
   const delivery = deliveryHud(scene, graph, furnitureHit, $('jobButton'), $('jobStage'), $('jobDistance'), flash, receipt => {
     const was = levelOf(wallet.jobs); wallet = earn(wallet, receipt.total); keep(LS_WALLET, wallet); showWallet();
-    const now = levelOf(wallet.jobs); if (now > was) flash('Level ' + (now + 1) + ' · ' + JOB_LEVELS[now].name + ': ' + levelText(now));
+    const now = levelOf(wallet.jobs), up = now > was ? 'Level ' + (now + 1) + ' · ' + JOB_LEVELS[now].name + ': ' + levelText(now) : '';
+    results.show(receipt, wallet.jobs, up); if (up) flash(up, 'gold'); // (toasts show below the card)
   }, () => levelOf(wallet.jobs));
   function toggleDelivery() {
     if (started && !paused()) delivery.toggle(st.pos.x,st.pos.z);
@@ -318,13 +325,13 @@ async function startGame(lat0, lon0, placeName) {
   const garageEl = $('garage'), shop = garagePanel($('garageItems'), item => {
     const bought = buy(garage, wallet, item); if (!bought) return;
     ({ garage, wallet } = bought); tuning = carTuning(garage); keep(LS_GARAGE, garage); keep(LS_WALLET, wallet);
-    repaint(CAR, tuning.paint); applyTime(); // (engine and brakes: TUNE, each frame; tyres: the grip)
+    repaint(CAR, tuning.paint); avoidMine(); applyTime(); // (engine and brakes: TUNE, each frame; tyres: the grip)
     showWallet(); shop.draw(garage, wallet);
   });
   function openGarage() { if (paused()) return; clearKeys(); shop.draw(garage, wallet); garageEl.showModal(); }
   $('garageButton').onclick = () => { openGarage(); $('garageButton').blur(); };
-  function update(dt) {
-    const k = readKeys(keys), was = [st.pos.x, st.pos.z], ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
+  function update(dt, p) {
+    const k = readKeys(keys, p), was = [st.pos.x, st.pos.z], ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
     const cargo = delivery.cargo; // a heavy load takes some of the engine and the brakes
     TUNE.power = 7.4 * tuning.power * (cargo?.power ?? 1); TUNE.brake = tuning.brake * (cargo?.brake ?? 1);
     const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard, grip }, TUNE, (nx, nz, nh) => {
@@ -333,26 +340,27 @@ async function startGame(lat0, lon0, placeName) {
       if (hit === 'person') { // they stumble out of the way; the car pulls up
         const imp = Math.abs(st.v), fresh = hitPerson.state !== 'stagger';
         people.bump(hitPerson, st.pos.x, st.pos.z); st.v *= 0.2; sound.impact(imp, 'person');
-        if (fresh && imp > 2 && !delivery.knocked()) flash('Watch out!');
+        if (fresh && imp > 2 && !delivery.knocked()) flash('Watch out!', 'bad');
       }
       else if (SOLID[hit]) {
         const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20);
-        sound.impact(imp, SOLID[hit]); if (hit === 'traffic' && imp > 2) sound.honkAt(hitCar, ear); // and the other driver lets you know
+        sound.impact(imp, SOLID[hit]); pad.crash(imp); if (hit === 'traffic' && imp > 2) sound.honkAt(hitCar, ear); // and the other driver lets you know
         delivery.crash(imp, tuning.cushion);
       }
       else if (hit) { st.v = 0; boundary.offer(hit); } // the edge of the area
       return !!hit;
     });
     if (ranRed(graph.signals, was[0], was[1], st.pos.x, st.pos.z)) delivery.ranRed();
-    if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v, dt);
-    sound.update(st.v, !paused() && k.up, !paused() && k.dn, { hb: !paused() && k.hb, steer: st.steer, slip: st.slip, rough: !onHard, wet: ear.wet, snow: ear.snow, grip });
+    if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v, dt, dim);
+    const ride = { hb: !paused() && k.hb, steer: st.steer, slip: st.slip, rough: !onHard, wet: ear.wet, snow: ear.snow, grip };
+    sound.update(st.v, !paused() && k.up, !paused() && k.dn, ride); pad.feel(st.v, s.braking, ride);
     return s;
   }
   function glows(s) {
     headGlow.opacity = head ? (lowLight ? 0.85 : 0.25) : 0; tailGlow.opacity = s.braking ? (lowLight ? 0.9 : 0.4) : head && lowLight ? 0.35 : 0;
   }
   function updateCam(dt) {
-    cam.update(st, camMode, dt, inBuilding);
+    cam.update(st, camMode, dt, occluded);
     if (shake > 0.01) { camera.position.x += (Math.random() - 0.5) * shake * 0.25; camera.position.y += (Math.random() - 0.5) * shake * 0.2; shake *= Math.exp(-dt * 7); }
     sky.placeShadow(st.pos.x + Math.cos(st.h) * 45, st.pos.z - Math.sin(st.h) * 45); // the shadow box reaches further ahead of the car
     sky.update(dt, camera.position); reflectLamps(camera.position.x, camera.position.z);
@@ -383,7 +391,7 @@ async function startGame(lat0, lon0, placeName) {
   }
 
   const dialog = $('edgeDialog'), settings = $('settings'), paused = () => dialog.open || settings.open || garageEl.open;
-  const sound = drivingAudio();
+  const sound = drivingAudio(), pad = gamepad();
   const clearKeys = () => { for (const k in keys) keys[k] = false; };
   const pose = () => ({ x: st.pos.x, z: st.pos.z, h: st.h, camera: camMode, day: dayIdx, time: tSel, weather: wSel, headlights: head });
   const boundary = edgePrompt({
@@ -410,6 +418,7 @@ async function startGame(lat0, lon0, placeName) {
   $('changePlace').addEventListener('click', backToMap);
   const tune = radio(radioHud(), () => stationsNear(lat0, lon0, fetch), sound.tuningStatic);
   addEventListener('keydown', e => {
+    if (e.isTrusted) sound.activate(); // (a pad-only start can't turn the sound on: the first real key does)
     if (paused()) return; // a dialog has the keys (Esc closes the settings again)
     if (e.code === 'Escape') { e.preventDefault(); clearKeys(); settings.showModal(); return; } // preventDefault: the same press would close it again
     if (e.code === 'KeyG' && !e.repeat) { e.preventDefault(); openGarage(); return; }
@@ -426,7 +435,7 @@ async function startGame(lat0, lon0, placeName) {
     if (e.code === 'KeyT') { tSel = next(tSel, TIMES.length); applyTime(true); }
     if (e.code === 'KeyE') { wSel = next(wSel, WEATHERS.length); applyTime(true); }
     if (e.code === 'KeyC') camMode = 1 - camMode;
-    if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on');
+    if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on', '', 'sound');
     if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);
     if (e.code === 'KeyR') { const s = laneSpawn(layout.spawnSegments, st.pos.x, st.pos.z, st.h, HALF, furnitureHit); if (s) { traffic.clear(s.x, s.z, 8); people.clear(s.x, s.z, 6); place(s.x, s.z, s.h); } }
   });
@@ -436,7 +445,8 @@ async function startGame(lat0, lon0, placeName) {
   let last = performance.now(), lastS = { braking: false, reversing: false };
   renderer.setAnimationLoop(now => {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    if (started && !paused()) lastS = update(dt);
+    const p = pad.poll(); if (p?.thr && !started && !paused()) begin(); // (its buttons start the game through their keys)
+    if (started && !paused()) lastS = update(dt, p);
     if (!paused()) {
       frustum.setFromProjectionMatrix(view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
       Object.assign(me, { x: st.pos.x, z: st.pos.z, h: st.h, v: st.v });

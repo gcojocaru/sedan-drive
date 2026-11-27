@@ -56,9 +56,11 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | G | Garage (real-map page): spend delivery money on upgrades and paint. Driving pauses while it's open |
 | M | Choose another place (real-map page) |
 
+Gamepad: left stick steers, RT gas, LT brake/reverse, A handbrake, B horn, X camera, Y reset, LB/RB radio, Back delivery, d-pad up lights. Pads that support it rumble on crashes, slides and rough ground.
+
 On phones and tablets only the driving controls appear on screen: steer on the left, gas and brake/reverse on the right. The ••• button above the brake opens the rest (handbrake, lights, time of day or night, weather, settings, garage, camera, horn, radio, reset).
 
-In a delivery job, follow the mint minimap marker and stop inside the road ring to collect the parcel. The marker then moves to the drop-off, and the clock starts: the time you have depends on the distance, and the status box counts it down. The pay is more the farther the drop-off, up to 40% more for arriving early and less the later you are. Crashes damage the parcel (a knock is fine, a hard crash ruins it) and cut the pay by as much; running a red light costs $10 and knocking into a pedestrian $25. When you deliver, the status box shows the receipt, and your cash and deliveries are kept under it from one drive to the next. Each job stays in the current area.
+In a delivery job, follow the minimap marker or the beam of light over the stop (amber to collect, teal to deliver) and stop inside the road ring to collect the parcel. The marker then moves to the drop-off, and the clock starts: the time you have depends on the distance, and the status box counts it down. The pay is more the farther the drop-off, up to 40% more for arriving early and less the later you are. Crashes damage the parcel (a knock is fine, a hard crash ruins it) and cut the pay by as much; running a red light costs $10 and knocking into a pedestrian $25. When you deliver, a results card shows the receipt line by line, the pay and up to three stars (two for on time with no fines and little damage, three for early and nearly unscathed), and your cash and deliveries are kept under it from one drive to the next. Each job stays in the current area.
 
 Deliveries come in levels, shown with your cash. The first jobs are easy: one parcel, a short way, with time to spare. As you deliver more (3, 7, 12, 18 and 26 deliveries), you move up a level. Each level brings bigger groups of parcels to drop off in turn (up to five a round), longer legs and harder cargo, and pays more:
 

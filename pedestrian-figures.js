@@ -1,6 +1,8 @@
 // The pedestrians (pedestrians.js) on screen: a simple figure drawn once per person (instanced), part by part: body,
-// head, hair, two arms and two legs, in their own clothes, skin and hair colours, legs and arms swinging as they walk.
+// head, hair, two arms and two legs, in their own clothes, skin and hair colours, legs and arms swinging as they walk,
+// and a soft contact shadow at their feet.
 import * as THREE from 'three';
+import { blobTex } from './world-kit.js';
 
 const pal = list => list.map(c => new THREE.Color(c));
 const SKIN = pal(['#f1d1b5', '#e8bd98', '#d9a77f', '#c68a62', '#a86f4c', '#8a5638', '#6b3f28', '#4e2d1d']);
@@ -36,6 +38,8 @@ export function pedestrianFigures(scene, max) {
     m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
     group.add(m); return (meshes[name] = m);
   };
+  const blob = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.8, 0.8).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: blobTex(0.25, 0.55), transparent: true, depthWrite: false }), max);
+  blob.name = 'pedestrian_shadow'; blob.count = 0; blob.renderOrder = 2; blob.frustumCulled = false; group.add(blob);
   mk('body', G.body, max, 0.9); mk('head', G.head, max, 0.7); mk('hair', G.hair, max, 0.95); mk('arm', G.arm, max * 2, 0.9); mk('leg', G.leg, max * 2, 0.85);
   const M = new THREE.Matrix4(), L = new THREE.Matrix4(), R = new THREE.Matrix4(), Q = new THREE.Quaternion(), T = new THREE.Quaternion(), P = new THREE.Vector3(), S = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(0, 0, 1);
   const limb = (mesh, i, y, z, swing) => { L.makeTranslation(0, y, z).multiply(R.makeRotationZ(swing)); mesh.setMatrixAt(i, L.premultiply(M)); };
@@ -47,6 +51,7 @@ export function pedestrianFigures(scene, max) {
       Q.setFromAxisAngle(Y, p.h).multiply(T.setFromAxisAngle(Z, lean));
       M.compose(P.set(p.x, Math.abs(Math.cos(p.phase)) * stride * 0.06, p.z), Q, S.setScalar(k.scale));
       for (const part of ['body', 'head', 'hair']) meshes[part].setMatrixAt(i, M);
+      blob.setMatrixAt(i, L.makeTranslation(p.x, 0.065, p.z));
       limb(meshes.leg, 2 * i, HIP, 0.095, sw); limb(meshes.leg, 2 * i + 1, HIP, -0.095, -sw);
       limb(meshes.arm, 2 * i, SHOULDER, 0.235, -sw * 0.8 + (lean ? 0.6 : 0)); limb(meshes.arm, 2 * i + 1, SHOULDER, -0.235, sw * 0.8 + (lean ? 0.6 : 0));
       const shirt = SHIRT[k.shirt % SHIRT.length], pants = PANTS[k.pants % PANTS.length];
@@ -54,6 +59,7 @@ export function pedestrianFigures(scene, max) {
       for (const j of [2 * i, 2 * i + 1]) { meshes.arm.setColorAt(j, shirt); meshes.leg.setColorAt(j, pants); }
     }
     for (const [name, m] of Object.entries(meshes)) { m.count = name === 'arm' || name === 'leg' ? 2 * n : n; m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; }
+    blob.count = n; blob.instanceMatrix.needsUpdate = true;
   }
   return { sync };
 }

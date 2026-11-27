@@ -217,3 +217,16 @@ export function seaPolys(coast, B, B2) {
 
 export const gkey = (i, j) => i * 65536 + j;
 export const segDist = (x, z, s) => { const t = Math.max(0, Math.min(1, ((x - s.ax) * s.dx + (z - s.az) * s.dz) / s.l2)); return [Math.hypot(x - s.ax - s.dx * t, z - s.az - s.dz * t), t]; };
+// round obstacles [x, z, r, y0, y1] (m) in a grid of `cell` m: near(x, z, y, pad) says whether (x, z) lies within
+// r + pad of one that spans height y. r + pad must stay under the cell size.
+export function pointGrid(points, cell = 4) {
+  const g = new Map(), at = (i, j) => g.get(gkey(i, j)) || [];
+  for (const p of points) { const k = gkey(Math.floor(p[0] / cell), Math.floor(p[1] / cell)); let c = g.get(k); if (!c) g.set(k, c = []); c.push(p); }
+  return {
+    near(x, z, y, pad = 0) {
+      const i = Math.floor(x / cell), j = Math.floor(z / cell);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const p of at(i + a, j + b)) if (y >= p[3] && y <= p[4] && (p[0] - x) ** 2 + (p[1] - z) ** 2 < (p[2] + pad) ** 2) return true;
+      return false;
+    }
+  };
+}

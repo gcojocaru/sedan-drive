@@ -144,51 +144,70 @@ export function prepareRoads(roads, regionalSide) {
   for (const road of roads) {
     road.gaps.sort((a, b) => a[0] - b[0]);
     road.markSections = outsideJunctions(road, 0);
-    for (const line of outsideJunctions(road, 2.4)) for (let i = 1; i < line.length; i++) {
-      const a = line[i - 1], dx = line[i][0] - a[0], dz = line[i][1] - a[1], length = Math.hypot(dx, dz);
-      if (length) spawnSegments.push({ road, a, dx: dx / length, dz: dz / length, length });
+    for (const line of outsideJunctions(road, 2.4)) {
+      const segs = [];
+      for (let i = 1; i < line.length; i++) {
+        const a = line[i - 1], dx = line[i][0] - a[0], dz = line[i][1] - a[1], length = Math.hypot(dx, dz);
+        if (length) segs.push({ road, a, dx: dx / length, dz: dz / length, length });
+      }
+      // run: the straight lane from the segment's start onwards and from its end backwards, until the line ends (a
+      // junction or a dead end) or has turned more than 25° from this segment
+      segs.forEach((s, i) => {
+        let f = 0, b = 0; const on = t => t.dx * s.dx + t.dz * s.dz > 0.906;
+        for (let j = i; j < segs.length && on(segs[j]); j++) f += segs[j].length;
+        for (let j = i; j >= 0 && on(segs[j]); j--) b += segs[j].length;
+        s.run = [f, b];
+      });
+      spawnSegments.push(...segs);
     }
   }
   return { junctions, corners, spawnSegments };
 }
 
+// The lane point nearest (x, z) facing `heading` (either way when it's null, as on the first start), scored by its
+// distance plus how far short it falls of `want` metres of straight lane ahead: 40 on the first start, so the car
+// starts on a long run, and 12 after a reset, so it doesn't face a junction or a lane's end.
 export function laneSpawn(segments, x, z, heading, half, occupied) {
   let best = null, bestDist = Infinity;
+  const want = heading == null ? 40 : 12;
   const fx = heading == null ? 0 : Math.cos(heading);
   const fz = heading == null ? 0 : -Math.sin(heading);
-  for (const { road, a, dx, dz, length } of segments) {
+  for (const { road, a, dx, dz, length, run } of segments) {
     const lanes = road.lanes;
-    const dir = lanes.one || (dx * fx + dz * fz < 0 ? -1 : 1);
-    const offset = dir * lanes.side * (lanes.edge - lanes.width / 2);
-    const ax = a[0] - dz * offset, az = a[1] + dx * offset;
-    let lo = 0, hi = length;
-    // Clip the lane centre to the playable square, leaving room for the car body.
-    for (const [v, d] of [[ax, dx], [az, dz]]) {
-      const bound = half - 2.5;
-      if (Math.abs(d) < 1e-9) { if (Math.abs(v) > bound) hi = -1; continue; }
-      const s = (-bound - v) / d, t = (bound - v) / d;
-      lo = Math.max(lo, Math.min(s, t)); hi = Math.min(hi, Math.max(s, t));
-    }
-    if (lo > hi) continue;
-    const along = Math.max(lo, Math.min(hi, (x - ax) * dx + (z - az) * dz));
-    const h = Math.atan2(-dir * dz, dir * dx);
-    function consider(s) {
-      const px = ax + s * dx, pz = az + s * dz, d = (px - x)**2 + (pz - z)**2;
-      if (d >= bestDist) return true;
-      if (occupied?.(px, pz, h)) return false;
-      bestDist = d;
-      best = { x: px, z: pz, h, name: road.name };
-      return true;
-    }
-    if (!consider(along)) {
-      // A mapped bollard can sit on the lane itself. Search outwards in both directions.
-      for (const end of [lo, hi]) {
-        const distance = Math.abs(end - along);
-        for (let offset = 0; offset < distance;) {
-          offset = Math.min(distance, offset + 4);
-          if (consider(along + Math.sign(end - along) * offset)) break;
+    for (const dir of lanes.one ? [lanes.one] : heading == null ? [1, -1] : [dx * fx + dz * fz < 0 ? -1 : 1]) {
+      const offset = dir * lanes.side * (lanes.edge - lanes.width / 2);
+      const ax = a[0] - dz * offset, az = a[1] + dx * offset;
+      let lo = 0, hi = length;
+      // Clip the lane centre to the playable square, leaving room for the car body.
+      for (const [v, d] of [[ax, dx], [az, dz]]) {
+        const bound = half - 2.5;
+        if (Math.abs(d) < 1e-9) { if (Math.abs(v) > bound) hi = -1; continue; }
+        const s = (-bound - v) / d, t = (bound - v) / d;
+        lo = Math.max(lo, Math.min(s, t)); hi = Math.min(hi, Math.max(s, t));
+      }
+      if (lo > hi) continue;
+      const along = Math.max(lo, Math.min(hi, (x - ax) * dx + (z - az) * dz));
+      const h = Math.atan2(-dir * dz, dir * dx), ahead = s => dir > 0 ? run[0] - s : run[1] - length + s;
+      function consider(s) {
+        const px = ax + s * dx, pz = az + s * dz, d = (px - x)**2 + (pz - z)**2 + (want * Math.max(0, 1 - ahead(s) / want))**2;
+        if (d >= bestDist) return true;
+        if (occupied?.(px, pz, h)) return false;
+        bestDist = d;
+        best = { x: px, z: pz, h, name: road.name };
+        return true;
+      }
+      if (!consider(along)) {
+        // A mapped bollard can sit on the lane itself. Search outwards in both directions.
+        for (const end of [lo, hi]) {
+          const distance = Math.abs(end - along);
+          for (let offset = 0; offset < distance;) {
+            offset = Math.min(distance, offset + 4);
+            if (consider(along + Math.sign(end - along) * offset)) break;
+          }
         }
       }
+      // Too little lane ahead: the best trade is half-way back to where `want` metres lie ahead.
+      if (ahead(along) < want) consider(Math.max(lo, Math.min(hi, along - dir * (want - ahead(along)) / 2)));
     }
   }
   return best;

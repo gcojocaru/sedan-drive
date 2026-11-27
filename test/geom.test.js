@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { joinRings, inPoly, polyArea, signedArea, bbox, openRing, obb, clipHalf, ribbon, newBuf, tri3, seeded, segDist, seaPolys, offsetRing, trimLine, pointAt } from '../geom.js';
+import { joinRings, inPoly, polyArea, signedArea, bbox, openRing, obb, clipHalf, ribbon, newBuf, tri3, seeded, segDist, seaPolys, offsetRing, trimLine, pointAt, pointGrid } from '../geom.js';
 
 const near = (a, b, e = 1e-9) => assert.ok(Math.abs(a - b) < e, a + ' is not ' + b);
 const square = [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]];
@@ -90,4 +90,13 @@ test('a polyline trimmed at both ends, and points along it', () => {
   assert.deepEqual(pointAt(g, cum, 5), [5, 0, 1, 0]);
   assert.deepEqual(pointAt(g, cum, 15), [10, 5, 0, 1]);
   assert.deepEqual(pointAt(g, cum, 99), [10, 10, 0, 1], 'clamped to the end');
+});
+
+test('pointGrid finds round obstacles by distance, pad and height, across cell edges', () => {
+  const g = pointGrid([[3.9, 0, 0.2, 0, 3], [-10, -10, 0.5, 2, 3]]);
+  assert.ok(g.near(4.05, 0, 1)); // the next cell over
+  assert.ok(!g.near(4.5, 0, 1)); assert.ok(g.near(4.5, 0, 1, 0.5));
+  assert.ok(!g.near(3.9, 0, 3.5)); // above it
+  assert.ok(g.near(-10.3, -9.8, 2.5) && !g.near(-10.3, -9.8, 1.5));
+  assert.ok(!pointGrid([]).near(0, 0, 0, 1));
 });

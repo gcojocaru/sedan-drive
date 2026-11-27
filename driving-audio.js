@@ -63,6 +63,15 @@ export function impactSound(speed, kind) {
     ring: kind === 'wall' ? 0 : (kind === 'car' ? 0.06 : 0.1) * s ** 0.8, glass: kind === 'car' && v > 7 ? Math.min(1, (v - 7) / 8) * 0.12 : 0 };
 }
 
+// The results card's sounds as notes, [frequency (Hz), start (s), length (s)]: a tick as the pay counts up, two bright
+// notes for the coin, star i one step higher up a major chord than the star before, a rising arpeggio for a level-up
+// and two falling notes for a ruined load.
+export function chimeNotes(kind, i = 0) {
+  const up = 2 ** (([0, 4, 7][i] ?? 12) / 12);
+  return { tick: [[1760, 0, 0.03]], coin: [[988, 0, 0.08], [1319, 0.07, 0.3]], star: [[784 * up, 0, 0.22], [1568 * up, 0.01, 0.12]],
+    level: [[523, 0, 0.14], [659, 0.1, 0.14], [784, 0.2, 0.14], [1047, 0.3, 0.45]], fail: [[392, 0, 0.18], [294, 0.17, 0.4]] }[kind] || [];
+}
+
 const MUTE_KEY = 'sedan-driving-muted-v1';
 
 export function drivingAudio() {
@@ -169,6 +178,19 @@ export function drivingAudio() {
     }
   }
 
+  // A results-card sound (chimeNotes), through the master gain so V mutes it too
+  function chime(kind, i) {
+    if (!ctx || ctx.state !== 'running') return;
+    const now = ctx.currentTime, out = ctx.createGain(); let end = 0;
+    out.gain.value = kind === 'tick' ? 0.04 : 0.1; out.connect(master);
+    for (const [f, t, d] of chimeNotes(kind, i)) {
+      const o = ctx.createOscillator(), g = silent(); o.type = kind === 'tick' ? 'sine' : 'triangle'; o.frequency.value = f;
+      g.gain.setValueAtTime(0, now + t); g.gain.linearRampToValueAtTime(1, now + t + 0.006); g.gain.setTargetAtTime(0, now + t + 0.01, d / 3);
+      o.connect(g).connect(out); o.start(now + t); o.stop(now + t + d + 0.2); end = Math.max(end, t + d + 0.3);
+    }
+    setTimeout(() => out.disconnect(), end * 1000);
+  }
+
   // Traffic: a few voices (engine note and tyre hiss, panned) follow the nearest cars; a car keeps its voice while it
   // stays among them, and a voice goes to another car only once it has fallen quiet.
   function voice() {
@@ -262,5 +284,5 @@ export function drivingAudio() {
     if (e.persisted) suspend();
     else { stopBurst(); ctx?.close().catch(() => {}); ctx = null; voices.length = 0; bus = null; hornOn = null; }
   });
-  return { activate, update, impact, horn, traffic, honkAt, tuningStatic, toggleMute };
+  return { activate, update, impact, horn, chime, traffic, honkAt, tuningStatic, toggleMute };
 }

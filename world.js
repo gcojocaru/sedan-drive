@@ -117,10 +117,19 @@ export async function buildWorld(elements, lat0, lon0, scene, say) {
   const { setLamps, glowTex, lamps } = streetLamps(scene, roads, look, areaAt, inBuilding, wx);
   const clear = signClearance(trees, lamps, look, areaAt, inBuilding);
   const { objects, hit } = planFurniture(furniture, polys, roadAt, clear);
-  addFurniture(scene, objects);
+  const parkedPaint = addFurniture(scene, objects);
   const signFree = (x,z) => clear(x,z) && !hit(x,z,0,0.35,0.35);
-  addSignMeshes(scene, planSigns(layout.junctions, landmarks, roadAt, signFree));
-  return { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex };
+  const signs = planSigns(layout.junctions, landmarks, roadAt, signFree);
+  addSignMeshes(scene, signs);
+  return { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs) };
+}
+
+// what the chase camera keeps out of, as geom.js pointGrid points [x, z, r, y0, y1]: tree trunks (not the crowns, which
+// overhang the lanes), lamp posts, and sign posts and boards (sign-mesh.js: boards up to 3.6 m wide, about 2.6 m up)
+function camPosts(trees, lamps, signs) {
+  const o = trees.map(t => [t[0], t[1], 0.24 * t[2], 0, 3.2 * t[2]]).concat(lamps.map(l => [l[0], l[1], 0.12, 0, 7.4]));
+  for (const { x, z, dx, dz } of signs) { o.push([x, z, 0.08, 0, 2.6]); for (let a = -1.6; a < 1.7; a += 0.4) o.push([x + dx * a, z + dz * a, 0.25, 2.1, 3.1]); }
+  return o;
 }
 
 // OSM elements → local metres: lines (ways), polys (closed areas and multipolygons), and the point features we use.

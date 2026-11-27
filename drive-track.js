@@ -4,7 +4,10 @@ import { readKeys, rigCar, step, syncCar, chaseCamera, speedHud } from './drive-
 import { radio, radioHud } from './radio.js';
 import { drivingAudio } from './driving-audio.js';
 import { touchControls } from './touch.js';
+import { toasts } from './toast.js';
+import { gamepad } from './gamepad.js';
 import { showAppVersion } from './app-version.js';
+import { blobTex } from './world-kit.js';
 
 showAppVersion();
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -121,9 +124,8 @@ const distToRoad = (x, z) => { let d = 1e9; for (let i = 0; i < N; i += 6) { con
     const h = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 2), hm); h.scale.set(s, s * (0.3 + Math.random() * 0.35), s * (0.8 + Math.random() * 0.5)); h.position.set(Math.cos(a) * r, -s * 0.05, Math.sin(a) * r); scene.add(h); } }
 
 // soft contact shadow that travels with the car
-{ const blob = (inner, a) => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); const g = x.createRadialGradient(64, 64, 64 * inner, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); };
-  const mk = (tex, w, d, x, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.03, z); m.renderOrder = 2; car.add(m); };
-  mk(blob(0.35, 0.6), 5.0, 2.1, -0.05, 0); const tb = blob(0.1, 0.8); for (const x of [1.32, -1.31]) for (const z of [0.735, -0.735]) mk(tb, 0.55, 0.34, x, z); }
+{ const mk = (tex, w, d, x, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.03, z); m.renderOrder = 2; car.add(m); };
+  mk(blobTex(0.35, 0.6), 5.0, 2.1, -0.05, 0); const tb = blobTex(0.1, 0.8); for (const x of [1.32, -1.31]) for (const z of [0.735, -0.735]) mk(tb, 0.55, 0.34, x, z); }
 
 // ---------- Driving ----------
 const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0, idx: 0 };
@@ -141,25 +143,25 @@ placeOnTrack(N - 14);
 const BEST_KEY = 'sedan-drive-best-v1';
 let lap = { running: false, t0: 0, n: 0, cps: new Set(), last: null, best: +localStorage.getItem(BEST_KEY) || null };
 const fmt = s => s == null ? '–' : Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0');
-const msgEl = document.getElementById('msg'); let msgTimer;
-function flash(t) { msgEl.textContent = t; msgEl.style.opacity = 1; clearTimeout(msgTimer); msgTimer = setTimeout(() => msgEl.style.opacity = 0, 1800); }
+const flash = toasts(); // flash(text, tone, key)
 let clock = 0;
 function lapLogic(prev, cur) {
   const q = N / 4; for (const c of [1, 2, 3]) if (Math.abs(cur - c * q) < 30) lap.cps.add(c);
   if (prev > N - 80 && cur < 80) { // crossed start line forwards
     if (lap.running && lap.cps.size === 3) { const t = clock - lap.t0; lap.last = t; lap.n++;
-      if (!lap.best || t < lap.best) { lap.best = t; localStorage.setItem(BEST_KEY, t); flash('New best lap  ' + fmt(t)); } else flash('Lap ' + fmt(t)); }
-    else if (!lap.running) flash('Go');
+      if (!lap.best || t < lap.best) { lap.best = t; localStorage.setItem(BEST_KEY, t); flash('New best lap  ' + fmt(t), 'gold'); } else flash('Lap ' + fmt(t)); }
+    else if (!lap.running) flash('Go', 'good');
     lap.running = true; lap.t0 = clock; lap.cps.clear();
   }
   if (prev < 80 && cur > N - 80) lap.cps.clear();
 }
 
 const TUNE = { power: 7.8, idle: 0.6, vtop: 60 };
-function update(dt) {
-  const k = readKeys(keys), rough = nearest(st.pos).d > HW + 1.6, prev = st.idx;
+const pad = gamepad();
+function update(dt, p) {
+  const k = readKeys(keys, p), rough = nearest(st.pos).d > HW + 1.6, prev = st.idx;
   const s = step(st, k, dt, { vmax: rough ? 15 : 52, drag: rough ? 0.9 : 0.02, rough }, TUNE);
-  sound.update(st.v, k.up, k.dn, { hb: k.hb, steer: st.steer, slip: st.slip, rough });
+  const ride = { hb: k.hb, steer: st.steer, slip: st.slip, rough }; sound.update(st.v, k.up, k.dn, ride); pad.feel(st.v, s.braking, ride);
   st.idx = nearest(st.pos).i; lapLogic(prev, st.idx);
   if (k.dn && st.v <= 0.2 && Math.abs(st.v) < 0.5) s.reversing = true; // reverse lamp on while holding brake at a standstill
   return s;
@@ -195,6 +197,7 @@ function begin() {
 startEl.addEventListener('click', begin);
 const tune = radio(radioHud(), undefined, sound.tuningStatic);
 addEventListener('keydown', e => {
+  if (e.isTrusted) sound.activate(); // (a pad-only start can't turn the sound on: the first real key does)
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   keys[e.code] = true; if (e.repeat) return;
   begin();
@@ -203,7 +206,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyN') setNight(!night);
   if (e.code === 'KeyC') camMode = 1 - camMode;
   if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);
-  if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on');
+  if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on', '', 'sound');
   if (e.code === 'KeyR') { const n = nearest(st.pos, true); st.idx = n.i; placeOnTrack(n.i); }
 });
 addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyB') sound.horn(false); });
@@ -212,7 +215,8 @@ addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); ca
 let last = performance.now(), lastS = { braking: false, reversing: false };
 renderer.setAnimationLoop(now => {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  if (started) { clock += dt; lastS = update(dt); }
+  const p = pad.poll(); if (p?.thr && !started) begin(); // (its buttons start the game through their keys)
+  if (started) { clock += dt; lastS = update(dt, p); }
   syncCar(rig, st, lastS, head); updateCam(dt); hud(lastS);
   renderer.render(scene, camera);
 });

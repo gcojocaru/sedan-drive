@@ -17,8 +17,9 @@ function busPlate() {
   return new THREE.MeshStandardMaterial({map, roughness:0.65});
 }
 
+// → avoid(color) for the parked cars (traffic-cars.js parkedCars)
 export function addFurniture(scene, objects) {
-  parkedCars(scene, objects.filter(o=>o.kind==='car'));
+  const avoid = parkedCars(scene, objects.filter(o=>o.kind==='car'));
   function group(kind, build) {
     const poses = objects.filter(o=>o.kind===kind);
     if (!poses.length) return;
@@ -53,4 +54,5 @@ export function addFurniture(scene, objects) {
     const face = busPlate();
     part(new THREE.BoxGeometry(0.045,0.63,0.56),[face,face,metal,metal,metal,metal],[[0,2.51,0]]);
   });
+  return avoid;
 }

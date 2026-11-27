@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { drivingAudio, engineTone, trafficVoices, tyreSound, impactSound } from '../driving-audio.js';
+import { drivingAudio, engineTone, trafficVoices, tyreSound, impactSound, chimeNotes } from '../driving-audio.js';
 
 test('the engine revs and opens up under load, then drops pitch on an upshift', () => {
   const idle = engineTone(0, false, false);
@@ -101,4 +101,18 @@ test('a traffic car braking hard screeches', () => {
   assert.ok(trafficVoices([car({ v: 12, brake: 8 })], ear())[0].screech);
   assert.ok(!trafficVoices([car({ v: 12, brake: 3 })], ear())[0].screech, 'not for an ordinary stop');
   assert.ok(!trafficVoices([car({ v: 2, brake: 8 })], ear())[0].screech, 'not at walking pace');
+});
+
+test('the results card chimes: short notes, stars rising one by one, a level-up rising, a ruined load falling', () => {
+  for (const kind of ['tick', 'coin', 'star', 'level', 'fail']) {
+    const notes = chimeNotes(kind);
+    assert.ok(notes.length >= 1 && notes.length <= 4, kind);
+    for (const [f, t, d] of notes) assert.ok(f > 200 && f < 4000 && t >= 0 && d > 0 && t + d < 1, kind);
+  }
+  const star = i => chimeNotes('star', i)[0][0];
+  assert.ok(star(0) < star(1) && star(1) < star(2));
+  const level = chimeNotes('level'), fail = chimeNotes('fail');
+  assert.ok(level.at(-1)[0] > level[0][0] && fail.at(-1)[0] < fail[0][0]);
+  assert.deepEqual(chimeNotes('nothing'), []);
+  assert.equal(typeof drivingAudio().chime, 'function');
 });

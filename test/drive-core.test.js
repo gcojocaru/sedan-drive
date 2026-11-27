@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readKeys, step, speedHud } from '../drive-core.js';
+import { readKeys, step, speedHud, chaseCamera } from '../drive-core.js';
 
 const ROAD = { vmax: 42, drag: 0.02, rough: false }, GRASS = { vmax: 12, drag: 0.7, rough: true }, TUNE = { power: 7.4, idle: 0.5, vtop: 50 };
 const car = () => ({ pos: { x: 0, z: 0 }, h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0 });
@@ -102,4 +102,63 @@ test('better brakes stop the car shorter', () => {
   const stopAt = brake => { const st = { ...car(), v: 13.9 }; let n = 0; while (st.v > 0 && n++ < 1000) step(st, { dn: true }, 1 / 60, ROAD, { ...TUNE, brake }); return st.pos.x; };
   assert.ok(stopAt(1.25) < stopAt(1) * 0.85 && stopAt(1.25) > stopAt(1) * 0.7, stopAt(1) + ' → ' + stopAt(1.25));
   assert.equal(stopAt(undefined), stopAt(1), 'stock brakes when the tune says nothing');
+});
+
+// ---- chase camera ----
+function camRig() {
+  const P = (x = 0, y = 0, z = 0) => ({ x, y, z, set(a, b, c) { this.x = a; this.y = b; this.z = c; return this; }, clone() { return P(this.x, this.y, this.z); }, copy(o) { return this.set(o.x, o.y, o.z); } });
+  const camera = { position: P(), look: null, fov: 0, lookAt(x, y, z) { this.look = { x, y, z }; }, updateProjectionMatrix() { } };
+  return { camera, cam: chaseCamera(camera, {}), back: st => Math.hypot(camera.position.x - st.pos.x, camera.position.z - st.pos.z),
+    view: () => Math.atan2(-(camera.look.z - camera.position.z), camera.look.x - camera.position.x) };
+}
+function ride(cam, st, seconds, occluded) { for (let t = 0; t < seconds * 60; t++) { st.pos.x += Math.cos(st.h + st.slip) * st.v / 60; st.pos.z -= Math.sin(st.h + st.slip) * st.v / 60; cam.update(st, 0, 1 / 60, occluded); } }
+
+test('the chase camera keeps its distance at speed instead of falling behind', () => {
+  const { cam, back } = camRig(), st = { ...car(), slip: 0 };
+  cam.reset(st); ride(cam, st, 1); const rest = back(st);
+  st.v = 30; ride(cam, st, 2);
+  assert.ok(rest > 7.5 && rest < 8.1, 'rest ' + rest);
+  assert.ok(back(st) <= rest && back(st) > rest - 1.1, 'at 30 m/s ' + back(st)); // was about 16 m
+});
+
+test('in a slide the chase camera turns towards the path', () => {
+  const { cam, view } = camRig(), st = { ...car(), v: 15, slip: 0.4 };
+  cam.reset(st); ride(cam, st, 1);
+  assert.ok(Math.abs(view() - 0.4) < 0.12 && view() > 0.25, 'view ' + view());
+});
+
+test('the chase camera pulls in at once in front of an occluder and eases back out', () => {
+  const { cam, back } = camRig(), st = { ...car(), slip: 0 };
+  cam.reset(st); ride(cam, st, 1);
+  const pole = (x, z) => Math.hypot(x + 5, z) < 0.5;
+  ride(cam, st, 1 / 60, pole); assert.ok(back(st) < 4.7, 'first frame ' + back(st));
+  ride(cam, st, 0.3, pole); assert.ok(Math.abs(back(st) - 4.2) < 0.1, 'settled ' + back(st));
+  ride(cam, st, 0.1); assert.ok(back(st) < 5.2, 'still close after 0.1 s ' + back(st));
+  ride(cam, st, 3); assert.ok(back(st) > 7.5, 'back out ' + back(st));
+});
+
+// ---- gamepad: analogue steer, throttle and brake (gamepad.js → readKeys(keys, pad)) ----
+const PAD = { steer: 0, thr: 0, brk: 0, hb: false };
+test('readKeys merges a pad; held keys override it at full; no pad gives the keys alone', () => {
+  assert.deepEqual(readKeys({ ArrowUp: true }), readKeys({ ArrowUp: true }, null));
+  const k = readKeys({}, { ...PAD, steer: -0.4, thr: 0.6, hb: true });
+  assert.deepEqual([k.up, k.dn, k.hb, k.steer, k.thr, k.brk], [true, false, true, -0.4, 0.6, 0]);
+  const both = readKeys({ ArrowUp: true, ArrowLeft: true, ArrowDown: true }, { ...PAD, steer: -0.4, thr: 0.3, brk: 0.2 });
+  assert.deepEqual([both.steer, both.thr, both.brk, both.lf], [undefined, 1, 1, true]);
+});
+
+test('a full pad drives exactly like the keys; an idle one is like no keys', () => {
+  const a = car(), b = car(), c = car(), d = car();
+  drive(a, readKeys({ ArrowUp: true, ArrowLeft: true }), 4); drive(b, readKeys({}, { ...PAD, steer: 1, thr: 1 }), 4);
+  assert.deepEqual(a, b);
+  c.v = d.v = 10; drive(c, readKeys({}), 3); drive(d, readKeys({}, PAD), 3);
+  assert.deepEqual(c, d);
+});
+
+test('half stick turns about half as fast; half throttle and brake pull about half as hard', () => {
+  const yaw = steer => { const st = { ...car(), v: 10 }; drive(st, { steer }, 1); const h = st.h; step(st, { steer }, 1 / 60, ROAD, TUNE); return st.h - h; };
+  const r = yaw(0.5) / yaw(1); assert.ok(r > 0.42 && r < 0.58, 'yaw ratio ' + r);
+  const dv = k => { const st = { ...car(), v: 10 }; step(st, k, 1 / 60, ROAD, TUNE); return st.v - 10; }, coast = dv({});
+  const gas = (dv({ up: true, thr: 0.5 }) - coast) / (dv({ up: true }) - coast), brake = (dv({ dn: true, brk: 0.5 }) - coast) / (dv({ dn: true }) - coast);
+  assert.ok(Math.abs(gas - 0.5) < 0.05 && Math.abs(brake - 0.5) < 0.05, 'gas ' + gas + ', brake ' + brake);
 });
