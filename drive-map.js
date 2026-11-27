@@ -15,6 +15,7 @@ import { FALLBACK_CREDIT } from './vector-fallback.js';
 import { loadArea } from './map-data.js';
 import { buildWorld, TYPE_LABEL, HARD } from './world.js';
 import { makeTex } from './world-kit.js';
+import { pointGrid } from './geom.js';
 import { radio, radioHud, stationsNear } from './radio.js';
 import { touchControls } from './touch.js';
 import { createSky } from './sky.js';
@@ -166,7 +167,7 @@ async function startGame(lat0, lon0, placeName) {
 
   const sky = createSky(renderer, scene, lat0), { TIMES, NIGHT } = sky;
 
-  const { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex } = await buildWorld(data.elements, lat0, lon0, scene, say);
+  const { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts } = await buildWorld(data.elements, lat0, lon0, scene, say);
 
   // ---- car ----
   await say('Placing the car…');
@@ -177,6 +178,7 @@ async function startGame(lat0, lon0, placeName) {
   repaint(CAR, tuning.paint);
   const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), probe = new THREE.Sphere(V(), 3); // what the camera sees: traffic comes and goes out of sight
   const graph = laneGraph(roads, layout.junctions, HALF, signalPts), lightsView = trafficLights(scene, graph.signals, glowTex);
+  const props = pointGrid(posts.concat(graph.signals.map(s => [s.x, s.z, 0.25, 0, 3.6]))), occluded = (x, z, y) => inBuilding(x, z, y) || props.near(x, z, y, 0.4); // what the chase camera pulls in front of
   const seen = (x, z) => frustum.intersectsSphere((probe.center.set(x, 1, z), probe)), coarse = matchMedia('(pointer: coarse)').matches;
   const traffic = createTraffic(graph, { max: coarse ? 45 : 100, seen });
   const trafficView = trafficCars(scene, 100, glowTex), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
@@ -352,7 +354,7 @@ async function startGame(lat0, lon0, placeName) {
     headGlow.opacity = head ? (lowLight ? 0.85 : 0.25) : 0; tailGlow.opacity = s.braking ? (lowLight ? 0.9 : 0.4) : head && lowLight ? 0.35 : 0;
   }
   function updateCam(dt) {
-    cam.update(st, camMode, dt, inBuilding);
+    cam.update(st, camMode, dt, occluded);
     if (shake > 0.01) { camera.position.x += (Math.random() - 0.5) * shake * 0.25; camera.position.y += (Math.random() - 0.5) * shake * 0.2; shake *= Math.exp(-dt * 7); }
     sky.placeShadow(st.pos.x + Math.cos(st.h) * 45, st.pos.z - Math.sin(st.h) * 45); // the shadow box reaches further ahead of the car
     sky.update(dt, camera.position); reflectLamps(camera.position.x, camera.position.z);

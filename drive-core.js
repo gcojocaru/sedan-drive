@@ -71,22 +71,32 @@ export function syncCar({ C, car, wheels, swFace }, st, s, head) {
   C.revMat.emissiveIntensity = s.reversing ? 5 : 0;
 }
 
-// Chase camera (mode 0) that eases in behind the car, or the driver's view (mode 1).
-// occluded(x, z, y), if given, pulls the chase camera in front of whatever it would sit inside.
+// Chase camera (mode 0) that rides behind the car, or the driver's view (mode 1). The chase camera sits in the car's
+// frame at a yaw that eases towards the way the car travels (most of a slide's angle shows); only the yaw lags, so its
+// distance holds at any speed. Faster, it sits a little closer and lower, looks further ahead and widens its view.
+// occluded(x, z, y), if given, says whether a point of the sightline is inside something: the camera pulls in fast in
+// front of the nearest one (never staying behind it) and eases back out slowly.
 export function chaseCamera(camera, car) {
-  const pos = camera.position.clone(), want = pos.clone(), look = pos.clone();
+  const look = camera.position.clone(), REST = 7.8; let yaw = 0, dist = REST;
   return {
-    reset(st) { pos.set(st.pos.x - Math.cos(st.h) * 9, 3.2, st.pos.z + Math.sin(st.h) * 9); },
+    reset(st) { yaw = st.h; dist = REST; },
     update(st, mode, dt, occluded) {
-      const fx = Math.cos(st.h), fz = -Math.sin(st.h);
       if (mode === 0) {
-        let back = 8.5 + Math.max(0, st.v) * 0.04, camY = 3.0;
-        if (occluded) for (let s = 2; s < back; s += 0.6) if (occluded(st.pos.x - fx * s, st.pos.z - fz * s, camY)) { back = Math.max(2.5, s - 0.8); camY = 2.2 + back * 0.12; break; }
-        want.set(st.pos.x - fx * back, camY, st.pos.z - fz * back);
-        pos.lerp(want, 1 - Math.exp(-dt * 4.5)); camera.position.copy(pos);
-        camera.lookAt(look.set(st.pos.x + fx * 4, 1.1, st.pos.z + fz * 4));
-        camera.fov = 58 + Math.max(0, st.v) * 0.18; camera.near = 0.1;
+        const t = Math.min(1, Math.max(0, (st.v - 8) / 37)), sp = t * t * (3 - 2 * t); // 0 up to 8 m/s, 1 from 45 m/s
+        const want = REST - sp, high = 2.9 - 0.45 * sp, ahead = 5 + 4 * sp;
+        let turn = st.h + 0.75 * (st.slip || 0) - yaw; turn -= Math.round(turn / (2 * Math.PI)) * 2 * Math.PI;
+        yaw += turn * (1 - Math.exp(-5 * dt));
+        const fx = Math.cos(yaw), fz = -Math.sin(yaw);
+        let free = Infinity; // along the boom, from 2 m out, with the sightline sloping from the roof up to the camera
+        if (occluded) for (let b = 2; ; b = Math.min(want, b + 0.5)) { if (occluded(st.pos.x - fx * b, st.pos.z - fz * b, 1.3 + (high - 1.3) * b / want)) { free = b; break; } if (b >= want) break; }
+        const target = free < Infinity ? Math.max(2.5, free - 0.8) : want;
+        dist += (target - dist) * (1 - Math.exp(-(target < dist ? 25 : 2.5) * dt));
+        if (free < Infinity) dist = Math.min(dist, Math.max(2.5, free - 0.6)); // (the boom is sampled every 0.5 m)
+        camera.position.set(st.pos.x - fx * dist, Math.min(high, 2.2 + 0.12 * dist), st.pos.z - fz * dist);
+        camera.lookAt(st.pos.x + fx * ahead, 1.0, st.pos.z + fz * ahead);
+        camera.fov = 58 + 14 * sp; camera.near = 0.1;
       } else {
+        yaw = st.h; dist = REST; // back to the chase view from behind the car
         car.updateMatrixWorld(true);
         camera.position.copy(car.localToWorld(look.set(-0.18, 1.2, -0.37)));
         camera.lookAt(car.localToWorld(look.set(20, 0.75, -0.37)));
