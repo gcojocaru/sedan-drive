@@ -5,6 +5,7 @@ import { radio, radioHud } from './radio.js';
 import { drivingAudio } from './driving-audio.js';
 import { touchControls } from './touch.js';
 import { toasts } from './toast.js';
+import { gamepad } from './gamepad.js';
 import { showAppVersion } from './app-version.js';
 import { blobTex } from './world-kit.js';
 
@@ -156,10 +157,11 @@ function lapLogic(prev, cur) {
 }
 
 const TUNE = { power: 7.8, idle: 0.6, vtop: 60 };
-function update(dt) {
-  const k = readKeys(keys), rough = nearest(st.pos).d > HW + 1.6, prev = st.idx;
+const pad = gamepad();
+function update(dt, p) {
+  const k = readKeys(keys, p), rough = nearest(st.pos).d > HW + 1.6, prev = st.idx;
   const s = step(st, k, dt, { vmax: rough ? 15 : 52, drag: rough ? 0.9 : 0.02, rough }, TUNE);
-  sound.update(st.v, k.up, k.dn, { hb: k.hb, steer: st.steer, slip: st.slip, rough });
+  const ride = { hb: k.hb, steer: st.steer, slip: st.slip, rough }; sound.update(st.v, k.up, k.dn, ride); pad.feel(st.v, s.braking, ride);
   st.idx = nearest(st.pos).i; lapLogic(prev, st.idx);
   if (k.dn && st.v <= 0.2 && Math.abs(st.v) < 0.5) s.reversing = true; // reverse lamp on while holding brake at a standstill
   return s;
@@ -212,7 +214,8 @@ addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); ca
 let last = performance.now(), lastS = { braking: false, reversing: false };
 renderer.setAnimationLoop(now => {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  if (started) { clock += dt; lastS = update(dt); }
+  const p = pad.poll(); if (p?.thr && !started) begin(); // (its buttons start the game through their keys)
+  if (started) { clock += dt; lastS = update(dt, p); }
   syncCar(rig, st, lastS, head); updateCam(dt); hud(lastS);
   renderer.render(scene, camera);
 });
