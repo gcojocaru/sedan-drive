@@ -7,10 +7,10 @@ import { makeTex } from './world-kit.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const ss = THREE.MathUtils.smoothstep;
-const MOON = V(-0.45, 0.62, 0.64).normalize(), UPV = V(0, 1, 0);
+const MOON = V(-0.45, 0.62, 0.64).normalize(), UPV = V(0, 1, 0), SUNSET = new THREE.Color('#ff9548');
 // sky colours by sun elevation (degrees): zenith, horizon, glow around the sun, ground haze
 const SKYK = [[-14, '#03050a', '#0e1420', '#0e1420', '#050605'], [-5, '#141f3d', '#363c5c', '#a0604c', '#16181a'], [-1, '#2a3f73', '#7c6f80', '#f08a54', '#2c2d2a'],
-  [4, '#3d63a3', '#e6b590', '#ffae68', '#4d4f3f'], [12, '#3567ad', '#cfdbe4', '#ffdcae', '#6a6f52'], [35, '#2c5fa6', '#dfe9ef', '#fff4e0', '#737a58']];
+  [4, '#3a60a6', '#b9b5cf', '#ffa860', '#4d4f3f'], [12, '#3567ad', '#c6d4e6', '#ffd8a6', '#6a6f52'], [35, '#2c5fa6', '#dfe9ef', '#fff4e0', '#737a58']];
 const skyCols = e => { let i = 0; while (i < SKYK.length - 2 && e > SKYK[i + 1][0]) i++; const a = SKYK[i], b = SKYK[i + 1], f = THREE.MathUtils.clamp((e - a[0]) / (b[0] - a[0]), 0, 1); return [1, 2, 3, 4].map(k => new THREE.Color(a[k]).lerp(new THREE.Color(b[k]), f)); };
 const rgba = (c, a) => { const h = c.getHex(); return 'rgba(' + (h >> 16 & 255) + ',' + (h >> 8 & 255) + ',' + (h & 255) + ',' + a + ')'; };
 // per kind of weather (weather.js): cloud cover, haze (0 clear air … 1 thick fog), gloom (how much darker the light gets)
@@ -125,8 +125,9 @@ export function createSky(renderer, scene, lat, now = new Date()) {
   const reflectSky = createSkyReflections(renderer);
   const hemi = new THREE.HemisphereLight(0xd6e6ff, 0x5d6046, 0.7); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff0d8, 2.8); sun.castShadow = true;
-  // one shadow map over a box that reaches further ahead of the car than behind it (see placeShadow)
-  const SH_R = 90, SH_MAP = renderer.capabilities.maxTextureSize >= 4096 ? 4096 : 2048;
+  // one shadow map over a box that reaches further ahead of the car than behind it (see placeShadow), fitted in set() to
+  // the ground within SH_R of its centre and walls up to SH_UP m tall, so a low sun's long shadows get finer texels
+  const SH_R = 90, SH_UP = 60, SH_MAP = renderer.capabilities.maxTextureSize >= 4096 ? 4096 : 2048;
   sun.shadow.mapSize.set(SH_MAP, SH_MAP); Object.assign(sun.shadow.camera, { left: -SH_R, right: SH_R, top: SH_R, bottom: -SH_R, near: 1, far: 900 });
   sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.05; scene.add(sun, sun.target);
   const lightDir = V(0, 1, 0); // towards the sun (or moon)
@@ -137,7 +138,7 @@ export function createSky(renderer, scene, lat, now = new Date()) {
   function set(h, forceNight, w = { kind: 'clear' }, snow = 0) {
     const sd = sunAt(h); let e = Math.asin(sd.y) * 180 / Math.PI;
     const night = forceNight || e < -7; if (night) e = Math.min(e, -14);
-    const [cover, haze0, gloom] = LOOK[w.kind] || LOOK.clear, haze = haze0 * (w.amount ? 0.5 + 0.5 * w.amount : 1), warm = 1 - ss(e, 2, 30);
+    const [cover, haze0, gloom] = LOOK[w.kind] || LOOK.clear, haze = haze0 * (w.amount ? 0.5 + 0.5 * w.amount : 1), warm = 1 - ss(e, 2, 30), low = (1 - ss(e, 2, 20)) * ss(e, -3, 1); // low sun: a warm key and a cool fill
     const cols = skyCols(e), [zen, hor, glow, gnd] = cols, hg = grey(hor); // clouds grey the sky and gloom darkens it
     zen.lerp(hg.clone().multiplyScalar(0.85), cover * 0.85); hor.lerp(hg, cover * 0.8); glow.lerp(hg, cover * 0.9);
     for (const c of cols) c.multiplyScalar(1 - 0.5 * gloom);
@@ -145,24 +146,25 @@ export function createSky(renderer, scene, lat, now = new Date()) {
     // direct light: the sun by day, soft light from the whole sky at dusk, the moon at night
     if (night) { lightDir.copy(MOON); sun.color.set(0x9fb3ff); sun.intensity = 0.14; }
     else if (e < -1) { lightDir.set(0.25, 1, 0.3).normalize(); sun.color.copy(zen).lerp(new THREE.Color(0xffffff), 0.6); sun.intensity = 0.3; }
-    else { lightDir.copy(sd); if (lightDir.y < 0.06) { lightDir.y = 0.06; lightDir.normalize(); } sun.color.set(0xfff3e4).lerp(glow, warm * 0.85); sun.intensity = 1 + 2.6 * ss(e, -1, 12); }
+    else { lightDir.copy(sd); if (lightDir.y < 0.06) { lightDir.y = 0.06; lightDir.normalize(); } sun.color.set(0xfff3e4).lerp(glow, warm * 0.85).lerp(SUNSET, 0.5 * low); sun.intensity = 1 + 2.6 * ss(e, -1, 12) + 1.6 * low * ss(e, -1, 3); }
+    const ls = lightDir.y, sc = sun.shadow.camera; sc.top = Math.min(SH_R, SH_R * ls + SH_UP * Math.sqrt(1 - ls * ls)); sc.bottom = -Math.min(SH_R, SH_R * ls + 2); sc.updateProjectionMatrix();
     if (night) {
       // Cool indirect light keeps the kerb and car silhouette legible between street lamps.
       hemi.color.set(0xa4b9d1);
       hemi.groundColor.set(0x5c6270).lerp(new THREE.Color(0x9aa3b5), 0.6 * snow);
       hemi.intensity = 0.24;
     } else {
-      hemi.color.copy(hor).lerp(zen, 0.25);
-      hemi.groundColor.copy(gnd);
-      hemi.intensity = 0.22 + 0.33 * ss(e, -6, 15);
+      hemi.color.copy(hor).lerp(zen, 0.25 + 0.45 * low); // the shade is lit by the blue sky overhead, not the sunset
+      hemi.groundColor.copy(gnd).lerp(glow, 0.2 * low);
+      hemi.intensity = 0.22 + 0.33 * ss(e, -6, 22); // the sky light fades with the sun, so long low shadows still show
     }
-    sun.intensity *= 1 - 0.85 * cover * cover; sun.shadow.intensity = 1 - 0.8 * cover * cover; // light through cloud is soft
-    hemi.intensity *= (1 + 0.6 * cover) * (1 - 0.5 * gloom);
+    sun.intensity *= 1 - 0.7 * cover * cover; sun.shadow.intensity = 1 - 0.3 * cover * cover; sun.shadow.radius = 1 + 5 * cover * cover; // light through cloud: soft shadows, but still there
+    hemi.intensity *= (1 + 0.3 * cover) * (1 - 0.5 * gloom);
     if (skyT) skyT.dispose();
     skyT = drawSky(sd, e, night, cols, cover, haze);
-    scene.background = skyT; scene.environment = reflectSky(skyT); scene.environmentIntensity = (night ? 0.3 : 0.35 + 0.45 * ss(e, -6, 12)) * (1 - 0.35 * gloom);
+    scene.background = skyT; scene.environment = reflectSky(skyT); scene.environmentIntensity = (night ? 0.3 : 0.35 + 0.45 * ss(e, 2, 22)) * (1 - 0.35 * gloom);
     scene.fog.color.copy(hor); scene.fog.near = THREE.MathUtils.lerp(night ? 80 : 110 + 50 * ss(e, -3, 10), 5, haze); scene.fog.far = THREE.MathUtils.lerp(night ? 650 : 760 + 190 * ss(e, -3, 10), 140, haze);
-    renderer.toneMappingExposure = exposure = (night ? 1.1 : e < 0 ? 1.25 : 1 + 0.08 * warm) * (1 - 0.2 * gloom);
+    renderer.toneMappingExposure = exposure = (night ? 1.1 : e < 0 ? 1.25 : 1 + 0.08 * warm + 0.12 * low) * (1 - 0.2 * gloom);
     kind = w.kind; fall.set(kind === 'storm' ? 'rain' : kind, w.amount || 0, hor.clone().lerp(new THREE.Color(1, 1, 1), night ? 0.1 : 0.45));
     return { night, e, lowLight: night || e < -0.5, murky: haze > 0.4 };
   }
@@ -179,7 +181,8 @@ export function createSky(renderer, scene, lat, now = new Date()) {
   function placeShadow(x, z) { // centre the shadow box on (x, z), snapped to whole shadow-map texels so edges don't crawl
     shC.set(x, 0, z);
     lx.crossVectors(UPV, lightDir); if (lx.lengthSq() < 1e-6) lx.set(1, 0, 0); lx.normalize(); ly.crossVectors(lightDir, lx);
-    const tx = 2 * SH_R / SH_MAP, a = Math.round(shC.dot(lx) / tx) * tx, b = Math.round(shC.dot(ly) / tx) * tx, c = shC.dot(lightDir);
+    const sc = sun.shadow.camera, tx = (sc.right - sc.left) / SH_MAP, ty = (sc.top - sc.bottom) / SH_MAP; // texels on each axis
+    const a = Math.round(shC.dot(lx) / tx) * tx, b = Math.round(shC.dot(ly) / ty) * ty, c = shC.dot(lightDir);
     shC.copy(lx).multiplyScalar(a).addScaledVector(ly, b).addScaledVector(lightDir, c);
     sun.target.position.copy(shC); sun.position.copy(shC).addScaledVector(lightDir, 400);
   }

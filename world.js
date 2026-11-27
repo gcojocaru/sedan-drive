@@ -117,11 +117,11 @@ export async function buildWorld(elements, lat0, lon0, scene, say) {
   const { setLamps, glowTex, lamps } = streetLamps(scene, roads, look, areaAt, inBuilding, wx);
   const clear = signClearance(trees, lamps, look, areaAt, inBuilding);
   const { objects, hit } = planFurniture(furniture, polys, roadAt, clear);
-  addFurniture(scene, objects);
+  const parkedPaint = addFurniture(scene, objects);
   const signFree = (x,z) => clear(x,z) && !hit(x,z,0,0.35,0.35);
   const signs = planSigns(layout.junctions, landmarks, roadAt, signFree);
   addSignMeshes(scene, signs);
-  return { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex, posts: camPosts(trees, lamps, signs) };
+  return { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs) };
 }
 
 // what the chase camera keeps out of, as geom.js pointGrid points [x, z, r, y0, y1]: tree trunks (not the crowns, which

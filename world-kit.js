@@ -17,6 +17,8 @@ export function makeTex(w, h, draw, srgb = true) {
 export function speckle(x, w, h, n, amt, size = 2) {
   for (let i = 0; i < n; i++) { const v = (Math.random() - 0.5) * amt; x.fillStyle = v > 0 ? 'rgba(255,255,255,' + v + ')' : 'rgba(0,0,0,' + -v + ')'; x.fillRect(Math.random() * w, Math.random() * h, size, size); }
 }
+// a soft round contact shadow: black at opacity a out to `inner` of the radius, fading to nothing at the edge
+export const blobTex = (inner, a) => makeTex(128, 128, x => { const g = x.createRadialGradient(64, 64, 64 * inner, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); });
 export const num = v => { const f = parseFloat(v); return f > 0 && f < 1000 ? f : 0; };
 export const WALL_MAT = { brick: '#9c5a44', stone: '#b9ae9a', sandstone: '#c9a77e', concrete: '#bdbab2', glass: '#7f97a8', wood: '#9a7a55', timber_framing: '#e0d6c2', metal: '#a3a7aa', plaster: '#ddd5c6', limestone: '#d8d0bd' };
 export const matColor = (tab, v) => v && tab[v.toLowerCase()] ? new THREE.Color(tab[v.toLowerCase()]) : null;
