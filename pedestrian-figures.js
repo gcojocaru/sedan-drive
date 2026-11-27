@@ -29,7 +29,7 @@ function merge(geos) { // positions and normals of several geometries as one
 }
 
 // scene: where to draw; max: the most people shown. → { sync(people) }: poses them (pedestrians.js people).
-export function pedestrianFigures(scene, max) {
+export function pedestrianFigures(scene, max, height = () => 0) {
   const G = parts(), group = new THREE.Group(), meshes = {};
   group.name = 'pedestrians'; scene.add(group);
   const mk = (name, geo, n, roughness) => {
@@ -49,7 +49,7 @@ export function pedestrianFigures(scene, max) {
     for (let i = 0; i < n; i++) {
       const p = people[i], k = p.look, stride = Math.min(1, p.v / 1.3) * CYCLE, sw = Math.sin(p.phase) * stride, lean = p.state === 'stagger' ? 0.18 : 0; // knocked: leaning back, arms out
       Q.setFromAxisAngle(Y, p.h).multiply(T.setFromAxisAngle(Z, lean));
-      M.compose(P.set(p.x, Math.abs(Math.cos(p.phase)) * stride * 0.06, p.z), Q, S.setScalar(k.scale));
+      M.compose(P.set(p.x, height(p.x, p.z) + Math.abs(Math.cos(p.phase)) * stride * 0.06, p.z), Q, S.setScalar(k.scale));
       for (const part of ['body', 'head', 'hair']) meshes[part].setMatrixAt(i, M);
       blob.setMatrixAt(i, L.makeTranslation(p.x, 0.065, p.z));
       limb(meshes.leg, 2 * i, HIP, 0.095, sw); limb(meshes.leg, 2 * i + 1, HIP, -0.095, -sw);

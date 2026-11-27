@@ -165,7 +165,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 #keys{left:50%;top:22px;transform:translateX(-50%);font-size:12px;opacity:.85;text-align:center;max-width:calc(100vw - 520px);transition:opacity .8s}
 @media (max-width:1000px){#keys{display:none}}
 #mapHud{position:fixed;right:8px;bottom:6px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}
-#attrib,#wxCredit{pointer-events:auto;font-size:11px;opacity:.85;background:rgba(0,0,0,.35);padding:3px 7px;border-radius:5px;text-decoration:none}
+#attrib,#terrainCredit,#wxCredit{pointer-events:auto;font-size:11px;opacity:.85;background:rgba(0,0,0,.35);padding:3px 7px;border-radius:5px;text-decoration:none}
 #minimap{position:relative;margin-right:clamp(0px,1vw,12px);width:clamp(142px,25vmin,196px);overflow:hidden;border:1px solid rgba(235,244,240,.6);border-radius:12px;background:#253237;box-shadow:0 2px 12px rgba(0,0,0,.35)}
 #minimap canvas{width:100%;height:auto}
 #minimap .north{position:absolute;top:5px;left:6px;padding:2px 5px;border-radius:3px;background:#172126;color:#f2f5f3;font:bold 11px/1.2 sans-serif}
@@ -248,6 +248,7 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
   <div class="hud" id="keys">W/↑ accelerate · S/↓ brake &amp; reverse · A/D steer · Space handbrake · H lights · B horn · T time of day · E weather · N night · C camera · Esc settings · V driving sounds · Q radio · J delivery · G garage · R back on road · M map</div>
   <div id="mapHud">
     <div id="minimap" role="img" aria-label="North-up minimap with street names, house numbers and an arrow toward the active delivery"><canvas width="360" height="360"></canvas><span class="north" aria-hidden="true">N</span></div>
+    <a id="terrainCredit" hidden href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">Terrain © Mapzen and contributors</a>
     <a id="attrib" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>
     <a id="wxCredit" href="https://open-meteo.com/" target="_blank" rel="noopener" hidden>Weather data by Open-Meteo.com</a>
   </div>

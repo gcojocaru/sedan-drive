@@ -3,6 +3,7 @@
 // contact shadow under each. None wears a paint close to the player's (avoid).
 import * as THREE from 'three';
 import { blobTex } from './world-kit.js';
+import { groundPose } from './car-ground.js';
 
 const PAINT = ['#e9e9e6', '#e9e9e6', '#d3d5d6', '#b9bdc0', '#8b9094', '#5c6165', '#2c2f32', '#151618', '#151618', '#7c1514', '#a92b1f', '#1f3a66', '#2e5079', '#3f5e44', '#c9bb9c', '#6f5b49', '#d8c64a', '#e2e0d8'].map(c => new THREE.Color(c));
 // PAINT without the colours within 0.25 (sRGB, 0–1 a channel) of the player's paint `avoid`
@@ -35,7 +36,7 @@ function parts() {
   return { body, glass, trim, head: lamp(0.06, 0.12, 0.34, HEADS), tail: lamp(0.06, 0.15, 0.32, TAILS) };
 }
 
-function carMeshes(scene, max) {
+function carMeshes(scene, max, height) {
   const G = parts(), meshes = [];
   const mk = (geo, mat, shadow, colored) => {
     const m = new THREE.InstancedMesh(geo, mat, max); m.count = 0; m.castShadow = m.receiveShadow = shadow; m.frustumCulled = false; // lamps neither cast nor take shadows
@@ -47,13 +48,16 @@ function carMeshes(scene, max) {
   mk(G.trim, new THREE.MeshStandardMaterial({ color: '#17181a', roughness: 0.85 }), true, false);
   const head = mk(G.head, new THREE.MeshBasicMaterial(), false, true), tail = mk(G.tail, new THREE.MeshBasicMaterial(), false, true);
   mk(new THREE.PlaneGeometry(4.9, 2.2).rotateX(-Math.PI / 2).translate(0, 0.07, 0), new THREE.MeshBasicMaterial({ map: blobTex(0.35, 0.6), transparent: true, depthWrite: false }), false, false).renderOrder = 2; // contact shadow, as under the player's car
-  const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1);
+  const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), rotation = new THREE.Euler(0, 0, 0, 'YXZ'), ONE = new THREE.Vector3(1, 1, 1);
 
-  return function paintCars(cars, lit, pal) {
+  return function paintCars(cars, lit, pal, placeGlows) {
     const n = Math.min(cars.length, max);
     for (let i = 0; i < n; i++) {
       const c = cars[i];
-      Q.setFromAxisAngle(Y, c.h); M.compose(P.set(c.x, 0, c.z), Q, ONE);
+      const ground = height && groundPose(height, c.x, c.z, c.h);
+      Q.setFromEuler(rotation.set(ground?.roll ?? 0, c.h, ground?.pitch ?? 0));
+      M.compose(P.set(c.x, ground?.y ?? 0, c.z), Q, ONE);
+      placeGlows?.(c, i, M);
       for (const m of meshes) m.setMatrixAt(i, M);
       body.setColorAt(i, pal[c.paint % pal.length]);
       head.setColorAt(i, lit ? HEAD_ON : HEAD_OFF);
@@ -64,17 +68,17 @@ function carMeshes(scene, max) {
 }
 
 // → avoid(color): repaints them away from the player's paint (null: any)
-export function parkedCars(scene, cars) {
+export function parkedCars(scene, cars, height) {
   if (!cars.length) return () => {};
   const group = new THREE.Group();
   group.name = 'parked_cars';
   scene.add(group);
-  const paint = carMeshes(group, cars.length); paint(cars, false, PAINT);
+  const paint = carMeshes(group, cars.length, height); paint(cars, false, PAINT);
   return avoid => paint(cars, false, paints(avoid));
 }
 
-export function trafficCars(scene, max, glowTex) {
-  const paintCars = carMeshes(scene, max); let pal = PAINT;
+export function trafficCars(scene, max, glowTex, height) {
+  const paintCars = carMeshes(scene, max, height); let pal = PAINT;
   // night glows round the lamps: one point per lamp, brightness in its vertex colour
   const glows = [0xfff1dc, 0xff2a1a].map((color, i) => {
     const g = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(max * 6), 3)).setAttribute('color', new THREE.BufferAttribute(new Float32Array(max * 6), 3));
@@ -82,18 +86,17 @@ export function trafficCars(scene, max, glowTex) {
     p.frustumCulled = false; scene.add(p); return p;
   });
   // cars: traffic.js cars; lit: whether their lamps are on (dusk, night, murky weather)
+  const point = new THREE.Vector3();
   function sync(cars, lit) {
-    paintCars(cars, lit, pal);
     const n = Math.min(cars.length, max), [hp, hc] = ['position', 'color'].map(a => glows[0].geometry.attributes[a]), [tp, tc] = ['position', 'color'].map(a => glows[1].geometry.attributes[a]);
-    for (let i = 0; i < n; i++) {
-      const c = cars[i], cs = Math.cos(c.h), sn = Math.sin(c.h);
+    paintCars(cars, lit, pal, (c, i, matrix) => {
       const tailGlow = c.braking ? (lit ? 1 : 0.35) : lit ? 0.45 : 0;
       for (let k = 0; k < 2; k++) {
         const [hx, hy, hz] = HEADS[k], [tx, ty, tz] = TAILS[k], j = i * 2 + k;
-        hp.setXYZ(j, c.x + hx * cs + hz * sn, hy, c.z - hx * sn + hz * cs); hc.setXYZ(j, lit ? 0.8 : 0, lit ? 0.8 : 0, lit ? 0.8 : 0);
-        tp.setXYZ(j, c.x + tx * cs + tz * sn, ty, c.z - tx * sn + tz * cs); tc.setXYZ(j, tailGlow, tailGlow, tailGlow);
+        point.set(hx, hy, hz).applyMatrix4(matrix); hp.setXYZ(j, point.x, point.y, point.z); hc.setXYZ(j, lit ? 0.8 : 0, lit ? 0.8 : 0, lit ? 0.8 : 0);
+        point.set(tx, ty, tz).applyMatrix4(matrix); tp.setXYZ(j, point.x, point.y, point.z); tc.setXYZ(j, tailGlow, tailGlow, tailGlow);
       }
-    }
+    });
     for (const p of glows) { p.geometry.setDrawRange(0, n * 2); p.geometry.attributes.position.needsUpdate = p.geometry.attributes.color.needsUpdate = true; }
   }
   return { sync, avoid(color) { pal = paints(color); } }; // avoid: the player's paint (null: any)

@@ -68,7 +68,7 @@ function createFrontages(entranceNodes, hidden, parentOutline, roadAt) {
       if (entranceNodes.has(key)) doors.set(key, p);
     }
   }
-  function collectFronts(b, outer, holes, eave, type, wc) {
+  function collectFronts(b, outer, holes, eave, type, wc, ground) {
     const owner = parentOutline.get(b) || b;
     let group = fronts.get(owner);
     if (!group) {
@@ -85,6 +85,7 @@ function createFrontages(entranceNodes, hidden, parentOutline, roadAt) {
       wall.infer = exterior && !PLAIN_T.has(type);
       wall.retail = exterior && (isRetail(b.t) || isRetail(owner.t));
       wall.height = eave;
+      wall.ground = ground;
       wall.color = wc;
       group.walls.push(wall);
     }
@@ -108,7 +109,7 @@ function createFrontages(entranceNodes, hidden, parentOutline, roadAt) {
       const faces = planFronts(group.walls, [...group.doors.values()], streetScore);
       for (const {wall, doors, shop} of faces) {
         const n = [wall.nx, 0, wall.nz];
-        const at = (u, y, depth) => [wall.a[0] + wall.dx*u + wall.nx*depth, y, wall.a[1] + wall.dz*u + wall.nz*depth];
+        const at = (u, y, depth) => [wall.a[0] + wall.dx*u + wall.nx*depth, y + wall.ground, wall.a[1] + wall.dz*u + wall.nz*depth];
         const height = Math.min(3.0, wall.height - 0.03);
         function panel(lo, hi, bottom, top, tile) {
           // Half-texel inset keeps the other atlas tiles out of the window frames.
@@ -211,7 +212,7 @@ function roofTex(key) {
 // polys: parsed OSM areas (buildings and building:parts are used); entranceNodes: 'x,z' keys of mapped entrances.
 // roadAt finds the street a wall faces; mkMesh(buffer, material, uv, castShadow) adds a mesh to the scene;
 // wear(material, kind) lets rain and snow onto a material (world-kit.js weatherLook).
-export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m => m) {
+export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m => m, height = () => 0) {
   const bPolys = polys.filter(p => p.kind === 'building' || p.kind === 'part');
   // outlines with building:part pieces inside are drawn as those parts only (OSM simple 3D buildings)
   const {hidden, parentOutline} = findBuildingParts(bPolys);
@@ -283,6 +284,15 @@ export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m =>
     }
   }
   const frontages = createFrontages(entranceNodes, hidden, parentOutline, roadAt);
+  const foundations = new Map();
+  function foundation(owner) {
+    if (!foundations.has(owner)) {
+      // All parts of a building share one level datum, including the frontage.
+      const levels = owner.outer.map(([x,z]) => height(x,z));
+      foundations.set(owner, levels.reduce((a,b) => a+b,0) / levels.length);
+    }
+    return foundations.get(owner);
+  }
   for (const b of bPolys) {
     if (hidden.has(b)) continue;
     const t = b.t, rnd = seeded(b.id || b.outer[0][0] * 1000 + b.outer[0][1]), pick = a => a[Math.floor(rnd() * a.length)];
@@ -316,6 +326,8 @@ export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m =>
     const para = shape !== 'flat' ? 0 : eave - minH < 4 ? 0.2 : style === FACADE.glass ? 1.1 : 0.45 + rnd() * 0.5; // parapet, inside the building's height
     const v0 = minH > 0 ? 1 : 0, { floors, floorH } = floorGrid(style, eave - para, minH, lv), k = signedArea(outer) > 0 ? 1 : -1;
     const fac = { style, floorH, v0, top: v0 + floors, u: Math.floor(rnd() * 400) }; // u: a different run of lit windows per building
+    const ground = foundation(parentOutline.get(b) || b);
+    const buffers = [WB, PB, RF, RT, RM], starts = buffers.map(B => B.p.length);
     if (shape === 'flat') {
       wallRing(outer, k, minH, eave, null, wc, fac);
       for (const h of holes) wallRing(h, signedArea(h) > 0 ? -1 : 1, minH, eave, null, wc, fac);
@@ -344,9 +356,17 @@ export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m =>
       }
     }
     if (minH === 0 && eave >= 2.15 && type !== 'roof' && t.location !== 'underground') {
-      frontages.collect(b, outer, holes, eave, type, wc);
+      frontages.collect(b, outer, holes, eave, type, wc, ground);
     }
-    blds.push({ outer: b.outer, holes: b.holes, h: eave + roofH, minH, ...bbox(b.outer) });
+    for (let index = 0; index < buffers.length; index++) {
+      const p = buffers[index].p;
+      for (let j = starts[index]; j < p.length; j += 3) {
+        // Extend the lowest wall vertices under the downhill side of the parcel.
+        if (index === 0 && !minH && p[j+1] === 0) p[j+1] = Math.min(ground, height(p[j],p[j+2]) - 0.1);
+        else p[j+1] += ground;
+      }
+    }
+    blds.push({ outer: b.outer, holes: b.holes, h: ground + eave + roofH, minH: minH ? ground + minH : -Infinity, ...bbox(b.outer) });
   }
   const frontMat = frontages.render(PB, mkMesh);
   const wallMat = facadeMaterial();
@@ -356,6 +376,7 @@ export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m =>
   const BG = 20, bgrid = new Map();
   blds.forEach((b, i) => { for (let ix = Math.floor(b.x0 / BG); ix <= Math.floor(b.x1 / BG); ix++) for (let iz = Math.floor(b.z0 / BG); iz <= Math.floor(b.z1 / BG); iz++) { const k = gkey(ix, iz); let L = bgrid.get(k); if (!L) bgrid.set(k, L = []); L.push(i); } });
   function inBuilding(x, z, y) {
+    y += height(x,z);
     const L = bgrid.get(gkey(Math.floor(x / BG), Math.floor(z / BG))); if (!L) return false;
     for (const i of L) { const b = blds[i]; if (x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1 || b.h < y || b.minH > y) continue; if (inPoly(x, z, b.outer) && !b.holes.some(h => inPoly(x, z, h))) return true; }
     return false;
