@@ -8,12 +8,14 @@ import { drivingAudio } from './driving-audio.js';
 import { crossedEdge, nextArea, cooldownSeconds, startCooldown, visitArea, cooldownButton, edgePrompt } from './area-travel.js';
 import { buildCar } from './sedan-model.js';
 import { readKeys, rigCar, repaint, step, syncCar, chaseCamera, speedHud } from './drive-core.js';
-import { readGarage, readWallet, earn, buy, carTuning } from './garage.js';
+import { readGarage, readWallet, earn, buy, carTuning, price, UPGRADES, PAINTS } from './garage.js';
 import { garagePanel } from './garage-panel.js';
 import { loadVaz } from './vaz-model.js';
 import { HALF, snap } from './osm-query.js';
 import { FALLBACK_CREDIT } from './vector-fallback.js';
 import { loadArea } from './map-data.js';
+import { FEATURED, readRecent, addRecent, surprise } from './places.js';
+import { nextHint, readShown } from './hints.js';
 import { buildWorld, TYPE_LABEL, HARD } from './world.js';
 import { blobTex } from './world-kit.js';
 import { pointGrid } from './geom.js';
@@ -44,6 +46,8 @@ const $ = id => document.getElementById(id);
 const LS_PLACE = 'sedan-map-last-place-v1';
 const LS_CAR = 'sedan-map-car-v1'; // 'sedan' or 'vaz'
 const LS_TRAFFIC = 'sedan-map-traffic-v1'; // index into LEVELS
+const LS_HINTS = 'sedan-map-hints-v1'; // the just-in-time hints already shown (hints.js ids)
+const LS_RECENT = 'sedan-map-recent-v1'; // the last places driven: [{ lat, lon, name }] (places.js)
 const LS_PEOPLE = 'sedan-map-people-v1'; // index into PEOPLE (pedestrians.js)
 const LS_PERF = 'sedan-perf-v1'; // performance stats shown (true / false); both drive pages
 const LS_QUALITY = 'sedan-quality-v1'; // graphics: 'auto' or an index into QUALITY (quality.js); both drive pages
@@ -107,6 +111,12 @@ function showPicker() {
   }
   map.on('click', e => { choose(e.latlng.lat, e.latlng.lng); if (map.getZoom() < 14) map.setView(e.latlng, 15); });
   if (last) choose(last.lat, last.lon, last.name);
+  // one click to a place: featured city centres, a surprise, the player's recent places
+  let recent = []; try { recent = readRecent(JSON.parse(localStorage.getItem(LS_RECENT))); } catch { }
+  const jump = (lat, lon, name) => { map.setView([lat, lon], 15); choose(lat, lon, name); };
+  const chip = (label, fn, cls = '') => { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip ' + cls; b.textContent = label; b.onclick = fn; return b; };
+  $('featured').append(chip('Surprise me', () => { const [n, la, lo] = surprise(Math.random(), last); jump(la, lo, n); }, 'surprise'), ...FEATURED.map(([n, la, lo]) => chip(n.split(' · ')[0], () => jump(la, lo, n))));
+  $('recentK').hidden = !recent.length; $('recent').append(...recent.map(p => chip((p.name || p.lat.toFixed(3) + ', ' + p.lon.toFixed(3)).split(',')[0], () => jump(p.lat, p.lon, p.name))));
   $('searchForm').addEventListener('submit', async e => {
     e.preventDefault();
     const q = $('q').value.trim(); if (!q) return;
@@ -124,7 +134,7 @@ function showPicker() {
     if (!chosen || go.disabled) return;
     go.disabled = true;
     if (!chosen.name) { go.textContent = 'Finding the address…'; chosen.name = await reverseName(chosen.lat, chosen.lon); }
-    localStorage.setItem(LS_PLACE, JSON.stringify(chosen));
+    localStorage.setItem(LS_PLACE, JSON.stringify(chosen)); try { localStorage.setItem(LS_RECENT, JSON.stringify(addRecent(recent, chosen))); } catch { }
     location.hash = chosen.lat.toFixed(4) + ',' + chosen.lon.toFixed(4) + '|' + encodeURIComponent(chosen.name);
     location.reload();
   });
@@ -161,7 +171,7 @@ async function startGame(lat0, lon0, placeName) {
   const terrainRequest = loadTerrain(lat0, lon0);
   const liveReq = weatherNow(lat0, lon0, fetch).catch(e => (console.warn('No live weather', e), null)); // while the map loads
   await say('Checking for a saved map…');
-  const { data, err, fallback } = await loadArea(lat0, lon0, say);
+  const { data, err, fallback, full } = await loadArea(lat0, lon0, say);
   if (!data) {
     showLoadError('The map servers could not load this area' + (err ? ' (' + err.message + ')' : '') + '.', visit);
     return;
@@ -349,9 +359,18 @@ async function startGame(lat0, lon0, placeName) {
     repaint(CAR, tuning.paint); avoidMine(); applyTime(); // (engine and brakes: TUNE, each frame; tyres: the grip)
     showWallet(); shop.draw(garage, wallet);
   });
-  function openGarage() { if (paused()) return; clearKeys(); shop.draw(garage, wallet); garageEl.showModal(); }
+  function openGarage() { if (paused()) return; hint.garageSeen = true; clearKeys(); shop.draw(garage, wallet); garageEl.showModal(); }
   $('garageButton').onclick = () => { openGarage(); $('garageButton').blur(); };
   let scraping = false; // sliding along something solid (car-fx sparks it)
+  // just-in-time hints (hints.js): what the player is doing, and the ones already shown
+  const hint = { t: 0, stuck: 0, offRoad: 0, idle: 0, since: 25, check: 0, garageSeen: false, shown: readShown(stored(LS_HINTS)) };
+  const cheapest = () => Math.min(...[...Object.keys(UPGRADES), ...PAINTS.map(p => p[0])].map(i => price(garage, i)).filter(p => p > 0));
+  function hints(dt, k, onHard) {
+    Object.assign(hint, { t: hint.t + dt, since: hint.since + dt, stuck: k.up && Math.abs(st.v) < 0.5 ? hint.stuck + dt : 0, offRoad: onHard ? 0 : hint.offRoad + dt, idle: delivery.target ? 0 : hint.idle + dt });
+    if ((hint.check += dt) < 1) return; hint.check = 0;
+    const h = nextHint({ ...hint, dark: lowLight, headlights: head, job: !!delivery.target, jobs: wallet.jobs, cash: wallet.cash, cheapest: cheapest(), touch: document.documentElement.classList.contains('touch-ui') }, hint.shown, hint.since);
+    if (h) { flash(h.text, '', 'hint'); hint.shown.push(h.id); keep(LS_HINTS, hint.shown); hint.since = 0; }
+  }
   function update(dt, p) {
     const k = readKeys(keys, p), was = [st.pos.x, st.pos.z], ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
     const cargo = delivery.cargo; // a heavy load takes some of the engine and the brakes
@@ -381,7 +400,7 @@ async function startGame(lat0, lon0, placeName) {
     if (ranRed(graph.signals, was[0], was[1], st.pos.x, st.pos.z)) delivery.ranRed();
     if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v, dt, dim);
     const ride = { hb: !paused() && k.hb, steer: st.steer, slip: st.slip, rough: !onHard, wet: ear.wet, snow: ear.snow, grip };
-    sound.update(st.v, !paused() && k.up, !paused() && k.dn, ride); pad.feel(st.v, s.braking, ride); carfx.frame(dt, st, rig.wheels, ride, s.braking, scraping);
+    sound.update(st.v, !paused() && k.up, !paused() && k.dn, ride); pad.feel(st.v, s.braking, ride); carfx.frame(dt, st, rig.wheels, ride, s.braking, scraping); if (!paused()) hints(dt, k, onHard);
     return s;
   }
   function glows(s) {
@@ -417,9 +436,12 @@ async function startGame(lat0, lon0, placeName) {
   $('startPlace').textContent = shownName;
   if (!start) $('startNote').textContent = 'No drivable roads were found here. You can still drive on the ground, or press M to pick another place.';
   if (fallback) {
-    $('startNote').textContent = ($('startNote').textContent + ' The OpenStreetMap servers are busy, so this is a simplified map from OpenFreeMap: no roof shapes, walls, crossings or single trees. Pick the place again later for full detail.').trim();
+    $('startNote').textContent = ($('startNote').textContent + ' The OpenStreetMap servers are slow, so you start on a simplified map from OpenFreeMap: no roof shapes, walls, crossings or single trees. The full map keeps downloading, and you can switch to it when it arrives.').trim();
     $('stats').textContent += ' · simplified map'; $('attrib').textContent += ' · ' + FALLBACK_CREDIT;
+    full?.then(ok => { if (!ok) return; $('fullMap').hidden = false; flash('Full-detail map ready · U or the Full map button to switch', 'good'); }); // (saved: a reload builds it)
   }
+  const toFullMap = () => { if ($('fullMap').hidden) return; if (delivery.target) { flash('Finish or cancel the delivery first', 'bad'); return; } visitArea({ lat: lat0, lon: lon0, name: placeName, entry: pose() }); };
+  $('fullMap').onclick = () => { $('fullMap').blur(); toFullMap(); };
 
   const dialog = $('edgeDialog'), settings = $('settings'), paused = () => dialog.open || settings.open || garageEl.open;
   const sound = drivingAudio(), pad = gamepad();
@@ -444,9 +466,9 @@ async function startGame(lat0, lon0, placeName) {
   $('hud').style.display = 'block';
   const startEl = $('start'); startEl.style.display = started ? 'none' : 'flex';
   const touch = () => touchControls([['Lights', 'KeyH'], ['Time', 'KeyT'], ['Weather', 'KeyE'], ['Settings', 'Escape'], ['Garage', 'KeyG'], ['Camera', 'KeyC'], ['Horn', 'KeyB'], ['Radio', 'KeyQ'], ['Sound', 'KeyV'], ['Reset', 'KeyR']]);
-  if (started) { $('keys').style.opacity = 0; touch(); } // arrived from the next area: no start screen
+  if (started) touch(); // arrived from the next area: no start screen
   function begin() {
-    sound.activate(); if (started) return; started = true; startEl.style.display = 'none'; setTimeout(() => $('keys').style.opacity = 0, 7000);
+    sound.activate(); if (started) return; started = true; startEl.style.display = 'none';
     touch();
   }
   startEl.addEventListener('click', begin);
@@ -460,6 +482,7 @@ async function startGame(lat0, lon0, placeName) {
     if (e.target === $('jobButton') && ['Space','Enter'].includes(e.code)) return;
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     if (e.code === 'KeyM') { backToMap(); return; }
+    if (e.code === 'KeyU' && !e.repeat) { toFullMap(); return; }
     if (!e.repeat) begin();
     if (e.code === 'KeyB') sound.horn(true);
     keys[e.code] = true; if (e.repeat) return;

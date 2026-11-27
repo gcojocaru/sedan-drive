@@ -30,7 +30,10 @@ how each part works; this file says how the parts may fit together.
 | `water-levels.js` | — | Estimate a shared level for adjoining water polygons |
 | `terrain-surface.js` | — | Fit mapped surfaces to the triangles of the terrain grid |
 | `car-ground.js` | — | Wheelbase grade and cross-slope for the player and traffic |
-| `map-data.js` | 55 | `loadArea()`: IndexedDB cache, proxy, Overpass servers, vector fallback |
+| `map-data.js` | 55 | `loadArea()`: IndexedDB cache, then `area-fetch.js`, saving the full map when it lands |
+| `area-fetch.js` | — | Racing download: proxy and Overpass servers two at a time, the simplified map meanwhile when they're slow |
+| `places.js` | — | Featured places, Surprise me and recent places for the picker |
+| `hints.js` | — | Just-in-time hints on the real-map page |
 | `geom.js` | 204 | Pure geometry: strips, polygons, oriented boxes, roof clipping, coastline → sea |
 | `drive-track.js` | 215 | Test-track page (`Drive.html`): track, surface, lap timing, sky |
 | `drive-core.js` | 94 | Driving shared by both drive pages: `readKeys`, `rigCar`, physics `step` (with grip and sliding), `syncCar`, `chaseCamera`, `speedHud` |
@@ -113,7 +116,7 @@ root, one copy each. Page URLs don't change.
 | `road-layout.js` | `prepareRoads(roads, side)` → lanes per road, junction arms and corners, spawn segments; `laneSpawn`, `mappedStops`, `drivingSide`, `nodeKey` | nothing |
 | `buildings.js` | `buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear)` → `{ blds, inBuilding, frontMat, wallMat }`; building tag tables, `roofPlanes`, parapets and eaves, shopfronts, the facade material | `world-kit`, `geom`, `building-fronts`, three |
 | `world-kit.js` | three.js and tag helpers shared by `world.js`, `buildings.js`, both drive pages, `traffic-cars` and `pedestrian-figures`: `fillPoly`/`eachTri`, `makeTex`, `speckle`, `num`, `tagColor`, `matColor`, `blobTex(inner, a)` (contact-shadow texture), `weatherLook()` → `{ wear, set, lamps, lit, follow }` | `geom`, three |
-| `map-data.js` | `loadArea(lat, lon, status)`: IndexedDB cache → proxy → Overpass → vector fallback; returns `{ data, fallback, err }` | `osm-query`, `vector-fallback` |
+| `map-data.js` | `loadArea(lat, lon, status)`: IndexedDB cache → `area-fetch` (racing proxy and Overpass, the simplified map when slow); returns `{ data, fallback, err, full }` | `osm-query`, `area-fetch` |
 | `sedan-model.js` | `buildCar()` and the axle constants: the procedural car | three |
 | `vaz-model.js` | `loadVaz()`: the VAZ-2101 model file, returned in `buildCar()`'s shape | three (GLTFLoader) |
 | `area-travel.js` | Boundary dialog, projected arrival pose and cooldown | `osm-query` |
@@ -130,13 +133,16 @@ root, one copy each. Page URLs don't change.
 | `gamepad.js` | `gamepad()` → `poll()` (analogue controls for `readKeys`; buttons press keys), `crash(speed)`, `feel(speed, braking, ride)`: rumble; `padControls(gp)` | `driving-audio` |
 | `touch.js` | `touchControls(extras)`: on-screen buttons for touch screens that press keys (synthetic keydown/keyup), so pages handle touch and keyboard the same way | nothing |
 | `geom.js` | Pure geometry on plain arrays (`ribbon`, `obb`, `clipHalf`, `offsetRing`, `joinRings`, `seaPolys`, `trimLine`, `pointAt`, …). Triangulating polygons needs three.js, so `fillPoly` is in `world-kit.js` | nothing |
+| `area-fetch.js` | `fetchArea(lat, lon, opts)` → `{ first, full }`: racing download through a passed-in `fetch` | `osm-query`, `vector-fallback` |
+| `places.js` | `FEATURED`, `readRecent`, `addRecent`, `surprise` | nothing |
+| `hints.js` | `HINTS`, `nextHint(state, shown, since)`, `readShown` | nothing |
 | `osm-query.js` | Query, cache key, grid, servers, proxy address | nothing |
 | `vector-fallback.js` | Vector tiles → Overpass-shaped elements | `osm-query` |
 | `three-d-stage.js` | Viewer component | three |
 | `proxy/worker.js` | Caching proxy | `osm-query` |
 
 Dependencies point down the table only. Page entries are the only modules that touch the page's DOM at import time.
-`geom.js`, `drive-core.js`, `road-layout.js`, `traffic.js`, `pedestrians.js`, `garage.js`, `quality.js`, `osm-query.js`, `vector-fallback.js` and `weather.js` stay importable in Node: no three, no DOM, no storage, and network
+`geom.js`, `drive-core.js`, `road-layout.js`, `traffic.js`, `pedestrians.js`, `garage.js`, `quality.js`, `area-fetch.js`, `places.js`, `hints.js`, `osm-query.js`, `vector-fallback.js` and `weather.js` stay importable in Node: no three, no DOM, no storage, and network
 only through a passed-in `fetch`. `radio.js` follows the same rules, except that calling `radio()` creates an `<audio>` and `radioHud()` its on-screen station display. The travel controller reads browser history and the cooldown at runtime. The driving audio factory reads the tab’s mute preference and initializes Web Audio on a driving gesture.
 
 Tests live in `test/*.test.js` and run with `npm test`. Tests build their own fixtures (the vector-fallback test
