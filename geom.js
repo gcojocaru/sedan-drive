@@ -230,3 +230,15 @@ export function pointGrid(points, cell = 4) {
     }
   };
 }
+// A buffer of separate triangles (B.p: x, y, z per vertex, plus per-vertex attributes in `sizes` that it has) split into
+// square tiles `size` m wide by each triangle's centre: Map(tile key → buffer of the same shape). One mesh per tile lets
+// the renderer skip the tiles out of view and out of the shadow box, instead of drawing the whole area every pass.
+export function splitByTile(B, size, sizes = { p: 3, n: 3, c: 3, uv: 2, f: 2 }) {
+  const out = new Map(), keys = Object.keys(sizes).filter(k => B[k]?.length);
+  for (let t = 0, n = B.p.length / 9; t < n; t++) {
+    const p = B.p, i = t * 9, k = gkey(Math.floor((p[i] + p[i + 3] + p[i + 6]) / 3 / size), Math.floor((p[i + 2] + p[i + 5] + p[i + 8]) / 3 / size));
+    let T = out.get(k); if (!T) out.set(k, T = Object.fromEntries(keys.map(a => [a, []])));
+    for (const a of keys) { const w = 3 * sizes[a]; for (let j = t * w; j < t * w + w; j++) T[a].push(B[a][j]); }
+  }
+  return out;
+}

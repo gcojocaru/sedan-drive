@@ -7,6 +7,8 @@ import { touchControls } from './touch.js';
 import { toasts } from './toast.js';
 import { gamepad } from './gamepad.js';
 import { showAppVersion } from './app-version.js';
+import { perfHud } from './perf-hud.js';
+import { QUALITY, pickQuality, pixelRatio, dynamicRes } from './quality.js';
 import { blobTex } from './world-kit.js';
 
 showAppVersion();
@@ -14,9 +16,12 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
 const C = buildCar(), rig = rigCar(C), car = C.car;
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
-renderer.setSize(innerWidth, innerHeight);
+// graphics quality: the real-map page's setting (sedan-quality-v1), or this device's tier
+let qPick = 'auto'; try { qPick = JSON.parse(localStorage.getItem('sedan-quality-v1')) ?? 'auto'; } catch { }
+const Q = QUALITY[pickQuality(qPick, { coarse: matchMedia('(pointer: coarse)').matches, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory })];
+const renderer = new THREE.WebGLRenderer({ antialias: Q.msaa });
+let resScale = 1; const fit = () => { renderer.setPixelRatio(pixelRatio(Q, devicePixelRatio, innerWidth, innerHeight, resScale)); renderer.setSize(innerWidth, innerHeight); };
+fit(); const resTick = dynamicRes(s => { resScale = s; fit(); });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -211,13 +216,15 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyB') sound.horn(false); });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; sound.horn(false); });
-addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+addEventListener('resize', () => { fit(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
 let last = performance.now(), lastS = { braking: false, reversing: false };
+const perf = perfHud(renderer, () => Q.name + ' · pixel ratio ' + renderer.getPixelRatio().toFixed(2));
 renderer.setAnimationLoop(now => {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const t0 = performance.now();
+  resTick(now - last); const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const p = pad.poll(); if (p?.thr && !started) begin(); // (its buttons start the game through their keys)
   if (started) { clock += dt; lastS = update(dt, p); }
   syncCar(rig, st, lastS, head); updateCam(dt); hud(lastS);
-  renderer.render(scene, camera);
+  renderer.render(scene, camera); perf(t0);
 });
 

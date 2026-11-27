@@ -350,7 +350,7 @@ export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m =>
   }
   const frontMat = frontages.render(PB, mkMesh);
   const wallMat = facadeMaterial();
-  if (WB.p.length) mkMesh(WB, wallMat, true).geometry.setAttribute('facade', new THREE.Float32BufferAttribute(WB.f, 2));
+  if (WB.p.length) mkMesh(WB, wallMat, true); // (WB.f: the facade attribute)
   if (PB.p.length) mkMesh(PB, wear(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), 'roof'), false);
   for (const [B, key] of [[RF, 'gravel'], [RT, 'tiles'], [RM, 'metal']]) if (B.p.length) mkMesh(B, wear(new THREE.MeshStandardMaterial({ map: roofTex(key), vertexColors: true, roughness: B === RM ? 0.55 : 0.9, metalness: B === RM ? 0.35 : 0 }), 'roof'), true);
   const BG = 20, bgrid = new Map();
