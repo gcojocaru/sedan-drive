@@ -3,7 +3,7 @@
 // areaAt, inBuilding). buildWorld() runs one builder per feature, in an order that later ones depend on. The surfaces
 // that face the sky can be made wet or snowy afterwards (setGround).
 import * as THREE from 'three';
-import { same, joinRings, inPoly, polyArea, bbox, newBuf, quad, disc, ribbon, offsetLine, cumLen, densify, runs, wallStrip, fenceStrip, seaPolys, gkey, segDist } from './geom.js';
+import { same, joinRings, inPoly, polyArea, bbox, newBuf, quad, disc, ribbon, offsetLine, cumLen, densify, runs, wallStrip, fenceStrip, seaPolys, gkey, segDist, splitByTile } from './geom.js';
 import { fillPoly, makeTex, speckle, num, tagColor, matColor, WALL_MAT, weatherLook } from './world-kit.js';
 import { buildBuildings } from './buildings.js';
 import { landmarkName, planSigns } from './sign-layout.js';
@@ -14,6 +14,8 @@ import { drivingSide, prepareRoads, mappedStops } from './road-layout.js';
 import { HALF } from './osm-query.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const TILE = 224; // m: buildings, walls and trees are one mesh per tile (a 5 × 5 grid over the area), so the renderer can skip tiles
+
 
 function flatMesh(B, mat, uvScale) {
   const g = new THREE.BufferGeometry(), n = B.p.length / 3;
@@ -102,10 +104,15 @@ export async function buildWorld(elements, lat0, lon0, scene, say) {
   paintCrossings(paths, crossPts, look, G);
   layRailways(rails, look, G);
   for (const k in LAYERS) if (BUF[k].p.length) scene.add(flatMesh(BUF[k], LAYERS[k][0], k === 'road' || k === 'parking' ? 7 : k === 'water' ? 20 : 5));
-  const mkMesh = (B, mat, uv, shadow = true) => {
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(B.p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(B.n, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(B.c, 3));
-    if (uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(B.uv, 2));
-    const m = new THREE.Mesh(g, mat); m.castShadow = shadow; m.receiveShadow = true; scene.add(m); return m;
+  const mkMesh = (B, mat, uv, shadow = true) => { // one mesh per TILE under a group (B.f, when there: the facade attribute)
+    const group = new THREE.Group(); scene.add(group);
+    for (const T of splitByTile(B, TILE).values()) {
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(T.p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(T.n, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(T.c, 3));
+      if (uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(T.uv, 2));
+      if (T.f) g.setAttribute('facade', new THREE.Float32BufferAttribute(T.f, 2));
+      const m = new THREE.Mesh(g, mat); m.castShadow = shadow; m.receiveShadow = true; group.add(m);
+    }
+    return group;
   };
   buildWalls(barriers, roads, paths, look, G.noise, mkMesh, wear);
   const areaAt = areaLookup(polys, seas);
@@ -400,6 +407,8 @@ function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, ar
     const coneG = new THREE.ConeGeometry(2.0, 5.5, 9).translate(0, 4.6, 0), cone2 = new THREE.ConeGeometry(1.4, 3.6, 9).translate(0, 6.6, 0);
     const trunkG = new THREE.CylinderGeometry(0.14, 0.24, 3.2, 7).translate(0, 1.6, 0);
     const leaf = wear(new THREE.MeshStandardMaterial({ map: noise, roughness: 0.85 }), 'tree'), bark = new THREE.MeshStandardMaterial({ color: 0x5a4330, roughness: 0.95 });
+    const tiles = new Map(); for (const t of trees) { const k = gkey(Math.floor(t[0] / TILE), Math.floor(t[1] / TILE)); let l = tiles.get(k); if (!l) tiles.set(k, l = []); l.push(t); }
+    for (const trees of tiles.values()) { // one set of meshes per TILE, so trees out of view and out of the shadow box are skipped
     const nR = trees.filter(t => !t[3]).length, nC = trees.length - nR;
     const T = new THREE.InstancedMesh(trunkG, bark, Math.max(1, trees.length)), R = new THREE.InstancedMesh(crownG, leaf, Math.max(1, nR)), C1 = new THREE.InstancedMesh(coneG, leaf, Math.max(1, nC)), C2 = new THREE.InstancedMesh(cone2, leaf, Math.max(1, nC));
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), S = V(1, 1, 1), c = new THREE.Color(); let r = 0, k = 0;
@@ -409,7 +418,8 @@ function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, ar
       if (t[3]) { c.offsetHSL(0.04, 0, -0.06); C1.setMatrixAt(k, M); C2.setMatrixAt(k, M); C1.setColorAt(k, c); C2.setColorAt(k, c); k++; } else { R.setMatrixAt(r, M); R.setColorAt(r, c); r++; }
     });
     T.count = trees.length; R.count = nR; C1.count = C2.count = nC;
-    for (const m of [T, R, C1, C2]) { m.castShadow = true; m.receiveShadow = true; scene.add(m); }
+    for (const m of [T, R, C1, C2]) { m.castShadow = true; m.receiveShadow = true; m.computeBoundingSphere(); scene.add(m); }
+    }
   }
   return trees;
 }
