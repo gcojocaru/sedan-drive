@@ -3,6 +3,14 @@
 What changed in each release of the game. Every pull request bumps the version in `package.json` (minor for features,
 patch for fixes) and adds its entry at the top. Versions before 0.4.0 are in the git history.
 
+## 0.10.0 — 2026-11-28
+
+- **Windows with depth:** on Medium and High graphics, windows sit back in the walls, so from an angle you see the
+  sides of each opening, and behind the glass there's a room: walls, floor, ceiling, furniture, sometimes a blind half
+  down. By day the rooms are dim behind the reflections; at night the lit ones glow in their own colours instead of
+  as flat yellow panels.
+- **Cornices:** older flat-roofed buildings get a stone cornice under the roof line, like the mansard blocks.
+
 ## 0.9.0 — 2026-11-28
 
 - **Cities that look like themselves:** buildings now take the look of the country you drive in. Paris is cream stone
