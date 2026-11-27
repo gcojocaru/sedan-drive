@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { facadeWalls, isRetail, onOutline, planFronts, shopBays, FACADE, FACADES, facadeStyle, floorGrid, bayCoords, wallAtlas, ATLAS_CELL, SURFACES, WALL_SURFACES, levelPhoto } from '../building-fronts.js';
+import { facadeWalls, isRetail, onOutline, planFronts, shopBays, FACADE, FACADES, facadeStyle, floorGrid, bayCoords, wallAtlas, ATLAS_CELL, SURFACES, WALL_SURFACES, levelPhoto, REGIONS, regionOf, mansardRoof } from '../building-fronts.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { overpassQuery } from '../osm-query.js';
 
@@ -89,6 +89,30 @@ test('facade styles come from material, type and height tags', () => {
   assert.equal(facadeStyle({heritage: '2'}, 'yes', 18, r), FACADE.classic);
   assert.equal(facadeStyle({}, 'apartments', 30, r), FACADE.panel);
   for (const [, storey, bay, lit, layer] of FACADES) assert.ok(storey > 2 && bay > 1 && lit >= 0 && lit <= 1 && WALL_SURFACES[layer]);
+});
+
+test('the region sets the mix for untagged buildings, and French blocks get mansards', () => {
+  const fr = regionOf('FR'), r = () => 0.5;
+  assert.equal(facadeStyle({}, 'apartments', 25, r, fr), FACADE.classic);
+  assert.equal(facadeStyle({}, 'apartments', 25, r, fr, false), FACADE.panel, 'a free-standing block is a modern one');
+  assert.equal(facadeStyle({}, 'apartments', 25, r), FACADE.panel, 'the generic mix builds panel blocks');
+  assert.equal(facadeStyle({}, 'apartments', 25, r, regionOf('US')), FACADE.brick);
+  assert.equal(facadeStyle({ 'building:material': 'concrete' }, 'yes', 25, r, fr), FACADE.panel, 'tags still decide first');
+  assert.equal(regionOf('RO'), regionOf(''), 'unlisted countries keep the generic mix');
+  for (const g of [...REGIONS, regionOf('')]) {
+    for (const k of ['low', 'mid', 'tall', 'free'].filter(k => g[k])) {
+      assert.ok(Math.abs(Object.values(g[k]).reduce((a, b) => a + b) - 1) < 1e-9, g.name + ' ' + k);
+      for (const s in g[k]) assert.ok(s in FACADE, s);
+    }
+    for (const s in g.walls || {}) assert.ok(s in FACADE && g.walls[s].every(c => /^#[0-9a-f]{6}$/.test(c)), s);
+    assert.ok(g.metal >= 0 && g.metal <= 1);
+  }
+  assert.ok(mansardRoof({}, 'apartments', 7, 0, fr));
+  assert.ok(mansardRoof({}, 'yes', 0, 20, fr), 'a tagged height counts when the levels are missing');
+  assert.ok(!mansardRoof({}, 'apartments', 7, 0, regionOf('RO')), 'only where the region builds them');
+  assert.ok(!mansardRoof({}, 'apartments', 7, 0, fr, false), 'only in a terrace');
+  for (const [t, type, lv] of [[{}, 'house', 5], [{}, 'office', 6], [{}, 'church', 6], [{}, 'apartments', 2], [{}, 'apartments', 14],
+    [{ 'roof:levels': '0' }, 'apartments', 6], [{ 'building:material': 'glass' }, 'apartments', 6], [{}, 'yes', 0]]) assert.ok(!mansardRoof(t, type, lv, 0, fr), type + ' ' + lv);
 });
 
 test('the wall atlas paints every cell in both layers inside its bounds', () => {

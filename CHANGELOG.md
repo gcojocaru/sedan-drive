@@ -3,6 +3,17 @@
 What changed in each release of the game. Every pull request bumps the version in `package.json` (minor for features,
 patch for fixes) and adds its entry at the top. Versions before 0.4.0 are in the git history.
 
+## 0.9.0 — 2026-11-28
+
+- **Cities that look like themselves:** buildings now take the look of the country you drive in. Paris is cream stone
+  with grey zinc mansard roofs and dormer windows, London is brick under slate, Rome, Barcelona and Lisbon are ochre
+  plaster under terracotta, and New York and San Francisco get brick, glass and painted houses. Everywhere else,
+  Bucharest included, keeps the mix of styles it had.
+- **Mansard roofs:** a mansard (tagged on the map, or the usual roof of a Paris apartment block) is a stone cornice,
+  then a steep zinc slope with a dormer over each column of windows, lit at night like the windows below.
+- **Party walls:** where two buildings share a wall, that wall has no windows, so a taller building's exposed side
+  is blank, as it is in a real terrace.
+
 ## 0.8.0 — 2026-11-27
 
 - **Faster first drive:** the map servers are now asked two at a time, and if they're slow you start driving on the

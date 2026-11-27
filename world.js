@@ -10,7 +10,7 @@ import { landmarkName, planSigns } from './sign-layout.js';
 import { furnitureKind, planFurniture } from './street-furniture.js';
 import { addFurniture } from './furniture-mesh.js';
 import { addSignMeshes } from './sign-mesh.js';
-import { drivingSide, prepareRoads, mappedStops } from './road-layout.js';
+import { countryCode, drivingSide, prepareRoads, mappedStops } from './road-layout.js';
 import { addBridgeStructures } from './bridge-mesh.js';
 import { levelWaters } from './water-levels.js';
 import { bridgeDecks } from './bridge-decks.js';
@@ -181,7 +181,7 @@ export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { la
   const areaAt = areaLookup(polys, seas);
   const nB = polys.filter(p => p.kind === 'building').length;
   await say('Raising ' + nB.toLocaleString() + ' buildings…');
-  const { blds, inBuilding, frontMat, wallMat } = buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear, landHeight);
+  const { blds, inBuilding, frontMat, wallMat } = buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear, landHeight, countryCode(elements));
   await say('Planting trees…');
   const trees = plantTrees(scene, treePts, rows, polys, G.noise, look, areaAt, inBuilding, wear, landHeight);
   const { setLamps, glowTex, lamps, lampLight } = streetLamps(scene, roads, look, areaAt, inBuilding, wx, driveHeight, lampLights);
