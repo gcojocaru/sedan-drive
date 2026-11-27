@@ -16,6 +16,7 @@ const CIRCLES = [-1.45, 0, 1.45]; // a car's body as three circles along its axi
 export const LEVELS = [['Off', 0, 0], ['Light', 170, 30], ['Normal', 95, 60], ['Heavy', 55, 100]];
 const MAIN = new Set(['motorway', 'trunk', 'primary', 'secondary']); // where lights go when none are mapped
 const GREEN = 18, AMBER = 3, CLEAR = 2, PHASE = GREEN + AMBER + CLEAR; // traffic light timing (s); CLEAR: all red
+const WALK_PACE = 1.25; // m/s: the walk phase gives the slowest walkers this pace over the widest crossing, plus 6 s to set off
 
 const unit = (a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1], cross = (a, b) => a[0] * b[1] - a[1] * b[0];
@@ -119,6 +120,8 @@ export function laneGraph(roads, junctions, half = Infinity, signals = null) {
 // Traffic lights. Junction nodes with a mapped signal within 30 m (or, with none mapped, where main roads cross) are
 // controlled; nodes linked by a short edge share a controller. Each road coming in gets a light, in one of two phases
 // by its direction (the widest road's axis first), and a signal head at the kerb where its cars stop: [{ e, x, z, h }].
+// Where any road there has sidewalks, the phases are followed by a walk phase: every light red while people cross
+// (`walk` on each head: seconds of it left; `junction`: where the controller's junctions are).
 function trafficLights(nodes, signals) {
   if (!signals) return [];
   const junctions = nodes.filter(n => n.junction), on = new Set();
@@ -141,6 +144,9 @@ function trafficLights(nodes, signals) {
     }
     const ins = [...ctrl.nodes].flatMap(m => m.ins.filter(e => !ctrl.nodes.has(e.from) && e.lanes.length));
     if (!ins.length) continue;
+    const all = [...ctrl.nodes].flatMap(m => m.ins.concat(m.outs)), wide = Math.max(...all.map(e => e.r.hw));
+    ctrl.walk = all.some(e => e.r.walk) ? Math.round(6 + 2 * (wide + 1.1) / WALK_PACE) : 0; // (1.1: kerb to the middle of the sidewalk)
+    const junction = [...ctrl.nodes].map(m => m.p);
     const axis = ins.reduce((a, b) => b.r.hw > a.r.hw ? b : a).dirB;
     for (const e of ins) {
       e.signal = { ctrl, phase: Math.abs(cross(axis, e.dirB)) > 0.7 ? 1 : 0 };
@@ -148,7 +154,7 @@ function trafficLights(nodes, signals) {
       // the stop line across this road's lanes in: its middle (cx, cz), the way in (ux, uz) and half its width
       const ends = e.lanes.map(l => l.pts.at(-1)), cx = ends.reduce((a, p) => a + p[0], 0) / ends.length, cz = ends.reduce((a, p) => a + p[1], 0) / ends.length;
       const half = Math.max(...ends.map(p => Math.abs((p[0] - cx) * -u[1] + (p[1] - cz) * u[0]))) + 1.9;
-      heads.push({ e, x: P[0] - u[1] * o, z: P[1] + u[0] * o, h: Math.atan2(u[1], -u[0]), state: 'red', cx, cz, ux: u[0], uz: u[1], half }); // facing the cars coming in
+      heads.push({ e, x: P[0] - u[1] * o, z: P[1] + u[0] * o, h: Math.atan2(u[1], -u[0]), state: 'red', walk: 0, junction, cx, cz, ux: u[0], uz: u[1], half }); // facing the cars coming in
     }
     ctrl.phases = [...new Set(ins.map(e => e.signal.phase))].sort();
   }
@@ -169,13 +175,16 @@ export function ranRed(signals, ax, az, bx, bz) {
 }
 
 // The colour of light `signal` (an edge's { ctrl, phase }) at time t (s): its phase gets green, then amber, then all
-// stand at red a moment before the next phase's green.
+// stand at red a moment before the next phase's green, and after the last phase, through the walk phase.
+const cycleAt = (ctrl, t) => { const n = ctrl.phases.length, len = n * PHASE + (ctrl.walk || 0); return [((t + ctrl.offset) % len + len) % len, n * PHASE, len]; };
 export function lightAt(signal, t) {
-  const { ctrl, phase } = signal, n = ctrl.phases.length;
-  let s = ((t + ctrl.offset) % (n * PHASE) + n * PHASE) % (n * PHASE);
-  const i = Math.floor(s / PHASE); s -= i * PHASE;
+  const { ctrl, phase } = signal, [at, cars] = cycleAt(ctrl, t);
+  if (at >= cars) return 'red'; // people are crossing
+  const i = Math.floor(at / PHASE), s = at - i * PHASE;
   return ctrl.phases[i] !== phase ? 'red' : s < GREEN ? 'green' : s < GREEN + AMBER ? 'amber' : 'red';
 }
+// Seconds left of the walk phase at controller ctrl at time t (0 while cars have the junction)
+export function walkLeft(ctrl, t) { const [at, cars, len] = cycleAt(ctrl, t); return at >= cars ? len - at : 0; }
 
 // The curve from lane k of E into lane kF of F (a U-turn when F is E's twin). Made once and kept on E.
 let turnIds = 0;
@@ -345,6 +354,13 @@ export function createTraffic(graph, { rand = Math.random, max = Infinity, radiu
     }
     const end = c.route.at(-1);
     if (c.dead) limit(0, end.at + end.p.len - c.s - 1);
+    // a junction claimed on green whose light has changed since: the claim (and any after it) goes back if it can
+    // still stop comfortably, and it waits for green like the others
+    for (const e of [...c.claimed]) {
+      const sig = e.p.from.signal; if (!sig || !c.claimed.has(e) || e.at - c.s < LEN) continue;
+      const light = lightAt(sig, time), toStop = e.at - 2.5 - waitBack(e.p.from.lanes[e.p.k]) - c.s;
+      if (light !== 'green' && toStop > v * v / (2 * (light === 'red' ? 6 : 3.5)) - 0.5) for (const f of [...c.claimed]) if (f.at >= e.at) { f.p.node.holders.delete(c); c.claimed.delete(f); }
+    }
     // the next junction whose turn isn't claimed yet, taken together with any after it that a car can't wait before
     // without its tail still in the one behind
     let group = null;
@@ -425,7 +441,7 @@ export function createTraffic(graph, { rand = Math.random, max = Infinity, radiu
   // others: more bodies in the way, e.g. pedestrians ({ x, z, h, v, r })
   function step(dt, player, others = []) {
     time += dt;
-    for (const s of graph.signals || []) s.state = lightAt(s.e.signal, time);
+    for (const s of graph.signals || []) { s.state = lightAt(s.e.signal, time); s.walk = walkLeft(s.e.signal.ctrl, time); }
     const bodies = cars.concat(player ? [player] : [], others);
     for (const c of cars) drive(c, dt, bodies);
     for (const c of cars) move(c, dt);

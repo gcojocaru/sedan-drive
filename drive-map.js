@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { laneSpawn } from './road-layout.js';
 import { deliveryHud } from './delivery-hud.js';
+import { JOB_LEVELS, levelOf, levelText } from './delivery.js';
 import { createMinimap } from './minimap.js';
 import { drivingAudio } from './driving-audio.js';
 import { crossedEdge, nextArea, cooldownSeconds, startCooldown, visitArea, cooldownButton, edgePrompt } from './area-travel.js';
@@ -180,7 +181,7 @@ async function startGame(lat0, lon0, placeName) {
   const traffic = createTraffic(graph, { max: coarse ? 45 : 100, seen });
   const trafficView = trafficCars(scene, 100, glowTex), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
   const walks = walkGraph(roads, paths, layout.junctions, { armBack: graph.armBack, roadAt, crossings: crossPts }); // sidewalks, crossings, footways
-  const people = createPedestrians(walks, { max: coarse ? 50 : 140, half: HALF, seen }), figures = pedestrianFigures(scene, coarse ? 50 : 140);
+  const people = createPedestrians(walks, { max: coarse ? 90 : 280, half: HALF, seen }), figures = pedestrianFigures(scene, coarse ? 90 : 280);
   const ear = { x: 0, z: 0, fx: 1, fz: 0, vx: 0, vz: 0, wet: 0, snow: 0, me }, look = V(0, 0, 0); // the camera, listening to the traffic
   const SOLID = { bld: 'wall', car: 'car', traffic: 'car', post: 'post' }; // what blocked() hits → its crash sound
   let hitCar = null, hitPerson = null; // the traffic car and the pedestrian blocked() last found
@@ -298,9 +299,16 @@ async function startGame(lat0, lon0, placeName) {
     return object === 'car' ? 'car' : object ? 'post' : null;
   }
 
-  const showWallet = () => { $('wallet').hidden = !wallet.jobs && !wallet.cash; $('wallet').textContent = '$' + wallet.cash + ' · ' + wallet.jobs + (wallet.jobs === 1 ? ' delivery' : ' deliveries'); };
+  const showWallet = () => { // cash, deliveries and the level they reached (and how many more to the next)
+    const i = levelOf(wallet.jobs), up = JOB_LEVELS[i + 1];
+    $('wallet').hidden = !wallet.jobs && !wallet.cash;
+    $('wallet').textContent = '$' + wallet.cash + ' · ' + wallet.jobs + (wallet.jobs === 1 ? ' delivery' : ' deliveries') + ' · ' + JOB_LEVELS[i].name + (up ? ' (' + (up.from - wallet.jobs) + ' to level ' + (i + 2) + ')' : '');
+  };
   showWallet();
-  const delivery = deliveryHud(scene, graph, furnitureHit, $('jobButton'), $('jobStage'), $('jobDistance'), flash, receipt => { wallet = earn(wallet, receipt.total); keep(LS_WALLET, wallet); showWallet(); });
+  const delivery = deliveryHud(scene, graph, furnitureHit, $('jobButton'), $('jobStage'), $('jobDistance'), flash, receipt => {
+    const was = levelOf(wallet.jobs); wallet = earn(wallet, receipt.total); keep(LS_WALLET, wallet); showWallet();
+    const now = levelOf(wallet.jobs); if (now > was) flash('Level ' + (now + 1) + ' · ' + JOB_LEVELS[now].name + ': ' + levelText(now));
+  }, () => levelOf(wallet.jobs));
   function toggleDelivery() {
     if (started && !paused()) delivery.toggle(st.pos.x,st.pos.z);
   }
@@ -310,13 +318,15 @@ async function startGame(lat0, lon0, placeName) {
   const garageEl = $('garage'), shop = garagePanel($('garageItems'), item => {
     const bought = buy(garage, wallet, item); if (!bought) return;
     ({ garage, wallet } = bought); tuning = carTuning(garage); keep(LS_GARAGE, garage); keep(LS_WALLET, wallet);
-    Object.assign(TUNE, { power: 7.4 * tuning.power, brake: tuning.brake }); repaint(CAR, tuning.paint); applyTime(); // (tyres: the grip)
+    repaint(CAR, tuning.paint); applyTime(); // (engine and brakes: TUNE, each frame; tyres: the grip)
     showWallet(); shop.draw(garage, wallet);
   });
   function openGarage() { if (paused()) return; clearKeys(); shop.draw(garage, wallet); garageEl.showModal(); }
   $('garageButton').onclick = () => { openGarage(); $('garageButton').blur(); };
   function update(dt) {
     const k = readKeys(keys), was = [st.pos.x, st.pos.z], ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
+    const cargo = delivery.cargo; // a heavy load takes some of the engine and the brakes
+    TUNE.power = 7.4 * tuning.power * (cargo?.power ?? 1); TUNE.brake = tuning.brake * (cargo?.brake ?? 1);
     const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard, grip }, TUNE, (nx, nz, nh) => {
       const hit = blocked(nx, nz, nh);
       boundary.move(st.pos.x, st.pos.z);
