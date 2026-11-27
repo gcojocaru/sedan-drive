@@ -34,6 +34,7 @@ import { perfHud } from './perf-hud.js';
 import { mergeStatic } from './car-merge.js';
 import { postFx } from './post-fx.js';
 import { carProbe } from './car-probe.js';
+import { carFx } from './car-fx.js';
 import { QUALITY, pickQuality, pixelRatio, dynamicRes } from './quality.js';
 
 showAppVersion();
@@ -218,6 +219,7 @@ async function startGame(lat0, lon0, placeName) {
   car.updateMatrixWorld(true); car.traverse(o => { if (o.isMesh && o.name === 'tail_brake') tails.push(new THREE.Box3().setFromObject(o).getCenter(V())); });
   mergeStatic(car); // the car's still parts in a few draw calls (after the lookups above)
   const reflect = carProbe(renderer, scene, car, Q.probe); // the car reflects the street around it
+  const carfx = carFx(scene, Q, driveHeight); // tyre smoke, skid marks, spray and sparks
   for (const c of tails) { const s = new THREE.Sprite(tailGlow); s.position.copy(car.worldToLocal(c)).add(V(-0.1, 0, 0)); s.scale.setScalar(0.6); car.add(s); }
 
   const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0, slip: 0 };
@@ -349,37 +351,44 @@ async function startGame(lat0, lon0, placeName) {
   });
   function openGarage() { if (paused()) return; clearKeys(); shop.draw(garage, wallet); garageEl.showModal(); }
   $('garageButton').onclick = () => { openGarage(); $('garageButton').blur(); };
+  let scraping = false; // sliding along something solid (car-fx sparks it)
   function update(dt, p) {
     const k = readKeys(keys, p), was = [st.pos.x, st.pos.z], ra = roadAt(st.pos.x, st.pos.z), onRoad = ra.drv && ra.de < 0.6, onHard = onRoad || (ra.any && ra.ae < 2.4) || (ra.drv && ra.de < 2.4) || !!areaAt(st.pos.x, st.pos.z, HARD);
     const cargo = delivery.cargo; // a heavy load takes some of the engine and the brakes
     TUNE.power = 7.4 * tuning.power * (cargo?.power ?? 1); TUNE.brake = tuning.brake * (cargo?.brake ?? 1);
+    let contact = null; // what the move ran into first (blocked() also sets hitCar / hitPerson)
     const s = step(st, k, dt, { vmax: onRoad ? 42 : onHard ? 20 : 12, drag: onHard ? 0.02 : 0.7, rough: !onHard, grip, height: driveHeight }, TUNE, (nx, nz, nh) => {
       const hit = blocked(nx, nz, nh);
-      boundary.move(st.pos.x, st.pos.z);
-      if (hit === 'person') { // they stumble out of the way; the car pulls up
-        const imp = Math.abs(st.v), fresh = hitPerson.state !== 'stagger';
-        people.bump(hitPerson, st.pos.x, st.pos.z); st.v *= 0.2; sound.impact(imp, 'person');
-        if (fresh && imp > 2 && !delivery.knocked()) flash('Watch out!', 'bad');
-      }
-      else if (SOLID[hit]) {
-        const imp = Math.abs(st.v); st.v = -st.v * 0.25; shake = Math.min(1, imp / 20);
-        sound.impact(imp, SOLID[hit]); pad.crash(imp); if (hit === 'traffic' && imp > 2) sound.honkAt(hitCar, ear); // and the other driver lets you know
+      if (hit && !contact) contact = { hit, other: hitCar, person: hitPerson };
+      return !hit ? false : SOLID[hit] ? true : 'stop'; // solids can be glanced off; people and the area's edge stop the car
+    });
+    boundary.move(st.pos.x, st.pos.z);
+    if (contact?.hit === 'person') { // they stumble out of the way; the car pulls up
+      const { person } = contact, fresh = person.state !== 'stagger';
+      people.bump(person, st.pos.x, st.pos.z); st.v *= 0.2; sound.impact(s.impact, 'person');
+      if (fresh && s.impact > 2 && !delivery.knocked()) flash('Watch out!', 'bad');
+    }
+    else if (SOLID[contact?.hit]) {
+      const imp = s.impact; if (s.blocked) st.v = -st.v * 0.25; // head-on: bounce back; glancing: the car slides along
+      if (s.blocked || !scraping) { // a new hit (sliding along a wall doesn't count again every frame)
+        shake = Math.min(1, imp / 20); sound.impact(imp, SOLID[contact.hit]); pad.crash(imp); carfx.spark(st, imp);
+        if (contact.hit === 'traffic' && imp > 2) sound.honkAt(contact.other, ear); // and the other driver lets you know
         delivery.crash(imp, tuning.cushion);
       }
-      else if (hit) { st.v = 0; boundary.offer(hit); } // the edge of the area
-      return !!hit;
-    });
+    }
+    else if (contact) { st.v = 0; boundary.offer(contact.hit); } // the edge of the area
+    scraping = !!contact && !s.blocked && SOLID[contact.hit] && Math.abs(st.v) > 1;
     if (ranRed(graph.signals, was[0], was[1], st.pos.x, st.pos.z)) delivery.ranRed();
     if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v, dt, dim);
     const ride = { hb: !paused() && k.hb, steer: st.steer, slip: st.slip, rough: !onHard, wet: ear.wet, snow: ear.snow, grip };
-    sound.update(st.v, !paused() && k.up, !paused() && k.dn, ride); pad.feel(st.v, s.braking, ride);
+    sound.update(st.v, !paused() && k.up, !paused() && k.dn, ride); pad.feel(st.v, s.braking, ride); carfx.frame(dt, st, rig.wheels, ride, s.braking, scraping);
     return s;
   }
   function glows(s) {
     headGlow.opacity = head ? (lowLight ? 0.85 : 0.25) : 0; tailGlow.opacity = s.braking ? (lowLight ? 0.9 : 0.4) : head && lowLight ? 0.35 : 0;
   }
   function updateCam(dt) {
-    cam.update(st, camMode, dt, occluded);
+    if (started) cam.update(st, camMode, dt, occluded); else cam.orbit(st, performance.now() / 1000); // before the start: show the place round the car
     if (shake > 0.01) { camera.position.x += (Math.random() - 0.5) * shake * 0.25; camera.position.y += (Math.random() - 0.5) * shake * 0.2; shake *= Math.exp(-dt * 7); }
     sky.placeShadow(st.pos.x + Math.cos(st.h) * 45, st.pos.z - Math.sin(st.h) * 45); // the shadow box reaches further ahead of the car
     sky.update(dt, camera.position); reflectLamps(camera.position.x, camera.position.z); lampLight(st.pos.x, st.pos.z, dt); reflect();

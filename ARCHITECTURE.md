@@ -61,6 +61,7 @@ how each part works; this file says how the parts may fit together.
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
 | `radio.js` | 53 | Car radio for both drive pages: `stationsNear()` (radio-browser.info, real-map page), Romanian presets (test track), `radio(show, find, tuningStatic)` player, `radioHud()` station display |
 | `quality.js` | — | Graphics tiers, the device's default, pixel budget and dynamic resolution (pure) |
+| `car-fx.js` | — | Tyre smoke, skid marks, spray and sparks |
 | `post-fx.js` | — | Glow, tone mapping, colour grade and FXAA (Medium, High) |
 | `car-probe.js` | — | Live reflections of the street on the car |
 | `car-merge.js` | — | The driven car's still parts merged into a few meshes |
@@ -87,7 +88,7 @@ root, one copy each. Page URLs don't change.
 | Module | Owns | May import |
 |---|---|---|
 | `drive-map.js` | Real-map page entry: picker, loading screen, time of day, game loop wiring | everything below |
-| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch`, `toast`, `gamepad`, `world-kit`, `quality`, `perf-hud`, `car-merge`, `post-fx`, `car-probe`, `app-version` |
+| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch`, `toast`, `gamepad`, `world-kit`, `quality`, `perf-hud`, `car-merge`, `post-fx`, `car-probe`, `car-fx`, `app-version` |
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model`, `app-version` |
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`, `brake`), and `repaint(C, hex)` colours the car's `paint`; the ground under the car (`vmax`, `drag`, `rough`, `grip`, optional `height(x,z)`) and collisions | `car-ground` |
 | `app-version.js` | Show the current release on the three game pages | nothing |
@@ -120,6 +121,7 @@ root, one copy each. Page URLs don't change.
 | `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find, tuningStatic)` → `tune(step)`; station playback | nothing |
 | `weather.js` | `weatherNow(lat, lon, fetch)` → `{ kind, label, amount, temp, offset, snowDepth?, recent? }`, `weatherOf(code)`, `WEATHERS`, `groundOf(w)` → `{ wet, snow, grip }`, `solarHour(ms, lon)` | nothing |
 | `perf-hud.js` | `perfHud(renderer, extra, on)` → `frame(start)` with `lap`, `begin`, `show`, `onToggle`: the performance readout; `percentile` | nothing |
+| `car-fx.js` | `carFx(scene, { particles, marks })` → `frame`, `spark` | `driving-audio`, three |
 | `post-fx.js` | `postFx(renderer, scene, camera, q)` → `render`, `setSize`, `look`, `target` (or null) | three, three addons |
 | `car-probe.js` | `carProbe(renderer, scene, car, size)` → `update()` | three |
 | `car-merge.js` | `mergeStatic(car, keep)`: bake the driven car's still parts into one mesh per material | three |

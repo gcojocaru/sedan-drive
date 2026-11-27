@@ -76,10 +76,10 @@ test('tyres squeal braking hard, on the handbrake, cornering at the limit and sl
   assert.equal(tyreSound(2, true, { hb: true }).squeal, 0, 'not at walking pace');
   assert.equal(tyreSound(15, false, { steer: 0.02 }).squeal, 0, 'not cruising');
   const braking = tyreSound(15, true).squeal, handbrake = tyreSound(15, false, { hb: true }).squeal;
-  const cornering = tyreSound(14, false, { steer: 0.15 }).squeal, sliding = tyreSound(12, false, { slip: 0.4 }).squeal;
+  const cornering = tyreSound(14, false, { steer: 0.2 }).squeal, sliding = tyreSound(12, false, { slip: 0.4 }).squeal;
   assert.ok(braking > 0.3 && handbrake > 0.9 && cornering > 0.5 && sliding > 0.9, [braking, handbrake, cornering, sliding].join());
   assert.ok(tyreSound(25, true).squeal > braking, 'harder from higher up');
-  assert.ok(tyreSound(14, false, { steer: 0.08, grip: 0.65 }).squeal > tyreSound(14, false, { steer: 0.08 }).squeal + 0.5, 'less grip, more squeal for the same turn');
+  assert.ok(tyreSound(14, false, { steer: 0.14, grip: 0.65 }).squeal > tyreSound(14, false, { steer: 0.14 }).squeal + 0.5, 'less grip, more squeal for the same turn');
   const grass = tyreSound(15, false, { hb: true, rough: true }), snow = tyreSound(15, false, { hb: true, snow: 1 }), wet = tyreSound(15, false, { hb: true, wet: 1 });
   assert.ok(grass.squeal === 0 && grass.rumble > 0.9 && snow.squeal === 0 && snow.rumble > 0);
   assert.ok(wet.squeal < handbrake && wet.swish > 0 && tyreSound(15, false).swish === 0);

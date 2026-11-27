@@ -3,6 +3,20 @@
 What changed in each release of the game. Every pull request bumps the version in `package.json` (minor for features,
 patch for fixes) and adds its entry at the top. Versions before 0.4.0 are in the git history.
 
+## 0.7.0 — 2026-11-27
+
+- **Handling:** the tyres now have a real grip limit. Held keys corner just inside it, so you won't slide by accident
+  on dry roads, but the handbrake throws the car into a slide, holding the throttle keeps a drift going, and letting
+  go of the steering catches it. Too fast on wet or snowy roads and the car slides wide.
+- **Crashes:** brushing a wall or a car at an angle glances off and scrapes along it instead of stopping dead and
+  bouncing back; only head-on hits stop the car. A scrape counts once, not every frame, so it does less parcel damage.
+- **Tyres you can see:** tyre smoke and black skid marks when the tyres squeal, spray on wet roads, dirt or snow
+  thrown up off the road, and sparks from crashes and scrapes.
+- **A car with weight:** the body dips under braking, squats when accelerating, leans in corners and rocks back as it
+  settles.
+- **Arrival:** before you start, the camera circles the car so you see the place; the start card sits in the corner.
+- **Test track:** best laps start fresh, because the new handling changes lap times.
+
 ## 0.6.0 — 2026-11-27
 
 - **Glow and colour:** street lamps, headlights, brake lights, lit windows and the delivery beam now glow, and the picture

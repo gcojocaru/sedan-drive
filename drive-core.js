@@ -22,16 +22,22 @@ export function rigCar(C) {
 }
 
 // One physics step of st = { pos, h, v, steer, spin, roll, pitch, slip } (m, rad, m/s; heading 0 = +x; slip: the angle
-// from the heading to the way the car is actually moving, 0 unless it slides).
+// from the heading to the way the car is actually moving, 0 unless it slides; rw, pw: the body's roll and pitch rates).
 // k: controls from readKeys (steer, thr and brk, when there, set the steering lock and scale the engine and brakes).
 // surf: the ground under the car, { vmax, drag, rough, grip }. tune: the page's car, { power, idle, vtop, brake } (brake: how much harder than stock the brakes bite, default 1).
 // grip (default 1, dry) is the share of dry tyre grip left on wet or snowy ground: brakes and handbrake bite by that share,
-// the engine can't pull harder than 10 * grip m/s², and the tyres hold the car's path to 8 * grip / (1 - grip) m/s²
-// sideways (no limit when dry). Corner harder than that and the car slides wide, scrubbing speed, until its path lines
-// up with where it points again; the body runs at most 0.5 rad ahead of its path.
-// collide(nx, nz, nh), if given, sees the move first; returning true refuses it (the callback handles the hit itself).
+// and the engine can't pull harder than 10 * grip m/s². Sideways the tyres hold the car's path to DRY * grip m/s²; the
+// steering lock is kept just inside that, so held keys never slide on dry ground, but the handbrake (rear wheels locked:
+// a third of the grip), hard braking and too much speed on wet or snowy ground do: the body then runs ahead of its path
+// (at most 0.65 rad), scrubbing speed. Holding the throttle in a slide keeps it going; let go of the steering and the car
+// counter-steers and catches it.
+// collide(nx, nz, nh), if given, sees each move first: falsy lets it, 'stop' refuses it, anything else is a solid the car
+// may glance off: it slides along with the speed along it, turning towards it. The result says { blocked } when the move
+// was refused, and impact: the speed into the obstacle (m/s; the whole speed when blocked, a share of it when glancing).
+export const DRY = 15;
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 export function step(st, k, dt, surf, tune, collide) {
-  const g = Math.max(0.05, Math.min(1, surf.grip ?? 1)), slip = st.slip || 0;
+  const g = clamp(surf.grip ?? 1, 0.05, 1), slip = st.slip || 0, sliding = Math.abs(slip) > 0.15;
   let a = 0;
   if (k.up) a = (st.v < -0.2 ? 18 * g : Math.min(tune.power * Math.max(0, 1 - Math.max(0, st.v) / surf.vmax) + tune.idle, 10 * g)) * (k.thr ?? 1);
   if (k.dn) a = (st.v > 0.2 ? -17 * g * (tune.brake ?? 1) : -Math.min(5, 10 * g)) * (k.brk ?? 1);
@@ -41,27 +47,42 @@ export function step(st, k, dt, surf, tune, collide) {
     a -= 9.81 * grade / Math.hypot(1, grade);
   }
   if (k.hb) a -= Math.sign(st.v) * 9 * g;
-  const hold = 8 * g / (1 - g); // Infinity when dry
-  if (slip) a -= Math.sign(st.v) * Math.min(hold, 12) * Math.abs(Math.sin(slip)); // sliding sideways scrubs speed
+  const v = Math.abs(st.v), hold = DRY * g * (k.hb && v > 4 ? 0.3 : 1) * (1 - 0.25 * clamp(-a * Math.sign(st.v || 1) / 17, 0, 1)) * (sliding && k.up ? 0.75 : 1);
+  if (slip) a -= Math.sign(st.v) * Math.min(hold, 12) * Math.abs(Math.sin(slip)) * (k.up ? 0.5 : 1); // sliding sideways scrubs speed
   st.v += a * dt;
   if (!k.up && !k.dn && Math.abs(st.v) < 0.4) st.v = 0;
-  st.v = Math.max(-9, Math.min(tune.vtop, st.v));
-  const target = k.steer ?? (k.lf ? 1 : 0) - (k.rt ? 1 : 0), ms = 0.62 / (1 + Math.abs(st.v) / 14);
-  st.steer += (target * ms - st.steer) * Math.min(1, dt * (target ? 5 : 8));
-  const yaw = st.v * Math.tan(st.steer) / 2.63 * (k.hb && Math.abs(st.v) > 4 ? 1.5 : 1);
-  let nh = st.h + yaw * dt, path = nh, turn = yaw; // the body's new heading, the direction it moves in, and how fast that turns
-  if (g < 1 || slip) { // the path follows the body only as fast as the tyres hold it
-    const most = hold / Math.max(0.5, Math.abs(st.v)) * dt;
-    path = st.h + slip + Math.max(-most, Math.min(most, yaw * dt - slip));
-    nh = path + Math.max(-0.5, Math.min(0.5, nh - path)); turn = (path - st.h - slip) / dt;
+  st.v = clamp(st.v, -9, tune.vtop);
+  const lock = Math.min(0.62 / (1 + v / 14), sliding ? 1 : Math.atan(0.85 * DRY * 2.63 / Math.max(1, v * v))); // just inside the grip
+  let target = k.steer ?? (k.lf ? 1 : 0) - (k.rt ? 1 : 0);
+  if (!target && k.steer === undefined && sliding) target = clamp(1.6 * slip / lock, -1, 1) * Math.sign(st.v || 1); // counter-steer
+  const sp = clamp((v - 8) / 32, 0, 1) ** 2 * (3 - 2 * clamp((v - 8) / 32, 0, 1));
+  st.steer += (target * lock - st.steer) * Math.min(1, dt * (target ? 7 - 3 * sp : 10));
+  const yaw = st.v * Math.tan(st.steer) / 2.63 * (k.hb && v > 4 ? 1.5 : 1);
+  // the path follows the body only as fast as the tyres hold it
+  const most = hold / Math.max(0.5, v) * dt;
+  const path = st.h + slip + clamp(yaw * dt - slip, -most, most), nh = path + clamp(st.h + yaw * dt - path, -0.65, 0.65), turn = (path - st.h - slip) / dt;
+  const res = { braking: (k.dn && st.v > 0.2) || k.hb, reversing: st.v < -0.2, blocked: false, impact: 0 };
+  const move = (p, h, speed) => { const x = st.pos.x + Math.cos(p) * speed * dt, z = st.pos.z - Math.sin(p) * speed * dt; return [x, z, h]; };
+  const [nx, nz] = move(path, nh, st.v), hit = collide?.(nx, nz, nh);
+  if (!hit) { st.h = nh; st.pos.x = nx; st.pos.z = nz; st.slip = path - nh; }
+  else {
+    let glanced = false;
+    if (hit !== 'stop' && v > 1) for (const d of [0.15, 0.3, 0.5]) { // glance: slide along it, losing the speed into it
+      for (const sg of [1, -1]) {
+        const p = path + sg * d, h = st.h + sg * d * 0.5, speed = st.v * Math.cos(d), [x, z] = move(p, h, speed);
+        if (!collide(x, z, h)) { st.h = h; st.pos.x = x; st.pos.z = z; st.slip = 0; st.v = speed - Math.sign(speed) * Math.min(Math.abs(speed), 6 * dt); res.impact = v * Math.sin(d); glanced = true; break; }
+      }
+      if (glanced) break;
+    }
+    if (!glanced) { res.blocked = true; res.impact = v; }
   }
-  const nx = st.pos.x + Math.cos(path) * st.v * dt, nz = st.pos.z - Math.sin(path) * st.v * dt;
-  if (!collide?.(nx, nz, nh)) { st.h = nh; st.pos.x = nx; st.pos.z = nz; st.slip = path - nh; }
-  st.roll += (Math.max(-0.045, Math.min(0.045, st.v * turn * 0.0045)) - st.roll) * Math.min(1, dt * 6);
-  st.pitch += (Math.max(-0.03, Math.min(0.02, a * 0.0018)) - st.pitch) * Math.min(1, dt * 5);
-  if (surf.rough && Math.abs(st.v) > 3) st.pitch += (Math.random() - 0.5) * 0.004;
+  // the body on springs: it leans into turns and pitches under braking and acceleration, overshoots a little and settles
+  const rollTo = clamp(st.v * turn * 0.0045, -0.06, 0.06), pitchTo = clamp(a * 0.0018, -0.045, 0.03);
+  st.rw = (st.rw || 0) + (49 * (rollTo - st.roll) - 6.3 * (st.rw || 0)) * dt; st.roll = clamp(st.roll + st.rw * dt, -0.08, 0.08);
+  st.pw = (st.pw || 0) + (81 * (pitchTo - st.pitch) - 7.2 * (st.pw || 0)) * dt; st.pitch = clamp(st.pitch + st.pw * dt, -0.06, 0.045);
+  if (surf.rough && v > 3) st.pw += (Math.random() - 0.5) * 0.25;
   st.spin += st.v * dt / 0.308;
-  return { braking: (k.dn && st.v > 0.2) || k.hb, reversing: st.v < -0.2 };
+  return res;
 }
 
 // Paint a buildCar()-shaped car (its `paint` material) in colour `hex`, or back in its own colours with null.
@@ -92,6 +113,13 @@ export function chaseCamera(camera, car, height = () => 0) {
   const look = camera.position.clone(), REST = 7.8; let yaw = 0, dist = REST;
   return {
     reset(st) { yaw = st.h; dist = REST; },
+    // before the drive starts: a slow orbit round the car (once in 40 s), swinging between 7 and 11 m out and 1.6 and 4.5 m up
+    orbit(st, t) {
+      const a = st.h + Math.PI + t * 2 * Math.PI / 40, r = 9 + 2 * Math.sin(t * 0.37), y = 3.05 + 1.45 * Math.sin(t * 0.23);
+      const x = st.pos.x + Math.cos(a) * r, z = st.pos.z - Math.sin(a) * r; // (above the ground, on hills too)
+      camera.position.set(x, y + Math.max(height(x, z), height(st.pos.x, st.pos.z)), z); camera.lookAt(st.pos.x, height(st.pos.x, st.pos.z) + 0.9, st.pos.z);
+      camera.fov = 50; camera.near = 0.1; camera.updateProjectionMatrix(); yaw = st.h; dist = REST;
+    },
     update(st, mode, dt, occluded) {
       if (mode === 0) {
         const t = Math.min(1, Math.max(0, (st.v - 8) / 37)), sp = t * t * (3 - 2 * t); // 0 up to 8 m/s, 1 from 45 m/s
