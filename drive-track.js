@@ -9,6 +9,8 @@ import { gamepad } from './gamepad.js';
 import { showAppVersion } from './app-version.js';
 import { perfHud } from './perf-hud.js';
 import { mergeStatic } from './car-merge.js';
+import { postFx } from './post-fx.js';
+import { carProbe } from './car-probe.js';
 import { QUALITY, pickQuality, pixelRatio, dynamicRes } from './quality.js';
 import { blobTex } from './world-kit.js';
 
@@ -21,16 +23,17 @@ mergeStatic(car); // the car's still parts in a few draw calls
 // graphics quality: the real-map page's setting (sedan-quality-v1), or this device's tier
 let qPick = 'auto'; try { qPick = JSON.parse(localStorage.getItem('sedan-quality-v1')) ?? 'auto'; } catch { }
 const Q = QUALITY[pickQuality(qPick, { coarse: matchMedia('(pointer: coarse)').matches, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory })];
-const renderer = new THREE.WebGLRenderer({ antialias: Q.msaa });
-let resScale = 1; const fit = () => { renderer.setPixelRatio(pixelRatio(Q, devicePixelRatio, innerWidth, innerHeight, resScale)); renderer.setSize(innerWidth, innerHeight); };
+const renderer = new THREE.WebGLRenderer({ antialias: Q.msaa && !Q.post });
+let resScale = 1, fx = null; const fit = () => { renderer.setPixelRatio(pixelRatio(Q, devicePixelRatio, innerWidth, innerHeight, resScale)); renderer.setSize(innerWidth, innerHeight); fx?.setSize(); };
 fit(); const resTick = dynamicRes(s => { resScale = s; fit(); });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 4000);
-scene.add(car);
+fx = postFx(renderer, scene, camera, Q); // glow and colour grade (post-fx.js), or straight to the screen on Low
+scene.add(car); const reflect = carProbe(renderer, scene, car, Q.probe); // the car reflects what's around it
 
 // ---------- Sky + environment ----------
 function skyTex(night) {
@@ -182,7 +185,7 @@ function setNight(n) {
   night = n; scene.background = n ? SKY.night : SKY.day; scene.environment = n ? ENV.night : ENV.day; scene.environmentIntensity = n ? 0.35 : 1;
   sun.intensity = n ? 0.12 : 2.8; sun.color.set(n ? 0x9fb3ff : 0xfff0d8); hemi.intensity = n ? 0.08 : 0.7;
   scene.fog.color.set(n ? 0x1a2131 : 0xdfe9ef); scene.fog.near = n ? 60 : 140; scene.fog.far = n ? 600 : 1300;
-  head = n || head; setLights();
+  head = n || head; setLights(); fx?.look({ night: n });
 }
 setNight(false);
 function updateCam(dt) {
@@ -224,10 +227,10 @@ const perf = perfHud(renderer, () => Q.name + ' · pixel ratio ' + renderer.getP
 perf.onToggle(on => localStorage.setItem('sedan-perf-v1', on));
 renderer.setAnimationLoop(now => {
   const t0 = performance.now();
-  resTick(now - last); const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (document.hasFocus()) resTick(now - last); /* (an unfocused window may be held at 30 fps: not a slow GPU) */ const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const p = pad.poll(); if (p?.thr && !started) begin(); // (its buttons start the game through their keys)
   if (started) { clock += dt; lastS = update(dt, p); }
   syncCar(rig, st, lastS, head); updateCam(dt); hud(lastS);
-  renderer.render(scene, camera); perf(t0);
+  reflect(); if (fx) fx.render(); else renderer.render(scene, camera); perf(t0);
 });
 

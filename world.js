@@ -93,7 +93,8 @@ const isBridge = t => t.bridge && t.bridge !== 'no';
 // elements: an Overpass reply's elements; (lat0, lon0) becomes the origin. say(text) shows progress and waits for a repaint.
 // setGround(wet, snow) (0–1 each, from weather.js groundOf) wets roads, roofs and ground or lays snow on them;
 // reflectLamps(x, z), called as the camera moves, lets the lit street lamps nearest it glint in wet roads.
-export async function buildWorld(elements, lat0, lon0, scene, say) {
+// q: { lampLights }: how many street lamps near the car really light it (quality.js)
+export async function buildWorld(elements, lat0, lon0, scene, say, { lampLights = 0 } = {}) {
   await say('Building the streets…');
   const { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts, landmarks, furniture, addressPoints } = parseElements(elements, lat0, lon0);
   const wx = weatherLook(), { wear } = wx;
@@ -121,14 +122,14 @@ export async function buildWorld(elements, lat0, lon0, scene, say) {
   const { blds, inBuilding, frontMat, wallMat } = buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear);
   await say('Planting trees…');
   const trees = plantTrees(scene, treePts, rows, polys, G.noise, look, areaAt, inBuilding, wear);
-  const { setLamps, glowTex, lamps } = streetLamps(scene, roads, look, areaAt, inBuilding, wx);
+  const { setLamps, glowTex, lamps, lampLight } = streetLamps(scene, roads, look, areaAt, inBuilding, wx, lampLights);
   const clear = signClearance(trees, lamps, look, areaAt, inBuilding);
   const { objects, hit } = planFurniture(furniture, polys, roadAt, clear);
   const parkedPaint = addFurniture(scene, objects);
   const signFree = (x,z) => clear(x,z) && !hit(x,z,0,0.35,0.35);
   const signs = planSigns(layout.junctions, landmarks, roadAt, signFree);
   addSignMeshes(scene, signs);
-  return { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs) };
+  return { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs), lampLight };
 }
 
 // what the chase camera keeps out of, as geom.js pointGrid points [x, z, r, y0, y1]: tree trunks (not the crowns, which
@@ -380,6 +381,26 @@ function areaLookup(polys, seas) {
   return areaAt;
 }
 
+// A broadleaf crown: five lumpy blobs (icosahedra, 400 triangles) round one centre instead of a single sphere, with
+// normals between each blob's and the crown's (soft clumps) and a vertex shade that darkens the underside and the inside.
+function crownGeometry() {
+  const BLOBS = [[0, 0, 0, 1], [0.85, -0.25, 0.45, 0.72], [-0.85, -0.2, -0.4, 0.72], [0.35, -0.15, -0.85, 0.68], [0, 0.75, 0.1, 0.75]];
+  const p = [], n = [], c = [], v = V(), m = V(), w = V();
+  for (const [bx, by, bz, r] of BLOBS) {
+    const g = new THREE.IcosahedronGeometry(1, 1), a = g.attributes.position;
+    for (let i = 0; i < a.count; i++) {
+      v.fromBufferAttribute(a, i); const j = 1 + 0.12 * Math.sin(v.x * 5.1 + v.y * 3.7 + bx * 3) * Math.cos(v.z * 4.3 - v.y * 2.1 + bz * 2); // lumps
+      v.multiplyScalar(r * j).add(m.set(bx, by, bz));
+      w.copy(v).sub(m).normalize().add(m.copy(v).normalize()); w.y *= 1.1; w.normalize(); // between the blob's normal and the crown's
+      const shade = (0.55 + 0.45 * THREE.MathUtils.smoothstep(v.y, -0.9, 0.9)) * (0.8 + 0.2 * Math.min(1, v.length() / 1.2));
+      p.push(v.x * 2.4, v.y * 2.1 + 4.6, v.z * 2.4); n.push(w.x, w.y, w.z); c.push(shade, shade, shade);
+    }
+    g.dispose();
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(n, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
+  g.computeBoundingSphere(); return g;
+}
+
 // mapped trees, tree rows, and trees scattered over forests, scrub, parks and gardens (snow settles on the crowns)
 function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, areaAt, inBuilding, wear) {
   const trees = [], LIM = HALF + 60, within = (x, z) => Math.abs(x) < LIM && Math.abs(z) < LIM;
@@ -401,12 +422,11 @@ function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, ar
     }
   }
   {
-    const crownG = new THREE.SphereGeometry(1, 14, 10), cp = crownG.attributes.position;
-    for (let i = 0; i < cp.count; i++) { const x = cp.getX(i), y = cp.getY(i), z = cp.getZ(i), f = 1 + 0.13 * Math.sin(x * 5.1 + y * 3.7) * Math.cos(z * 4.3 - y * 2.1); cp.setXYZ(i, x * f * 2.4, y * f * 2.1 + 4.6, z * f * 2.4); }
-    crownG.computeVertexNormals();
+    const crownG = crownGeometry();
     const coneG = new THREE.ConeGeometry(2.0, 5.5, 9).translate(0, 4.6, 0), cone2 = new THREE.ConeGeometry(1.4, 3.6, 9).translate(0, 6.6, 0);
     const trunkG = new THREE.CylinderGeometry(0.14, 0.24, 3.2, 7).translate(0, 1.6, 0);
-    const leaf = wear(new THREE.MeshStandardMaterial({ map: noise, roughness: 0.85 }), 'tree'), bark = new THREE.MeshStandardMaterial({ color: 0x5a4330, roughness: 0.95 });
+    for (const g of [coneG, cone2]) g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3)); // (the leaves take vertex colours: the crown's shade)
+    const leaf = wear(new THREE.MeshStandardMaterial({ map: noise, roughness: 0.85, vertexColors: true }), 'tree'), bark = new THREE.MeshStandardMaterial({ color: 0x5a4330, roughness: 0.95 });
     const tiles = new Map(); for (const t of trees) { const k = gkey(Math.floor(t[0] / TILE), Math.floor(t[1] / TILE)); let l = tiles.get(k); if (!l) tiles.set(k, l = []); l.push(t); }
     for (const trees of tiles.values()) { // one set of meshes per TILE, so trees out of view and out of the shadow box are skipped
     const nR = trees.filter(t => !t[3]).length, nC = trees.length - nR;
@@ -426,7 +446,8 @@ function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, ar
 
 // street lamps: posts along the streets; from dusk their heads glow and they throw pools of light (setLamps), and wet
 // roads reflect them (wx: world-kit.js weatherLook)
-function streetLamps(scene, roads, { onDrive }, areaAt, inBuilding, wx) {
+// n: point lights that follow the lamps nearest the car (lampLight(x, z, dt)), so the car and street really light up
+function streetLamps(scene, roads, { onDrive }, areaAt, inBuilding, wx, n = 0) {
   const glowTex = makeTex(64, 64, (x) => { const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.18, 'rgba(255,255,255,.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); });
   glowTex.wrapS = glowTex.wrapT = THREE.ClampToEdgeWrapping;
   const lamps = [], LG = 12, lgrid = new Map();
@@ -443,12 +464,12 @@ function streetLamps(scene, roads, { onDrive }, areaAt, inBuilding, wx) {
       lamps.push([x, z, -nx, -nz]); const kk2 = gkey(Math.floor(x / LG), Math.floor(z / LG)); let Lc = lgrid.get(kk2); if (!Lc) lgrid.set(kk2, Lc = []); Lc.push([x, z]);
     }
   }
-  let setLamps = () => { };
+  let setLamps = () => { }, lampLight = () => { };
   if (lamps.length) {
     const nL = lamps.length, metal = new THREE.MeshStandardMaterial({ color: 0x4a4e52, roughness: 0.5, metalness: 0.6 });
     const lampHead = new THREE.MeshStandardMaterial({ color: 0xd8d8d0, roughness: 0.4, emissive: 0xffd9a0, emissiveIntensity: 0 });
     const parts = [[new THREE.CylinderGeometry(0.06, 0.1, 7.4, 6).translate(0, 3.7, 0), metal], [new THREE.BoxGeometry(1.6, 0.09, 0.09).translate(0.8, 7.3, 0), metal], [new THREE.BoxGeometry(0.6, 0.13, 0.28).translate(1.5, 7.22, 0), lampHead]].map(([g, m]) => new THREE.InstancedMesh(g, m, nL));
-    const pools = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: glowTex, color: 0xffaa4c, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }), nL);
+    const pools = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: glowTex, color: 0xffaa4c, transparent: true, opacity: n ? 0.38 : 0.55, blending: THREE.AdditiveBlending, depthWrite: false }), nL);
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), one = V(1, 1, 1), pool = V(15, 1, 15), Y = V(0, 1, 0), I = new THREE.Quaternion(), gp = new Float32Array(nL * 3);
     lamps.forEach(([x, z, ax, az], i) => {
       Q.setFromAxisAngle(Y, Math.atan2(-az, ax)); M.compose(V(x, 0, z), Q, one); for (const m of parts) m.setMatrixAt(i, M); // arm points along (ax, az), over the road
@@ -457,10 +478,24 @@ function streetLamps(scene, roads, { onDrive }, areaAt, inBuilding, wx) {
     parts.forEach((m, i) => { m.castShadow = i < 2; m.receiveShadow = true; scene.add(m); });
     const glows = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(gp, 3)), new THREE.PointsMaterial({ map: glowTex, color: 0xffd39a, size: 2.4, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     pools.renderOrder = 1; scene.add(pools, glows);
-    setLamps = on => { lampHead.emissiveIntensity = on ? 3.5 : 0; pools.visible = glows.visible = on; wx.lit(on); };
+    // The lights stay in the scene, at 0 by day, so their number never changes and nothing recompiles at dusk. Each one
+    // holds a lamp; one that drops out of the nearest n fades out, then fades in at a lamp that came in.
+    const lights = Array.from({ length: Math.min(n, nL) }, () => { const l = new THREE.PointLight(0xffc68a, 0, 26, 2); l.position.set(0, -50, 0); scene.add(l); return { l, at: -1, k: 0 }; });
+    let on = false, px = Infinity, pz = 0, near = [];
+    lampLight = (x, z, dt) => {
+      if (!lights.length) return;
+      if (Math.hypot(x - px, z - pz) > 4) { px = x; pz = z; const d = i => (gp[i * 3] - x) ** 2 + (gp[i * 3 + 2] - z) ** 2; near = [...Array(nL).keys()].sort((a, b) => d(a) - d(b)).slice(0, lights.length); }
+      for (const L of lights) {
+        const keep = on && near.includes(L.at);
+        L.k = keep ? Math.min(1, L.k + dt / 0.3) : Math.max(0, L.k - dt / 0.3);
+        if (!keep && L.k === 0 && on) { const free = near.find(i => !lights.some(o => o.at === i)); if (free !== undefined) { L.at = free; L.l.position.set(gp[free * 3], gp[free * 3 + 1] - 0.3, gp[free * 3 + 2]); } }
+        L.l.intensity = 100 * L.k;
+      }
+    };
+    setLamps = v => { on = v; lampHead.emissiveIntensity = v ? 3.5 : 0; pools.visible = glows.visible = v; wx.lit(v); };
     wx.lamps(gp);
   }
-  return { setLamps, glowTex, lamps };
+  return { setLamps, glowTex, lamps, lampLight };
 }
 
 
