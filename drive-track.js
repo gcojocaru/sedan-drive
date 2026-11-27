@@ -5,6 +5,7 @@ import { radio, radioHud } from './radio.js';
 import { drivingAudio } from './driving-audio.js';
 import { touchControls } from './touch.js';
 import { showAppVersion } from './app-version.js';
+import { blobTex } from './world-kit.js';
 
 showAppVersion();
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -121,9 +122,8 @@ const distToRoad = (x, z) => { let d = 1e9; for (let i = 0; i < N; i += 6) { con
     const h = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 2), hm); h.scale.set(s, s * (0.3 + Math.random() * 0.35), s * (0.8 + Math.random() * 0.5)); h.position.set(Math.cos(a) * r, -s * 0.05, Math.sin(a) * r); scene.add(h); } }
 
 // soft contact shadow that travels with the car
-{ const blob = (inner, a) => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); const g = x.createRadialGradient(64, 64, 64 * inner, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); };
-  const mk = (tex, w, d, x, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.03, z); m.renderOrder = 2; car.add(m); };
-  mk(blob(0.35, 0.6), 5.0, 2.1, -0.05, 0); const tb = blob(0.1, 0.8); for (const x of [1.32, -1.31]) for (const z of [0.735, -0.735]) mk(tb, 0.55, 0.34, x, z); }
+{ const mk = (tex, w, d, x, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.03, z); m.renderOrder = 2; car.add(m); };
+  mk(blobTex(0.35, 0.6), 5.0, 2.1, -0.05, 0); const tb = blobTex(0.1, 0.8); for (const x of [1.32, -1.31]) for (const z of [0.735, -0.735]) mk(tb, 0.55, 0.34, x, z); }
 
 // ---------- Driving ----------
 const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0, idx: 0 };
