@@ -47,7 +47,7 @@ how each part works; this file says how the parts may fit together.
 | `furniture-mesh.js` | — | Instanced street furniture and parked cars |
 | `sign-layout.js` | — | Street and landmark names and curbside placement |
 | `sign-mesh.js` | — | Sign atlas, two-sided boards and instanced posts |
-| `road-layout.js` | — | Pure lane, junction and spawn geometry |
+| `road-layout.js` | — | Pure lane, junction and spawn geometry, and the country the map data lies in |
 | `traffic.js` | — | Traffic on the real map: lane graph, traffic lights, car following, junction claims, spawning around the player |
 | `traffic-cars.js` | — | The traffic cars on screen: instanced bodies, paint, brake lights and night glows |
 | `app-version.js` | — | Shared release label from the local package manifest |
@@ -60,7 +60,7 @@ how each part works; this file says how the parts may fit together.
 | `pedestrians.js` | — | Pedestrians on the real map: the walk network (sidewalks, crosswalks, corners, footways, crossings), people who walk it, wait to cross and step out of the way |
 | `pedestrian-figures.js` | — | The pedestrians on screen: instanced figures, clothes colours, swinging limbs |
 | `minimap.js` | — | North-up driving minimap and car marker, drawn on supplied canvases |
-| `building-fronts.js` | — | Facade layout (style, storeys, window bays, doors, shop windows) and atlas drawing on a supplied canvas context |
+| `building-fronts.js` | — | Facade layout (style by region, storeys, window bays, doors, shop windows, mansards) and atlas drawing on a supplied canvas context |
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
 | `radio.js` | 53 | Car radio for both drive pages: `stationsNear()` (radio-browser.info, real-map page), Romanian presets (test track), `radio(show, find, tuningStatic)` player, `radioHud()` station display |
 | `quality.js` | — | Graphics tiers, the device's default, pixel budget and dynamic resolution (pure) |
@@ -113,8 +113,8 @@ root, one copy each. Page URLs don't change.
 | `furniture-mesh.js` | Draw static parking and street furniture | `traffic-cars`, `world-kit`, three |
 | `sign-layout.js` | Choose sign positions at named junctions and near mapped landmarks | `geom`, `osm-query` |
 | `sign-mesh.js` | Draw street and landmark signs for the current area | `world-kit`, three |
-| `road-layout.js` | `prepareRoads(roads, side)` → lanes per road, junction arms and corners, spawn segments; `laneSpawn`, `mappedStops`, `drivingSide`, `nodeKey` | nothing |
-| `buildings.js` | `buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear)` → `{ blds, inBuilding, frontMat, wallMat }`; building tag tables, `roofPlanes`, parapets and eaves, shopfronts, the facade material | `world-kit`, `geom`, `building-fronts`, three |
+| `road-layout.js` | `prepareRoads(roads, side)` → lanes per road, junction arms and corners, spawn segments; `laneSpawn`, `mappedStops`, `drivingSide`, `countryCode`, `nodeKey` | nothing |
+| `buildings.js` | `buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear, height, country)` → `{ blds, inBuilding, frontMat, wallMat }`; building tag tables, `roofPlanes`, parapets and eaves, mansards and party walls, shopfronts, the facade material | `world-kit`, `geom`, `building-fronts`, three |
 | `world-kit.js` | three.js and tag helpers shared by `world.js`, `buildings.js`, both drive pages, `traffic-cars` and `pedestrian-figures`: `fillPoly`/`eachTri`, `makeTex`, `speckle`, `num`, `tagColor`, `matColor`, `blobTex(inner, a)` (contact-shadow texture), `weatherLook()` → `{ wear, set, lamps, lit, follow }` | `geom`, three |
 | `map-data.js` | `loadArea(lat, lon, status)`: IndexedDB cache → `area-fetch` (racing proxy and Overpass, the simplified map when slow); returns `{ data, fallback, err, full }` | `osm-query`, `area-fetch` |
 | `sedan-model.js` | `buildCar()` and the axle constants: the procedural car | three |

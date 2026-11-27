@@ -1,10 +1,13 @@
 // In map coordinates +x points east and +z south, so (-dz, dx) is the right side of travel.
 const LEFT_TRAFFIC = new Set('AG AI AU BB BD BM BN BS BT BW CC CK CX CY DM FJ FK GB GD GG GY HK ID IE IM IN IO JE JM JP KE KI KN KY LC LK LS MO MS MT MU MV MW MY MZ NA NF NP NR NU NZ PG PK PN SB SC SG SH SR SZ TC TH TK TL TO TT TV TZ UG VC VG VI WS ZA ZM ZW'.split(' '));
 
+// the country the map data lies in (the Overpass query asks for it): its tags, or undefined (the vector fallback has none)
+const countryTags = elements => elements.filter(e => e.type === 'area' && e.tags?.['ISO3166-1'])
+  .sort((a, b) => Number(b.tags.admin_level || 0) - Number(a.tags.admin_level || 0))[0]?.tags;
+export const countryCode = elements => countryTags(elements)?.['ISO3166-1'] || '';
+
 export function drivingSide(elements) {
-  const areas = elements.filter(e => e.type === 'area' && e.tags?.['ISO3166-1'])
-    .sort((a, b) => Number(b.tags.admin_level || 0) - Number(a.tags.admin_level || 0));
-  const country = areas[0]?.tags;
+  const country = countryTags(elements);
   return country?.driving_side || (LEFT_TRAFFIC.has(country?.['ISO3166-1']) ? 'left' : 'right');
 }
 

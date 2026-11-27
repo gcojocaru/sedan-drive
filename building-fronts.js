@@ -9,13 +9,43 @@ export const SURFACES = { plaster: ['plastered_wall_02', 2.23, 4.5], brick: ['re
   metal: ['corrugated_iron_02', 2.7, 1.3], tiles: ['clay_roof_tiles_02', 2.5, 1], gravel: ['tarred_gravel', 2.2, 1.2] };
 export const WALL_SURFACES = ['plaster', 'brick', 'concrete', 'metal']; // the wall texture array's layers
 // Facade styles, one column of the wall atlas each: [name, storey height (m), window bay (m), share of windows lit at night,
-// WALL_SURFACES layer]
+// WALL_SURFACES layer]. 'mansard' is the zinc slope of a mansard roof, a dormer per bay (the bay of 'classic' below it).
 export const FACADES = [['house', 2.9, 3, 0.4, 0], ['panel', 2.75, 6.2, 0.5, 2], ['classic', 3.6, 2.7, 0.45, 0], ['office', 3.7, 1.8, 0.3, 2],
-  ['glass', 3.8, 1.5, 0.35, 2], ['industrial', 4.5, 4.5, 0.15, 3], ['brick', 3, 3, 0.4, 1], ['blank', 3, 4, 0, 0]];
+  ['glass', 3.8, 1.5, 0.35, 2], ['industrial', 4.5, 4.5, 0.15, 3], ['brick', 3, 3, 0.4, 1], ['blank', 3, 4, 0, 0], ['mansard', 3.2, 2.7, 0.3, 3]];
 export const FACADE = Object.fromEntries(FACADES.map((f, i) => [f[0], i]));
 
-// t: the building's tags; top: its height (m); rnd: its seeded random. Tags decide first, then type, then height.
-export function facadeStyle(t, type, top, rnd) {
+// How untagged buildings look by region, found from the country the map data lies in (road-layout.js countryCode): the
+// facade mix under 9 m, from 9 to 14 m and over 14 m tall (free: over 14 m with no party wall, a modern block rather
+// than one of a terrace); wall colours by style and pitched-roof colours to use instead of the defaults (buildings.js);
+// the share of metal roofs; and whether terraced apartment blocks get mansard roofs (mansardRoof).
+// Anywhere else, the former Eastern Bloc included, keeps the generic mix, which builds panel blocks first.
+const GENERIC = { low: { house: 0.75, brick: 0.25 }, mid: { classic: 0.55, panel: 0.225, brick: 0.225 }, tall: { panel: 0.65, classic: 0.35 }, metal: 0.3 };
+const OCHRE = ['#efe4cf', '#e8c99a', '#dcae78', '#f1e9da', '#d79a6a', '#e9cfa8', '#c98b5e', '#e5bf8f', '#f3efe6'];
+export const REGIONS = [
+  { name: 'French', countries: 'FR BE LU MC', mansard: true, metal: 0.05, low: { house: 0.85, brick: 0.15 }, mid: { classic: 0.8, house: 0.1, brick: 0.1 }, tall: { classic: 1 }, free: { panel: 0.55, office: 0.3, classic: 0.15 },
+    walls: { classic: ['#e8dcc6', '#e2d4ba', '#ded0b4', '#ece3d1', '#d6c8ac', '#e5d8bf', '#cfc0a2'], house: ['#eee8dc', '#e6dccb', '#ddd2bf', '#d6c7ad', '#efe9df', '#cdbfa8'] },
+    roofs: ['#4c5059', '#55585d', '#5c6882', '#9c4f34', '#a5603f'] },
+  { name: 'British', countries: 'GB IE IM JE GG', metal: 0.05, low: { brick: 0.6, house: 0.4 }, mid: { brick: 0.55, classic: 0.35, panel: 0.1 }, tall: { panel: 0.35, classic: 0.3, office: 0.2, brick: 0.15 },
+    walls: { classic: ['#ece6d8', '#e4dccb', '#d9cfbb', '#c9a77f', '#b98c66', '#a0583f'] }, roofs: ['#4c5059', '#555a61', '#4a4f57', '#5f5a55', '#8b5a44'] },
+  { name: 'Mediterranean', countries: 'ES PT IT GR MT CY HR ME AL SM VA AD', metal: 0.05, low: { house: 0.9, brick: 0.1 }, mid: { classic: 0.6, house: 0.25, panel: 0.15 }, tall: { classic: 0.55, panel: 0.4, office: 0.05 },
+    walls: { classic: OCHRE, house: OCHRE, panel: OCHRE }, roofs: ['#a5603f', '#9c4f34', '#b2694a', '#8f4a36', '#b87650'] },
+  { name: 'North American', countries: 'US CA', metal: 0.1, low: { house: 0.75, brick: 0.25 }, mid: { brick: 0.55, office: 0.25, classic: 0.2 }, tall: { office: 0.45, brick: 0.3, glass: 0.25 },
+    walls: { house: ['#efece4', '#e4d9c3', '#d6dde3', '#c4d0c0', '#f0d9b5', '#d8c3d6', '#b7c7d8', '#e9e2cf', '#cfc6b8'], classic: ['#7a5444', '#8a6250', '#a07a62', '#c8b79c', '#b5a48a'] },
+    roofs: ['#4b4b4d', '#5a524b', '#3f4247', '#6a6259', '#55585c'] }];
+export const regionOf = code => REGIONS.find(r => r.countries.split(' ').includes(code)) || GENERIC;
+
+// Whether a block without a roof:shape tag gets a mansard roof: where the region builds them, on 4- to 9-storey apartment
+// blocks (14–34 m) in a terrace (sharing a wall), not on houses, offices, churches, sheds or industry, nor on concrete,
+// glass or metal fronts.
+export function mansardRoof(t, type, levels, height, region, terraced = true) {
+  if (!region.mansard || !terraced || t['roof:levels'] === '0' || [PLAIN_T, HOUSE_T, OFFICE_T, INDUSTRY_T, OLD_T].some(s => s.has(type))) return false;
+  if (['concrete', 'glass', 'mirror', 'metal'].includes(String(t['building:material'] || '').toLowerCase())) return false;
+  return levels ? levels >= 4 && levels <= 9 : height ? height >= 14 && height <= 34 : type === 'apartments' || type === 'residential';
+}
+
+// t: the building's tags; top: its height (m); rnd: its seeded random; region: regionOf(country); terraced: it shares a
+// wall with another building. Tags decide first, then type, then height and the region's mix.
+export function facadeStyle(t, type, top, rnd, region = GENERIC, terraced = true) {
   const mat = String(t['building:material'] || '').toLowerCase();
   if (PLAIN_T.has(type)) return FACADE.blank;
   if (mat === 'glass' || mat === 'mirror' || top > 60 || (OFFICE_T.has(type) && top > 30 && rnd() < 0.6)) return FACADE.glass;
@@ -25,9 +55,9 @@ export function facadeStyle(t, type, top, rnd) {
   if (OFFICE_T.has(type)) return FACADE.office;
   if (OLD_T.has(type) || t.heritage || t.historic || t['building:architecture']) return FACADE.classic;
   if (mat === 'concrete') return FACADE.panel;
-  if (top < 9) return rnd() < 0.75 ? FACADE.house : FACADE.brick;
-  if (top >= 14) return rnd() < 0.65 ? FACADE.panel : FACADE.classic;
-  return rnd() < 0.55 ? FACADE.classic : rnd() < 0.5 ? FACADE.panel : FACADE.brick;
+  const mix = top < 9 ? region.low : top >= 14 ? (!terraced && region.free) || region.tall : region.mid, styles = Object.keys(mix);
+  let x = rnd(); for (const s of styles) if ((x -= mix[s]) < 0) return FACADE[s];
+  return FACADE[styles.at(-1)];
 }
 
 // Storeys of window rows between y0 and top: tagged levels set the storey height, otherwise the style does.
@@ -125,6 +155,11 @@ export function wallAtlas(ctx, layer) {
     } else if (name === 'industrial') {
       if (ground) plinth(0.9, '#a09d97', 1);
       else { R(1, '#7d8287', 0.3, 0.4, 3.9, 0.8); for (let x = 0.36; x < 4.1; x += 0.63) glass(x, 0.46, 0.57, 0.68, '#b9c4c8', '#7d8a90'); fade(0.15, 0.3, 1.2, 3.9, 1.5); }
+    } else if (name === 'mansard') { // zinc with standing seams, and a dormer with a stepped stone cap, its window low on the slope
+      for (let x = 0.12; x < bay; x += 0.45) R(0, 0.78, x, 0, 0.025, floor);
+      R(1, '#e4dfd4', 0.92, 0.36, 0.86, 0.1); R(1, '#e4dfd4', 0.74, 0.46, 1.22, 0.14); shade(0.35, 0.74, 0.6, 1.22, 0.05);
+      R(0, 0.55, 0.82, 0.6, 1.06, 1.95); win(0.88, 0.72, 0.94, 1.6, { frame: '#ecebe6', tr: 0.42, sill: '#d9d4c9', streaks: false });
+      shade(0.3, 0.82, 2.55, 1.06, 0.12);
     } else if (ground) plinth(0.35);
     ctx.restore();
   }));

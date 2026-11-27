@@ -81,6 +81,10 @@ test('offsetRing moves edges out (or in) by d whichever way the ring winds', () 
   assert.deepEqual(offsetRing([...sq].reverse(), -0.5), [[0.5, 9.5], [9.5, 9.5], [9.5, 0.5], [0.5, 0.5]]);
   const spike = offsetRing([[0, 0], [10, 0], [0, 1]], 1); // a sharp corner's mitre is capped at 2d
   assert.ok(Math.hypot(spike[1][0] - 10, spike[1][1]) <= 2 + 1e-9);
+  // one distance per edge: the bottom edge (a party wall, 0) stays put, the others move in by 1
+  const inset = offsetRing(sq, [0, -1, -1, -1]);
+  assert.deepEqual(inset.map(p => p.map(v => Math.round(v * 1e9) / 1e9)), [[1, 0], [9, 0], [9, 9], [1, 9]]);
+  assert.deepEqual(offsetRing(sq, [-1, -1, -1, -1]), offsetRing(sq, -1), 'equal distances are the plain offset');
 });
 
 test('a polyline trimmed at both ends, and points along it', () => {
