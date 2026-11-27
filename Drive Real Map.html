@@ -183,6 +183,9 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
 #start p{margin:0;font-size:14px;opacity:.85;text-wrap:pretty}
 #startNote:empty{display:none}
 .setting[hidden]{display:none}
+.setting input[type=checkbox]{width:20px;height:20px;accent-color:#ffbd66;cursor:pointer}
+.controls{margin-top:16px;font-size:14px;color:#dbe6e2} .controls summary{cursor:pointer;font-size:15px;font-weight:600}
+.controls dl{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:10px 0 0} .controls dt{color:#ffbd66;white-space:nowrap} .controls dd{margin:0}
 .setting[data-app-version]{padding-top:12px;border-top:1px solid #465557}
 .setting[data-app-version] span{font-variant-numeric:tabular-nums}
 </style></head><body>
@@ -226,6 +229,28 @@ button.ghost:hover{background:rgba(255,255,255,.2)}
     <label class="setting">Traffic<select id="trafficSel"></select></label>
     <label class="setting">People<select id="peopleSel"></select></label>
     <label class="setting">Graphics<select id="gfxSel"></select></label>
+    <label class="setting">Performance stats<input type="checkbox" id="perfChk"></label>
+    <details class="controls"><summary>Controls</summary>
+      <dl>
+        <dt>W / ↑</dt><dd>Accelerate</dd>
+        <dt>S / ↓</dt><dd>Brake, then reverse</dd>
+        <dt>A D / ← →</dt><dd>Steer</dd>
+        <dt>Space</dt><dd>Handbrake</dd>
+        <dt>H</dt><dd>Headlights</dd>
+        <dt>B</dt><dd>Horn (hold for a long blast)</dd>
+        <dt>C</dt><dd>Camera: chase or driver's seat</dd>
+        <dt>R</dt><dd>Back on the road</dd>
+        <dt>J · G</dt><dd>Start or cancel a delivery · garage</dd>
+        <dt>T · E · N</dt><dd>Time of day · weather · night on/off</dd>
+        <dt>Q · Shift+Q</dt><dd>Radio: next · previous station</dd>
+        <dt>V</dt><dd>Driving sounds on/off</dd>
+        <dt>M</dt><dd>Choose another place</dd>
+        <dt>Esc</dt><dd>Settings</dd>
+        <dt>Shift+P</dt><dd>Performance stats on/off</dd>
+        <dt>Gamepad</dt><dd>Left stick steers, RT gas, LT brake/reverse, A handbrake, B horn, X camera, Y reset, LB/RB radio, Back delivery, d-pad up lights</dd>
+        <dt>Touch</dt><dd>Steer on the left, gas and brake on the right; ••• for the rest</dd>
+      </dl>
+    </details>
     <div class="setting" data-app-version hidden>Game version<span></span></div>
     <div class="travel-actions"><button autofocus>Back to driving</button></div>
   </form>

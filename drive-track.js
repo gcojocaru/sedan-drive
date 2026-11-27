@@ -8,6 +8,7 @@ import { toasts } from './toast.js';
 import { gamepad } from './gamepad.js';
 import { showAppVersion } from './app-version.js';
 import { perfHud } from './perf-hud.js';
+import { mergeStatic } from './car-merge.js';
 import { QUALITY, pickQuality, pixelRatio, dynamicRes } from './quality.js';
 import { blobTex } from './world-kit.js';
 
@@ -15,6 +16,7 @@ showAppVersion();
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
 const C = buildCar(), rig = rigCar(C), car = C.car;
+mergeStatic(car); // the car's still parts in a few draw calls
 
 // graphics quality: the real-map page's setting (sedan-quality-v1), or this device's tier
 let qPick = 'auto'; try { qPick = JSON.parse(localStorage.getItem('sedan-quality-v1')) ?? 'auto'; } catch { }
@@ -218,7 +220,8 @@ addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyB') so
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; sound.horn(false); });
 addEventListener('resize', () => { fit(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
 let last = performance.now(), lastS = { braking: false, reversing: false };
-const perf = perfHud(renderer, () => Q.name + ' · pixel ratio ' + renderer.getPixelRatio().toFixed(2));
+const perf = perfHud(renderer, () => Q.name + ' · pixel ratio ' + renderer.getPixelRatio().toFixed(2), localStorage.getItem('sedan-perf-v1') === 'true');
+perf.onToggle(on => localStorage.setItem('sedan-perf-v1', on));
 renderer.setAnimationLoop(now => {
   const t0 = performance.now();
   resTick(now - last); const dt = Math.min(0.05, (now - last) / 1000); last = now;

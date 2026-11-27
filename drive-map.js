@@ -30,6 +30,7 @@ import { walkGraph, createPedestrians, PEOPLE } from './pedestrians.js';
 import { pedestrianFigures } from './pedestrian-figures.js';
 import { showAppVersion } from './app-version.js';
 import { perfHud } from './perf-hud.js';
+import { mergeStatic } from './car-merge.js';
 import { QUALITY, pickQuality, pixelRatio, dynamicRes } from './quality.js';
 
 showAppVersion();
@@ -40,6 +41,7 @@ const LS_PLACE = 'sedan-map-last-place-v1';
 const LS_CAR = 'sedan-map-car-v1'; // 'sedan' or 'vaz'
 const LS_TRAFFIC = 'sedan-map-traffic-v1'; // index into LEVELS
 const LS_PEOPLE = 'sedan-map-people-v1'; // index into PEOPLE (pedestrians.js)
+const LS_PERF = 'sedan-perf-v1'; // performance stats shown (true / false); both drive pages
 const LS_QUALITY = 'sedan-quality-v1'; // graphics: 'auto' or an index into QUALITY (quality.js); both drive pages
 const LS_WALLET = 'sedan-map-wallet-v1'; // { cash, earned, jobs }: delivery money to spend, all earned, deliveries made
 const LS_GARAGE = 'sedan-map-garage-v1'; // what the garage fitted: { levels, paints, paint } (garage.js)
@@ -207,6 +209,7 @@ async function startGame(lat0, lon0, placeName) {
   const headGlow = glowMat(0xfff1dc), tailGlow = glowMat(0xff2a1a), tails = [];
   for (const l of CAR.lights.low) { const s = new THREE.Sprite(headGlow); s.position.copy(l.position).add(V(0.12, 0, 0)); s.scale.setScalar(1.1); car.add(s); }
   car.updateMatrixWorld(true); car.traverse(o => { if (o.isMesh && o.name === 'tail_brake') tails.push(new THREE.Box3().setFromObject(o).getCenter(V())); });
+  mergeStatic(car); // the car's still parts in a few draw calls (after the lookups above)
   for (const c of tails) { const s = new THREE.Sprite(tailGlow); s.position.copy(car.worldToLocal(c)).add(V(-0.1, 0, 0)); s.scale.setScalar(0.6); car.add(s); }
 
   const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0, slip: 0 };
@@ -455,22 +458,25 @@ async function startGame(lat0, lon0, placeName) {
   addEventListener('blur', () => { clearKeys(); sound.horn(false); });
   addEventListener('resize', () => { fit(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
   let last = performance.now(), lastS = { braking: false, reversing: false };
-  const perf = perfHud(renderer, () => Q.name + ' · pixel ratio ' + renderer.getPixelRatio().toFixed(2));
+  const perf = perfHud(renderer, () => Q.name + ' · pixel ratio ' + renderer.getPixelRatio().toFixed(2), localStorage.getItem(LS_PERF) === 'true');
+  const perfChk = $('perfChk'), keepPerf = on => { perfChk.checked = on; localStorage.setItem(LS_PERF, on); };
+  perfChk.checked = perf.isOn(); perfChk.onchange = () => { perf.show(perfChk.checked); keepPerf(perfChk.checked); }; perf.onToggle(keepPerf);
   renderer.setAnimationLoop(now => {
-    const t0 = performance.now();
+    const t0 = performance.now(), lap = perf.lap; perf.begin();
     resTick(now - last); const dt = Math.min(0.05, (now - last) / 1000); last = now;
     const p = pad.poll(); if (p?.thr && !started && !paused()) begin(); // (its buttons start the game through their keys)
     if (started && !paused()) lastS = update(dt, p);
+    lap('drive');
     if (!paused()) {
       frustum.setFromProjectionMatrix(view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
       Object.assign(me, { x: st.pos.x, z: st.pos.z, h: st.h, v: st.v });
-      people.step(dt, me, traffic.cars, graph.signals); traffic.step(dt, me, people.crossing); // (traffic keeps from the people in the road)
+      people.step(dt, me, traffic.cars, graph.signals); lap('people'); traffic.step(dt, me, people.crossing); lap('traffic'); // (traffic keeps from the people in the road)
     }
-    trafficView.sync(traffic.cars, dim); lightsView.sync(dim); figures.sync(people.people);
+    trafficView.sync(traffic.cars, dim); lightsView.sync(dim); figures.sync(people.people); lap('sync');
     camera.getWorldDirection(look); const flat = Math.hypot(look.x, look.z) || 1;
     Object.assign(ear, { x: camera.position.x, z: camera.position.z, fx: look.x / flat, fz: look.z / flat, vx: Math.cos(st.h) * st.v, vz: -Math.sin(st.h) * st.v });
-    sound.traffic(traffic.cars, ear);
-    syncCar(rig, st, lastS, head); glows(lastS); updateCam(dt); hud(lastS, dt);
-    renderer.render(scene, camera); perf(t0);
+    sound.traffic(traffic.cars, ear); lap('sound');
+    syncCar(rig, st, lastS, head); glows(lastS); updateCam(dt); lap('camera'); hud(lastS, dt); lap('hud');
+    renderer.render(scene, camera); lap('render'); perf(t0);
   });
 }

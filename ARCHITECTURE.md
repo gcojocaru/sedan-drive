@@ -56,6 +56,7 @@ how each part works; this file says how the parts may fit together.
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
 | `radio.js` | 53 | Car radio for both drive pages: `stationsNear()` (radio-browser.info, real-map page), Romanian presets (test track), `radio(show, find, tuningStatic)` player, `radioHud()` station display |
 | `quality.js` | — | Graphics tiers, the device's default, pixel budget and dynamic resolution (pure) |
+| `car-merge.js` | — | The driven car's still parts merged into a few meshes |
 | `perf-hud.js` | — | Performance readout for both drive pages (`?perf`, Shift+P) |
 | `gamepad.js` | — | Gamepad for both drive pages: analogue steer, gas and brake, buttons that press keys, rumble |
 | `toast.js` | — | Short messages (toasts) on both drive pages |
@@ -79,7 +80,7 @@ root, one copy each. Page URLs don't change.
 | Module | Owns | May import |
 |---|---|---|
 | `drive-map.js` | Real-map page entry: picker, loading screen, time of day, game loop wiring | everything below |
-| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch`, `toast`, `gamepad`, `world-kit`, `quality`, `perf-hud`, `app-version` |
+| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch`, `toast`, `gamepad`, `world-kit`, `quality`, `perf-hud`, `car-merge`, `app-version` |
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model`, `app-version` |
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`, `brake`), and `repaint(C, hex)` colours the car's `paint`; the ground under the car (`vmax`, `drag`, `rough`, `grip`) and collisions | nothing (works on the three.js objects it is given) |
 | `app-version.js` | Show the current release on the three game pages | nothing |
@@ -111,7 +112,8 @@ root, one copy each. Page URLs don't change.
 | `driving-audio.js` | Synthesized engine, tyre (`tyreSound`), crash (`impactSound`, `impact`), horn and tuning sounds on both driving pages, and the traffic around the camera (`trafficVoices`, `traffic(cars, ear)`, `honkAt`) | nothing |
 | `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find, tuningStatic)` → `tune(step)`; station playback | nothing |
 | `weather.js` | `weatherNow(lat, lon, fetch)` → `{ kind, label, amount, temp, offset, snowDepth?, recent? }`, `weatherOf(code)`, `WEATHERS`, `groundOf(w)` → `{ wet, snow, grip }`, `solarHour(ms, lon)` | nothing |
-| `perf-hud.js` | `perfHud(renderer, extra)` → `frame(start)`: the performance readout; `percentile` | nothing |
+| `perf-hud.js` | `perfHud(renderer, extra, on)` → `frame(start)` with `lap`, `begin`, `show`, `onToggle`: the performance readout; `percentile` | nothing |
+| `car-merge.js` | `mergeStatic(car, keep)`: bake the driven car's still parts into one mesh per material | three |
 | `quality.js` | `QUALITY`, `autoQuality`, `pickQuality`, `pixelRatio`, `dynamicRes`, `frameVerdict` | nothing |
 | `toast.js` | `toasts()` → `show(text, tone, key)`: readable short messages on both drive pages | nothing |
 | `gamepad.js` | `gamepad()` → `poll()` (analogue controls for `readKeys`; buttons press keys), `crash(speed)`, `feel(speed, braking, ride)`: rumble; `padControls(gp)` | `driving-audio` |
