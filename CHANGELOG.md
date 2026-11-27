@@ -3,6 +3,19 @@
 What changed in each release of the game. Every pull request bumps the version in `package.json` (minor for features,
 patch for fixes) and adds its entry at the top. Versions before 0.4.0 are in the git history.
 
+## 0.8.0 — 2026-11-27
+
+- **Faster first drive:** the map servers are now asked two at a time, and if they're slow you start driving on the
+  simplified map after about 15 seconds instead of waiting up to three minutes. The full map keeps downloading in the
+  background; when it's ready, a **Full map ready** button (or U) switches to it right where you are.
+- **Pick a place in one click:** featured cities (Bucharest, Paris, London, New York, Tokyo, Rome, San Francisco,
+  Barcelona), **Surprise me**, and your recent places.
+- **Hints instead of a key list:** the start card shows just four controls; the game suggests the rest when you need
+  them (headlights when it gets dark, R when you're stuck, deliveries when you're idle, the garage when you can afford
+  something, and more), each once.
+- **Cleaner screen:** the line of keys at the top and the model viewer link are gone; the map stats and the viewer link
+  are in Settings, and your cash is easier to read.
+
 ## 0.7.1 — 2026-11-27
 
 - **Less glare:** only real lights glow now. Sunlit walls, white road lines and markings caught in your headlights no

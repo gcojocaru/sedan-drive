@@ -55,6 +55,7 @@ Before sharing the site widely, deploy the map data proxy: [proxy/README.md](pro
 | J | Start or cancel a parcel delivery (real-map page). You can also use the Start delivery button. |
 | G | Garage (real-map page): spend delivery money on upgrades and paint. Driving pauses while it's open |
 | M | Choose another place (real-map page) |
+| U | Switch to the full-detail map when it has finished downloading (real-map page, after starting on the simplified one) |
 
 Gamepad: left stick steers, RT gas, LT brake/reverse, A handbrake, B horn, X camera, Y reset, LB/RB radio, Back delivery, d-pad up lights. Pads that support it rumble on crashes, slides and rough ground.
 
