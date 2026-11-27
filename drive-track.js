@@ -11,6 +11,7 @@ import { perfHud } from './perf-hud.js';
 import { mergeStatic } from './car-merge.js';
 import { postFx } from './post-fx.js';
 import { carProbe } from './car-probe.js';
+import { carFx } from './car-fx.js';
 import { QUALITY, pickQuality, pixelRatio, dynamicRes } from './quality.js';
 import { blobTex } from './world-kit.js';
 
@@ -33,7 +34,7 @@ document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 4000);
 fx = postFx(renderer, scene, camera, Q); // glow and colour grade (post-fx.js), or straight to the screen on Low
-scene.add(car); const reflect = carProbe(renderer, scene, car, Q.probe); // the car reflects what's around it
+scene.add(car); const reflect = carProbe(renderer, scene, car, Q.probe), carfx = carFx(scene, Q); // the car reflects what's around it
 
 // ---------- Sky + environment ----------
 function skyTex(night) {
@@ -150,7 +151,7 @@ function nearest(p, full) { let best = 1e9, bi = st.idx; const rng = full ? N : 
 placeOnTrack(N - 14);
 
 // laps
-const BEST_KEY = 'sedan-drive-best-v1';
+const BEST_KEY = 'sedan-drive-best-v2'; // (v2: grip limits from 0.7.0 changed lap times)
 let lap = { running: false, t0: 0, n: 0, cps: new Set(), last: null, best: +localStorage.getItem(BEST_KEY) || null };
 const fmt = s => s == null ? '–' : Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0');
 const flash = toasts(); // flash(text, tone, key)
@@ -171,7 +172,7 @@ const pad = gamepad();
 function update(dt, p) {
   const k = readKeys(keys, p), rough = nearest(st.pos).d > HW + 1.6, prev = st.idx;
   const s = step(st, k, dt, { vmax: rough ? 15 : 52, drag: rough ? 0.9 : 0.02, rough }, TUNE);
-  const ride = { hb: k.hb, steer: st.steer, slip: st.slip, rough }; sound.update(st.v, k.up, k.dn, ride); pad.feel(st.v, s.braking, ride);
+  const ride = { hb: k.hb, steer: st.steer, slip: st.slip, rough }; sound.update(st.v, k.up, k.dn, ride); pad.feel(st.v, s.braking, ride); carfx.frame(dt, st, rig.wheels, ride, s.braking, false);
   st.idx = nearest(st.pos).i; lapLogic(prev, st.idx);
   if (k.dn && st.v <= 0.2 && Math.abs(st.v) < 0.5) s.reversing = true; // reverse lamp on while holding brake at a standstill
   return s;
@@ -189,7 +190,7 @@ function setNight(n) {
 }
 setNight(false);
 function updateCam(dt) {
-  cam.update(st, camMode, dt);
+  if (started) cam.update(st, camMode, dt); else cam.orbit(st, performance.now() / 1000); // before the start: round the car
   sun.position.copy(st.pos).add(SUN_OFF); sun.target.position.copy(st.pos);
 }
 const el = id => document.getElementById(id), kmh = el('kmh'), gear = el('gear'), lapT = el('lapT'), lastT = el('lastT'), bestT = el('bestT'), lapN = el('lapN');

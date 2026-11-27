@@ -38,10 +38,25 @@ test('steering left turns the heading up, and the car leans into the turn', () =
 
 test('a refused move leaves the car where it was', () => {
   const st = car(); drive(st, { up: true }, 2);
-  const { x, z } = st.pos, h = st.h, seen = [];
-  step(st, { up: true }, 1 / 60, ROAD, TUNE, (nx, nz, nh) => { seen.push([nx, nz, nh]); return true; });
+  const { x, z } = st.pos, h = st.h, seen = [], v = st.v;
+  const r = step(st, { up: true }, 1 / 60, ROAD, TUNE, (nx, nz, nh) => { seen.push([nx, nz, nh]); return 'stop'; });
   assert.deepEqual([st.pos.x, st.pos.z, st.h], [x, z, h]);
   assert.ok(seen.length === 1 && seen[0][0] > x, 'collide sees the move ahead');
+  assert.ok(r.blocked && Math.abs(r.impact - v) < 1e-9, 'blocked at full speed');
+});
+
+test('a wall at a shallow angle is glanced off: the car slides along it, keeping most of its speed', () => {
+  const wall = (x, z) => z < 0.268 * (x - 5); // 15° across the path, from x = 5
+  const st = { ...car(), v: 15 }; let impacts = 0, first = 0;
+  for (let i = 0; i < 60; i++) { const r = step(st, { up: true }, 1 / 60, ROAD, TUNE, wall); if (r.impact) { impacts++; first ||= r.impact; } assert.ok(!r.blocked, 'never stopped dead'); }
+  assert.ok(impacts > 0 && first < 15 * 0.5, 'hit glancingly: ' + first);
+  assert.ok(st.v > 15 * 0.75, 'keeps its speed: ' + st.v);
+  assert.ok(st.pos.z > 0.5 && !wall(st.pos.x, st.pos.z), 'moved along the wall, outside it');
+});
+
+test('a wall square across the path stops the car: blocked, at full speed', () => {
+  const st = { ...car(), v: 15 }, r = step(st, { up: true }, 1 / 60, ROAD, TUNE, x => x > 0.1);
+  assert.ok(r.blocked && r.impact === 15 && st.pos.x === 0);
 });
 
 test('smooth ground gives the same result every time; rough ground shakes the pitch', () => {
@@ -67,10 +82,32 @@ function corner(kmh, surf) { // full lock from kmh until the car is moving at ri
   return { ahead: st.pos.x, slip, st };
 }
 
-test('dry ground is the same with or without a grip, and never slides', () => {
-  const a = car(), b = car(), k = { up: true, lf: true, hb: true };
+test('dry ground is the same with or without a grip; held keys corner inside the grip and never slide', () => {
+  const a = car(), b = car(), k = { up: true, lf: true };
   drive(a, k, 6); drive(b, k, 6, { ...ROAD, grip: 1 });
   assert.deepEqual(a, b); assert.equal(a.slip, 0);
+  for (const kmh of [30, 50, 90]) {
+    const st = { ...car(), v: kmh / 3.6 }; let worst = 0;
+    for (let i = 0; i < 90; i++) { const h = st.h; step(st, { lf: true, up: true }, 1 / 60, ROAD, TUNE); worst = Math.max(worst, st.v * (st.h - h) * 60); }
+    assert.ok(worst <= 15 && Math.abs(st.slip) < 1e-9, kmh + ' km/h: ' + worst.toFixed(1) + ' m/s² sideways, slip ' + st.slip);
+  }
+});
+
+test('the handbrake throws the car into a slide; holding the throttle keeps it going; letting go catches it', () => {
+  const st = { ...car(), v: 50 / 3.6, slip: 0 }; let t = 0;
+  while (Math.abs(st.slip) < 0.4 && t < 0.7) { step(st, { lf: true, hb: true }, 1 / 60, ROAD, TUNE); t += 1 / 60; }
+  assert.ok(Math.abs(st.slip) >= 0.4, 'slides within 0.7 s: ' + st.slip);
+  const drift = { ...st, pos: { ...st.pos } }, v0 = drift.v; drive(drift, { up: true, lf: true }, 1);
+  assert.ok(Math.abs(drift.slip) > 0.15 && drift.v > 0.7 * v0, 'power keeps the drift: slip ' + drift.slip + ', ' + drift.v + ' of ' + v0);
+  drive(st, {}, 1.5); assert.ok(Math.abs(st.slip) < 0.02, 'caught: ' + st.slip);
+});
+
+test('the body rocks on springs: braking to a stop pitches forward, overshoots back, then settles', () => {
+  const st = { ...car(), v: 50 / 3.6 }; let fwd = 0, back = 0;
+  while (st.v > 0) { step(st, { dn: true }, 1 / 60, ROAD, TUNE); fwd = Math.min(fwd, st.pitch); }
+  for (let i = 0; i < 72; i++) { step(st, {}, 1 / 60, ROAD, TUNE); back = Math.max(back, st.pitch); }
+  assert.ok(fwd < -0.02 && back > 0.002, 'dives ' + fwd + ', rocks back ' + back);
+  assert.ok(Math.abs(st.pitch) < 0.002, 'settles: ' + st.pitch);
 });
 
 test('less grip: longer braking, a slower start on snow', () => {
@@ -85,17 +122,17 @@ test('wet corners hold at town speeds; faster, the car slides wide and recovers'
   const slow = corner(25, WET), dry = corner(25, ROAD);
   assert.equal(slow.slip, 0); assert.ok(Math.abs(slow.ahead - dry.ahead) < 1e-6, 'same line as dry');
   const fast = corner(70, WET), dryFast = corner(70, ROAD);
-  assert.ok(fast.slip > 0.2 && fast.slip <= 0.5 + 1e-9, 'slides, the body at most 0.5 rad ahead: ' + fast.slip);
-  assert.ok(fast.ahead > dryFast.ahead + 3, 'runs wide');
+  assert.ok(fast.slip > 0.2 && fast.slip <= 0.65 + 1e-9, 'slides, the body at most 0.65 rad ahead: ' + fast.slip);
+  assert.ok(fast.ahead > dryFast.ahead + 2, 'runs wide');
   assert.ok(fast.st.v < dryFast.st.v, 'sliding scrubs speed');
-  assert.ok(corner(40, SNOW).slip > 0.2 && corner(40, WET).slip < 0.1, 'snow slides sooner');
+  assert.ok(corner(40, SNOW).slip > corner(40, WET).slip + 0.2 && corner(30, WET).slip < 0.1, 'snow slides sooner; wet holds at 30');
   const st = fast.st; drive(st, {}, 2, WET);
-  assert.ok(Math.abs(st.slip) < 1e-9, 'lets go: moving where it points again');
+  assert.ok(Math.abs(st.slip) < 0.02, 'lets go: moving where it points again: ' + st.slip);
 });
 
-test('a slide left over when the ground dries ends at once', () => {
+test('a slide left over when the ground dries is caught quickly', () => {
   const st = corner(70, WET).st; assert.ok(st.slip);
-  step(st, {}, 1 / 60, ROAD, TUNE); assert.equal(st.slip, 0);
+  drive(st, {}, 0.5); assert.ok(Math.abs(st.slip) < 0.05, 'caught: ' + st.slip);
 });
 
 test('better brakes stop the car shorter', () => {
@@ -161,4 +198,13 @@ test('half stick turns about half as fast; half throttle and brake pull about ha
   const dv = k => { const st = { ...car(), v: 10 }; step(st, k, 1 / 60, ROAD, TUNE); return st.v - 10; }, coast = dv({});
   const gas = (dv({ up: true, thr: 0.5 }) - coast) / (dv({ up: true }) - coast), brake = (dv({ dn: true, brk: 0.5 }) - coast) / (dv({ dn: true }) - coast);
   assert.ok(Math.abs(gas - 0.5) < 0.05 && Math.abs(brake - 0.5) < 0.05, 'gas ' + gas + ', brake ' + brake);
+});
+
+test('before the start the camera orbits the car, 7 to 11 m out and 1.6 to 4.5 m up, looking at it', () => {
+  const { camera, cam, back } = camRig(), st = { ...car(), pos: { x: 5, z: -3 } };
+  for (let t = 0; t < 60; t += 0.7) {
+    cam.orbit(st, t); const d = back(st);
+    assert.ok(d >= 7 - 1e-9 && d <= 11 + 1e-9 && camera.position.y >= 1.6 - 1e-9 && camera.position.y <= 4.5 + 1e-9, t + ': ' + d + ', ' + camera.position.y);
+    assert.deepEqual([camera.look.x, camera.look.z], [5, -3]);
+  }
 });
