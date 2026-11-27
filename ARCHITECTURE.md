@@ -56,6 +56,8 @@ how each part works; this file says how the parts may fit together.
 | `vector-fallback.js` | 150 | OpenFreeMap vector tiles → Overpass-shaped elements |
 | `radio.js` | 53 | Car radio for both drive pages: `stationsNear()` (radio-browser.info, real-map page), Romanian presets (test track), `radio(show, find, tuningStatic)` player, `radioHud()` station display |
 | `quality.js` | — | Graphics tiers, the device's default, pixel budget and dynamic resolution (pure) |
+| `post-fx.js` | — | Glow, tone mapping, colour grade and FXAA (Medium, High) |
+| `car-probe.js` | — | Live reflections of the street on the car |
 | `car-merge.js` | — | The driven car's still parts merged into a few meshes |
 | `perf-hud.js` | — | Performance readout for both drive pages (`?perf`, Shift+P) |
 | `gamepad.js` | — | Gamepad for both drive pages: analogue steer, gas and brake, buttons that press keys, rumble |
@@ -80,7 +82,7 @@ root, one copy each. Page URLs don't change.
 | Module | Owns | May import |
 |---|---|---|
 | `drive-map.js` | Real-map page entry: picker, loading screen, time of day, game loop wiring | everything below |
-| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch`, `toast`, `gamepad`, `world-kit`, `quality`, `perf-hud`, `car-merge`, `app-version` |
+| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch`, `toast`, `gamepad`, `world-kit`, `quality`, `perf-hud`, `car-merge`, `post-fx`, `car-probe`, `app-version` |
 | `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model`, `app-version` |
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`, `brake`), and `repaint(C, hex)` colours the car's `paint`; the ground under the car (`vmax`, `drag`, `rough`, `grip`) and collisions | nothing (works on the three.js objects it is given) |
 | `app-version.js` | Show the current release on the three game pages | nothing |
@@ -97,7 +99,7 @@ root, one copy each. Page URLs don't change.
 | `pedestrians.js` | `walkGraph(roads, paths, junctions, { armBack, roadAt, crossings })` → `{ nodes, edges }`, `createPedestrians(walks, { rand, max, radius, half, seen })` → `people`, `crossing`, `step(dt, player, cars, signals)`, `hit`, `bump`, `clear`, `setLevel`; `PEOPLE`, `SIDEWALK`, `CROSSWALK` | `road-layout`, `geom` |
 | `traffic.js` | `laneGraph(roads, junctions, half, signals)` → lanes, nodes, `signals` (light heads) and `armBack(road, i, direction)` (how far each junction's stop lines stand back), `lightAt(signal, t)`, `walkLeft(ctrl, t)`, `ranRed(signals, ax, az, bx, bz)`, `createTraffic(graph, { rand, max, seen })` → `step(dt, player, others)`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
 | `sky.js` | `createSky(renderer, scene, lat, { shadow, drops })` → `TIMES`, `sunAt`, `set(h, forceNight, weather, snow)`, `update(dt, cameraPosition)`, `placeShadow(x, z)`: sun, sky, lights, fog, exposure, rain and snow | `world-kit`, `geom`, three |
-| `world.js` | `buildWorld(elements, lat0, lon0, scene, say)` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`), mapped traffic signals and crossings (`signalPts`, `crossPts`), wet and snowy surfaces (`setGround(wet, snow)`, `reflectLamps(x, z)`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, `sign-layout`, `sign-mesh`, `street-furniture`, `furniture-mesh`, three |
+| `world.js` | `buildWorld(elements, lat0, lon0, scene, say, { lampLights })` → meshes plus lookups (`roadAt`, `areaAt`, `inBuilding`), lamps (`setLamps`), lit windows (`wallMat`, `frontMat`), mapped traffic signals and crossings (`signalPts`, `crossPts`), wet and snowy surfaces (`setGround(wet, snow)`, `reflectLamps(x, z)`). One builder function per feature, called in order; road/area tag tables | `buildings`, `world-kit`, `geom`, `road-layout`, `sign-layout`, `sign-mesh`, `street-furniture`, `furniture-mesh`, three |
 | `street-furniture.js` | Plan parked cars and mapped furnishings and provide the player collision lookup | `geom`, `osm-query` |
 | `furniture-mesh.js` | Draw static parking and street furniture | `traffic-cars`, `world-kit`, three |
 | `sign-layout.js` | Choose sign positions at named junctions and near mapped landmarks | `geom`, `osm-query` |
@@ -113,6 +115,8 @@ root, one copy each. Page URLs don't change.
 | `radio.js` | `stationsNear(lat, lon, fetch)`, presets, `radio(show, find, tuningStatic)` → `tune(step)`; station playback | nothing |
 | `weather.js` | `weatherNow(lat, lon, fetch)` → `{ kind, label, amount, temp, offset, snowDepth?, recent? }`, `weatherOf(code)`, `WEATHERS`, `groundOf(w)` → `{ wet, snow, grip }`, `solarHour(ms, lon)` | nothing |
 | `perf-hud.js` | `perfHud(renderer, extra, on)` → `frame(start)` with `lap`, `begin`, `show`, `onToggle`: the performance readout; `percentile` | nothing |
+| `post-fx.js` | `postFx(renderer, scene, camera, q)` → `render`, `setSize`, `look`, `target` (or null) | three, three addons |
+| `car-probe.js` | `carProbe(renderer, scene, car, size)` → `update()` | three |
 | `car-merge.js` | `mergeStatic(car, keep)`: bake the driven car's still parts into one mesh per material | three |
 | `quality.js` | `QUALITY`, `autoQuality`, `pickQuality`, `pixelRatio`, `dynamicRes`, `frameVerdict` | nothing |
 | `toast.js` | `toasts()` → `show(text, tone, key)`: readable short messages on both drive pages | nothing |

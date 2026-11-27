@@ -3,6 +3,16 @@
 What changed in each release of the game. Every pull request bumps the version in `package.json` (minor for features,
 patch for fixes) and adds its entry at the top. Versions before 0.4.0 are in the git history.
 
+## 0.6.0 — 2026-11-27
+
+- **Glow and colour:** street lamps, headlights, brake lights, lit windows and the delivery beam now glow, and the picture
+  gets a gentle colour grade (warmer highlights, cooler shadows, a soft vignette) on Medium and High.
+- **Reflections:** your car reflects the street, buildings and trees around it, not just the sky.
+- **Night:** the street lamps near you really light your car and the road, so the car is no longer a black silhouette.
+- **Trees:** crowns are built from clumps with shaded undersides instead of single lumpy spheres.
+- **Fixes:** the test track now uses the same shadow type as the real map; dynamic resolution no longer drops the
+  sharpness while the game window isn't in focus.
+
 ## 0.5.0 — 2026-11-27
 
 - **Graphics quality:** Settings → Graphics: Auto, Low, Medium or High. Auto picks for your device; each level sets the

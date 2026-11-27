@@ -1,11 +1,13 @@
 // Graphics quality on both drive pages: three tiers, the one picked for this device, and the pixel ratio that keeps the
 // frame inside the tier's pixel budget. Pure (no three.js, DOM or storage): the pages pass in what they read.
 // pixels: most pixels drawn a frame; msaa: antialias (fixed when the renderer is made, so a change needs a reload);
-// shadow: shadow map size; cars, people: most traffic cars and pedestrians at once; drops: rain drops / snowflakes.
+// shadow: shadow map size; cars, people: most traffic cars and pedestrians at once; drops: rain drops / snowflakes;
+// post: post-processing (post-fx.js: glow, grade, FXAA; false: none, the renderer antialiases with MSAA instead); probe: the car's reflection cube size (0 none);
+// lampLights: street lamps near the car that really light it (0 none).
 export const QUALITY = [
-  { name: 'Low', pixels: 0.9e6, msaa: false, shadow: 1024, cars: 30, people: 60, drops: 3500 },
-  { name: 'Medium', pixels: 2.0e6, msaa: true, shadow: 2048, cars: 45, people: 90, drops: 6000 },
-  { name: 'High', pixels: 3.7e6, msaa: true, shadow: 4096, cars: 100, people: 280, drops: 9000 }
+  { name: 'Low', pixels: 0.9e6, msaa: false, shadow: 1024, cars: 30, people: 60, drops: 3500, post: false, probe: 0, lampLights: 0 },
+  { name: 'Medium', pixels: 2.0e6, msaa: true, shadow: 2048, cars: 45, people: 90, drops: 6000, post: true, probe: 64, lampLights: 2 },
+  { name: 'High', pixels: 3.7e6, msaa: true, shadow: 4096, cars: 100, people: 280, drops: 9000, post: true, probe: 128, lampLights: 3 }
 ];
 
 // The tier for a device: phones and tablets (coarse pointer) Medium, small ones Low; desktops High unless they have

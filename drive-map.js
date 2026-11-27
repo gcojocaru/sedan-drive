@@ -31,6 +31,8 @@ import { pedestrianFigures } from './pedestrian-figures.js';
 import { showAppVersion } from './app-version.js';
 import { perfHud } from './perf-hud.js';
 import { mergeStatic } from './car-merge.js';
+import { postFx } from './post-fx.js';
+import { carProbe } from './car-probe.js';
 import { QUALITY, pickQuality, pixelRatio, dynamicRes } from './quality.js';
 
 showAppVersion();
@@ -165,8 +167,8 @@ async function startGame(lat0, lon0, placeName) {
   // ---- renderer / scene ----
   let qPick = 'auto'; try { qPick = JSON.parse(localStorage.getItem(LS_QUALITY)) ?? 'auto'; } catch { }
   const coarse = matchMedia('(pointer: coarse)').matches, Q = QUALITY[pickQuality(qPick, { coarse, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory })];
-  const renderer = new THREE.WebGLRenderer({ antialias: Q.msaa, logarithmicDepthBuffer: true });
-  let resScale = 1; const fit = () => { renderer.setPixelRatio(pixelRatio(Q, devicePixelRatio, innerWidth, innerHeight, resScale)); renderer.setSize(innerWidth, innerHeight); };
+  const renderer = new THREE.WebGLRenderer({ antialias: Q.msaa && !Q.post, logarithmicDepthBuffer: true }); // (with post-processing the HDR target antialiases)
+  let resScale = 1, fx = null; const fit = () => { renderer.setPixelRatio(pixelRatio(Q, devicePixelRatio, innerWidth, innerHeight, resScale)); renderer.setSize(innerWidth, innerHeight); fx?.setSize(); };
   fit(); const resTick = dynamicRes(s => { resScale = s; fit(); }); // slow frames lower the resolution a little, smooth ones win it back
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -174,10 +176,11 @@ async function startGame(lat0, lon0, placeName) {
   document.body.prepend(renderer.domElement);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 5000);
+  fx = postFx(renderer, scene, camera, Q); const draw = () => fx ? fx.render() : renderer.render(scene, camera); // glow and colour grade (post-fx.js), or straight to the screen on Low
 
   const sky = createSky(renderer, scene, lat0, Q), { TIMES, NIGHT } = sky;
 
-  const { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint } = await buildWorld(data.elements, lat0, lon0, scene, say);
+  const { roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint, lampLight } = await buildWorld(data.elements, lat0, lon0, scene, say, Q);
 
   // ---- car ----
   await say('Placing the car…');
@@ -210,6 +213,7 @@ async function startGame(lat0, lon0, placeName) {
   for (const l of CAR.lights.low) { const s = new THREE.Sprite(headGlow); s.position.copy(l.position).add(V(0.12, 0, 0)); s.scale.setScalar(1.1); car.add(s); }
   car.updateMatrixWorld(true); car.traverse(o => { if (o.isMesh && o.name === 'tail_brake') tails.push(new THREE.Box3().setFromObject(o).getCenter(V())); });
   mergeStatic(car); // the car's still parts in a few draw calls (after the lookups above)
+  const reflect = carProbe(renderer, scene, car, Q.probe); // the car reflects the street around it
   for (const c of tails) { const s = new THREE.Sprite(tailGlow); s.position.copy(car.worldToLocal(c)).add(V(-0.1, 0, 0)); s.scale.setScalar(0.6); car.add(s); }
 
   const st = { pos: V(), h: 0, v: 0, steer: 0, spin: 0, roll: 0, pitch: 0, slip: 0 };
@@ -280,7 +284,7 @@ async function startGame(lat0, lon0, placeName) {
   function applyTime(announce) {
     if (tSel !== NIGHT) dayIdx = tSel;
     const w = weatherOf(), ground = groundOf(w); // wet roads, snow on the ground and roofs, and how well the tyres grip
-    let e, murky; ({ night, e, lowLight, murky } = sky.set(hourOf(), tSel === NIGHT, w, ground.snow));
+    let e, murky, post; ({ night, e, lowLight, murky, post } = sky.set(hourOf(), tSel === NIGHT, w, ground.snow)); fx?.look(post);
     camera.far = scene.fog.far + 30; // nothing past the fog shows, so nothing past it is drawn
     setGround(ground.wet, ground.snow); grip = tuning.grip(ground.grip); ear.wet = ground.wet; ear.snow = ground.snow;
     if (frontMat) frontMat.emissiveIntensity = night ? 0.60 : e < 0 ? 0.25 : 0;
@@ -374,7 +378,7 @@ async function startGame(lat0, lon0, placeName) {
     cam.update(st, camMode, dt, occluded);
     if (shake > 0.01) { camera.position.x += (Math.random() - 0.5) * shake * 0.25; camera.position.y += (Math.random() - 0.5) * shake * 0.2; shake *= Math.exp(-dt * 7); }
     sky.placeShadow(st.pos.x + Math.cos(st.h) * 45, st.pos.z - Math.sin(st.h) * 45); // the shadow box reaches further ahead of the car
-    sky.update(dt, camera.position); reflectLamps(camera.position.x, camera.position.z);
+    sky.update(dt, camera.position); reflectLamps(camera.position.x, camera.position.z); lampLight(st.pos.x, st.pos.z, dt); reflect();
   }
 
   // ---- HUD ----
@@ -419,7 +423,7 @@ async function startGame(lat0, lon0, placeName) {
   // The car's lamps change which shader programs every lit material needs (three.js counts only visible lights), so
   // compile them for each lamp state now: H and N then switch programs instead of stalling a drive to compile them.
   await say('Warming up…');
-  { const was = [head, night]; for (const [h, n] of [[false, false], [true, false], [true, true]]) { head = h; night = n; setLights(); await renderer.compileAsync(scene, camera).catch(() => {}); renderer.render(scene, camera); } /* (a render too: shadow-map programs are only made by drawing) */ [head, night] = was; setLights(); }
+  { const was = [head, night]; for (const [h, n] of [[false, false], [true, false], [true, true]]) { head = h; night = n; setLights(); renderer.setRenderTarget(fx?.target ?? null); await renderer.compileAsync(scene, camera).catch(() => {}); renderer.setRenderTarget(null); draw(); } /* (a render too: shadow-map programs are only made by drawing) */ [head, night] = was; setLights(); }
   load.style.display = 'none';
   $('hud').style.display = 'block';
   const startEl = $('start'); startEl.style.display = started ? 'none' : 'flex';
@@ -463,7 +467,7 @@ async function startGame(lat0, lon0, placeName) {
   perfChk.checked = perf.isOn(); perfChk.onchange = () => { perf.show(perfChk.checked); keepPerf(perfChk.checked); }; perf.onToggle(keepPerf);
   renderer.setAnimationLoop(now => {
     const t0 = performance.now(), lap = perf.lap; perf.begin();
-    resTick(now - last); const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (document.hasFocus()) resTick(now - last); /* (an unfocused window may be held at 30 fps: not a slow GPU) */ const dt = Math.min(0.05, (now - last) / 1000); last = now;
     const p = pad.poll(); if (p?.thr && !started && !paused()) begin(); // (its buttons start the game through their keys)
     if (started && !paused()) lastS = update(dt, p);
     lap('drive');
@@ -477,6 +481,6 @@ async function startGame(lat0, lon0, placeName) {
     Object.assign(ear, { x: camera.position.x, z: camera.position.z, fx: look.x / flat, fz: look.z / flat, vx: Math.cos(st.h) * st.v, vz: -Math.sin(st.h) * st.v });
     sound.traffic(traffic.cars, ear); lap('sound');
     syncCar(rig, st, lastS, head); glows(lastS); updateCam(dt); lap('camera'); hud(lastS, dt); lap('hud');
-    renderer.render(scene, camera); lap('render'); perf(t0);
+    draw(); lap('render'); perf(t0);
   });
 }
