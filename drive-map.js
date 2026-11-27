@@ -385,7 +385,8 @@ async function startGame(lat0, lon0, placeName) {
     return s;
   }
   function glows(s) {
-    headGlow.opacity = head ? (lowLight ? 0.85 : 0.25) : 0; tailGlow.opacity = s.braking ? (lowLight ? 0.9 : 0.4) : head && lowLight ? 0.35 : 0;
+    const k = fx ? 0.5 : 1; // (with post-processing the bloom already glows; the sprites only help, and none by day)
+    headGlow.opacity = head ? (lowLight ? 0.85 * k : fx ? 0 : 0.25) : 0; tailGlow.opacity = (s.braking ? (lowLight ? 0.9 : 0.4) : head && lowLight ? 0.35 : 0) * k;
   }
   function updateCam(dt) {
     if (started) cam.update(st, camMode, dt, occluded); else cam.orbit(st, performance.now() / 1000); // before the start: show the place round the car

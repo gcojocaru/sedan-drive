@@ -548,7 +548,7 @@ function streetLamps(scene, roads, { onDrive }, areaAt, inBuilding, wx, height, 
         const keep = on && near.includes(L.at);
         L.k = keep ? Math.min(1, L.k + dt / 0.3) : Math.max(0, L.k - dt / 0.3);
         if (!keep && L.k === 0 && on) { const free = near.find(i => !lights.some(o => o.at === i)); if (free !== undefined) { L.at = free; L.l.position.set(gp[free * 3], gp[free * 3 + 1] - 0.3, gp[free * 3 + 2]); } }
-        L.l.intensity = 100 * L.k;
+        L.l.intensity = 75 * L.k;
       }
     };
     setLamps = v => { on = v; lampHead.emissiveIntensity = v ? 3.5 : 0; pools.visible = glows.visible = v; wx.lit(v); };

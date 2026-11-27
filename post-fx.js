@@ -46,7 +46,8 @@ export function postFx(renderer, scene, camera, q) {
     },
     // the light: night (lamps glow wide), low sun (golden: warmer, a little richer), cover (overcast: flatter, cooler)
     look({ night = false, low = 0, cover = 0 } = {}) {
-      bloom.threshold = night ? 0.85 : 1.1; bloom.strength = night ? 0.75 : 0.22 + 0.15 * low; bloom.radius = night ? 0.6 : 0.45;
+      // only lights glow: sunlit white walls, road lines and headlit markings stay below the threshold (lamps are 3.5+)
+      bloom.threshold = night ? 1.6 : 2.6; bloom.strength = night ? 0.45 : 0.12 + 0.08 * low; bloom.radius = night ? 0.5 : 0.4;
       const u = grade.uniforms;
       u.sat.value = night ? 1.0 : 1.06 + 0.06 * low - 0.06 * cover;
       u.warm.value.set(1 + 0.04 * low, 1 + 0.01 * low, 1 - 0.05 * low);

@@ -3,6 +3,13 @@
 What changed in each release of the game. Every pull request bumps the version in `package.json` (minor for features,
 patch for fixes) and adds its entry at the top. Versions before 0.4.0 are in the git history.
 
+## 0.7.1 — 2026-11-27
+
+- **Less glare:** only real lights glow now. Sunlit walls, white road lines and markings caught in your headlights no
+  longer bloom into a haze, the glow is softer at night, and the car's lamp glows are dimmer. The paint and windows
+  reflect lamps and the sun as soft highlights instead of blinding points, and the street lamps near you are a little
+  softer.
+
 ## 0.7.0 — 2026-11-27
 
 - **Handling:** the tyres now have a real grip limit. Held keys corner just inside it, so you won't slide by accident
