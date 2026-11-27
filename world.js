@@ -109,8 +109,9 @@ const isBridge = t => t.bridge && t.bridge !== 'no';
 // elements: an Overpass reply's elements; (lat0, lon0) becomes the origin. say(text) shows progress and waits for a repaint.
 // setGround(wet, snow) (0–1 each, from weather.js groundOf) wets roads, roofs and ground or lays snow on them;
 // reflectLamps(x, z), called as the camera moves, lets the lit street lamps nearest it glint in wet roads.
-// terrain: terrain.js loadTerrain() (or nothing: flat); q: { lampLights }: how many street lamps near the car really light it (quality.js)
-export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { lampLights = 0 } = {}) {
+// terrain: terrain.js loadTerrain() (or nothing: flat); q: { lampLights, facadeDepth }: how many street lamps near the car really
+// light it, and whether windows are set back with rooms behind them (quality.js)
+export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { lampLights = 0, facadeDepth = false } = {}) {
   const height = terrain?.height ?? (() => 0);
   await say('Building the streets…');
   const { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts, landmarks, furniture, addressPoints } = parseElements(elements, lat0, lon0);
@@ -181,7 +182,7 @@ export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { la
   const areaAt = areaLookup(polys, seas);
   const nB = polys.filter(p => p.kind === 'building').length;
   await say('Raising ' + nB.toLocaleString() + ' buildings…');
-  const { blds, inBuilding, frontMat, wallMat } = buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear, landHeight, countryCode(elements));
+  const { blds, inBuilding, frontMat, wallMat } = buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear, landHeight, countryCode(elements), facadeDepth);
   await say('Planting trees…');
   const trees = plantTrees(scene, treePts, rows, polys, G.noise, look, areaAt, inBuilding, wear, landHeight);
   const { setLamps, glowTex, lamps, lampLight } = streetLamps(scene, roads, look, areaAt, inBuilding, wx, driveHeight, lampLights);

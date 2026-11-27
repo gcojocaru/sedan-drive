@@ -4,11 +4,11 @@
 // shadow: shadow map size; cars, people: most traffic cars and pedestrians at once; drops: rain drops / snowflakes;
 // post: post-processing (post-fx.js: glow, grade, FXAA; false: none, the renderer antialiases with MSAA instead); probe: the car's reflection cube size (0 none);
 // lampLights: street lamps near the car that really light it (0 none); particles, marks: tyre smoke, spray and sparks at
-// once, and skid-mark pieces kept (car-fx.js).
+// once, and skid-mark pieces kept (car-fx.js); facadeDepth: windows set back in the walls with rooms behind them (buildings.js).
 export const QUALITY = [
-  { name: 'Low', pixels: 0.9e6, msaa: false, shadow: 1024, cars: 30, people: 60, drops: 3500, post: false, probe: 0, lampLights: 0, particles: 160, marks: 300 },
-  { name: 'Medium', pixels: 2.0e6, msaa: true, shadow: 2048, cars: 45, people: 90, drops: 6000, post: true, probe: 64, lampLights: 2, particles: 320, marks: 600 },
-  { name: 'High', pixels: 3.7e6, msaa: true, shadow: 4096, cars: 100, people: 280, drops: 9000, post: true, probe: 128, lampLights: 3, particles: 480, marks: 900 }
+  { name: 'Low', pixels: 0.9e6, msaa: false, shadow: 1024, cars: 30, people: 60, drops: 3500, post: false, probe: 0, lampLights: 0, particles: 160, marks: 300, facadeDepth: false },
+  { name: 'Medium', pixels: 2.0e6, msaa: true, shadow: 2048, cars: 45, people: 90, drops: 6000, post: true, probe: 64, lampLights: 2, particles: 320, marks: 600, facadeDepth: true },
+  { name: 'High', pixels: 3.7e6, msaa: true, shadow: 4096, cars: 100, people: 280, drops: 9000, post: true, probe: 128, lampLights: 3, particles: 480, marks: 900, facadeDepth: true }
 ];
 
 // The tier for a device: phones and tablets (coarse pointer) Medium, small ones Low; desktops High unless they have

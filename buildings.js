@@ -160,7 +160,11 @@ const mipmapped = t => { t.generateMipmaps = true; t.minFilter = THREE.LinearMip
 // draws the style's atlas cell (ground floor or upper) in every bay and storey; the atlas alpha says what is wall (1), trim
 // (½) and glass (0). Wall areas take the building colour and the style's photo surface, laid in metres along the wall;
 // glass reflects and, by emissiveIntensity (set by the time of day), a random share of the windows lights up.
-function facadeMaterial() {
+// depth (FACADE_DEPTH): the glass sits 0.2 m back in the wall, so the eye ray can meet the side of the opening first (the
+// reveal, in shade), and behind the glass is a room about 4 m wide and 4 m deep (interior mapping: back wall with
+// furniture, side walls, floor, ceiling, sometimes a blind), dim by day and lit in its own colours at night. The wall's
+// frame per metre comes from screen derivatives, so it needs no tangents and works on mansard slopes too.
+function facadeMaterial(depth) {
   const C = FACADES.length, W = C * ATLAS_CELL, H = 2 * ATLAS_CELL, S = 512, L = WALL_SURFACES.length;
   const paint = layer => { const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d', { willReadFrequently: true }); wallAtlas(x, layer); return x.getImageData(0, 0, W, H).data; };
   const col = paint('color'), mask = paint('mask'), px = new Uint8Array(W * H * 4);
@@ -174,6 +178,7 @@ function facadeMaterial() {
   WALL_SURFACES.forEach((key, i) => photo(key).then(c => { surf.image.data.set(c.getContext('2d').getImageData(0, 0, S, S).data, i * S * S * 4); surf.needsUpdate = true; }, () => { }));
   const list = a => 'float[](' + a.map(v => v.toFixed(3)).join(', ') + ')';
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, emissive: 0xffffff, emissiveIntensity: 0 });
+  if (depth) mat.defines = { FACADE_DEPTH: '' };
   mat.onBeforeCompile = s => {
     Object.assign(s.uniforms, { facadeAtlas: { value: atlas }, facadeSurf: { value: surf } });
     const tables = `const float fLit[${C}] = ${list(FACADES.map(f => f[3]))}, fLayer[${C}] = ${list(FACADES.map(f => f[4]))}, fMetres[${L}] = ${list(WALL_SURFACES.map(k => SURFACES[k][1]))};`;
@@ -187,19 +192,48 @@ uniform highp sampler2DArray facadeSurf;
 varying vec2 vFacUv, vFac;
 varying vec3 vSurf;
 varying float vLit;
-float fHash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }`)
+float fHash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+vec4 fAtlas(vec2 uv, vec2 gx, vec2 gy) { // the atlas texel at wall uv; gx, gy: the uv's screen derivatives, for the mip level
+  float s = floor(uv.y), c = s > vFac.y - 0.5 ? ${FACADE.blank}.0 : vFac.x; // above the top storey: parapet or gable
+  vec2 k = vec2(${1 / C}, 0.5); // (the mip level from the unwrapped uv, so cell edges don't flicker)
+  return textureGrad(facadeAtlas, (vec2(c, s < 0.5 ? 0.0 : 1.0) + clamp(fract(uv), 0.002, 0.998)) * k, gx * k, gy * k);
+}`)
       .replace('#include <map_fragment>', `
-float fStorey = floor(vFacUv.y), fCol = fStorey > vFac.y - 0.5 ? ${FACADE.blank}.0 : vFac.x; // above the top storey: parapet or gable
-vec2 fScale = vec2(${1 / C}, 0.5), fUv = (vec2(fCol, fStorey < 0.5 ? 0.0 : 1.0) + clamp(fract(vFacUv), 0.002, 0.998)) * fScale;
-vec4 fTex = textureGrad(facadeAtlas, fUv, dFdx(vFacUv) * fScale, dFdy(vFacUv) * fScale); // mip level from the unwrapped uv, so cell edges don't flicker
+vec2 fGx = dFdx(vFacUv), fGy = dFdy(vFacUv);
+vec4 fTex = fAtlas(vFacUv, fGx, fGy);
 float fWall = clamp(2.0 * fTex.a - 1.0, 0.0, 1.0), fGlass = clamp(1.0 - 2.0 * fTex.a, 0.0, 1.0);
 float fWin = fHash(floor(vFacUv) + vec2(vFac.x * 31.0, 7.0)); // one random number per window
-vec3 fSurf = texture(facadeSurf, vSurf).rgb * 1.6; // the photos average 0.8, about 0.62 linear
+vec3 fSurf = texture(facadeSurf, vSurf).rgb * 1.6, fGlow = vec3(1.0); // the photos average 0.8, about 0.62 linear; fGlow: a lit window's colour
+#ifdef FACADE_DEPTH
+vec3 fdx = dFdx(vViewPosition), fdy = dFdy(vViewPosition); // (derivatives outside the branch below)
+if (fGlass > 0.5) {
+  vec3 fN = normalize(cross(fdx, fdy)), fV = normalize(-vViewPosition); // view space: the wall's normal, the eye ray
+  float fDet = max(dot(fN, cross(fdx, fdy)), 1e-12), fIn = max(-dot(fN, fV), 0.05);
+  vec3 gU = -(fGx.x * cross(fdy, fN) + fGy.x * cross(fN, fdx)) / fDet, gV = -(fGx.y * cross(fdy, fN) + fGy.y * cross(fN, fdx)) / fDet; // uv per metre
+  vec2 fAt = vFacUv + vec2(dot(gU, fV), dot(gV, fV)) * min(0.2 / fIn, 2.5); // where the eye ray reaches the glass
+  vec4 fBack = fAtlas(fAt, fGx, fGy);
+  if (fBack.a > 0.25) { fTex = vec4(fBack.rgb * 0.5, fBack.a); fWall = clamp(2.0 * fBack.a - 1.0, 0.0, 1.0); fGlass = 0.0; } // the reveal
+  else {
+    fWin = fHash(floor(fAt) + vec2(vFac.x * 31.0, 7.0));
+    float su = 1.0 / max(length(gU), 1e-4), sv = 1.0 / max(length(gV), 1e-4), k = max(1.0, floor(4.0 / su + 0.5)); // bay and storey (m); bays per room
+    vec3 rd = vec3(dot(fV, gU) * su, dot(fV, gV) * sv, fIn); // the eye ray in the room: across, up, in
+    rd = mix(rd, vec3(1e-4), step(abs(rd), vec3(1e-4)));
+    vec3 rs = vec3(k * su, sv, 4.0), ro = vec3(mod(fAt.x, k) * su, fract(fAt.y) * sv, 0.0), tt = (step(0.0, rd) * rs - ro) / rd;
+    float t = min(min(tt.x, tt.y), tt.z), r1 = fHash(floor(vec2(fAt.x / k, fAt.y)) + 17.3), r2 = fract(r1 * 13.7); vec3 h = ro + rd * t;
+    vec3 paint = mix(vec3(0.86, 0.82, 0.74), vec3(0.45 + 0.45 * r1, 0.62, 0.4 + 0.5 * r2), 0.3); // a paint per room
+    vec3 room = t == tt.z ? paint * (h.y < 0.85 && fract(h.x * 0.41 + r1) < 0.55 ? 0.4 : 1.0) // the back wall, furniture along it
+      : t == tt.y ? (rd.y > 0.0 ? vec3(0.95) : vec3(0.42, 0.32, 0.24)) : paint * 0.75; // ceiling or floor, side walls
+    room /= 1.0 + 0.12 * t; // deeper is darker
+    if (r2 < 0.3 && ro.y > sv * (0.45 + 0.45 * r1)) room = vec3(0.86, 0.8, 0.7); // a blind part way down
+    fTex.rgb = room * 0.45; fGlow = room * 1.7; // a room is dim beside the daylight outside, bright at night
+  }
+}
+#endif
 diffuseColor.rgb *= fTex.rgb * mix(vec3(1.0 + (fWin - 0.5) * 0.6 * fGlass), fSurf, fWall); // curtains behind some windows`)
       .replace('#include <color_fragment>', 'diffuseColor.rgb *= mix(vec3(1.0), vColor.rgb, fWall);')
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.12, fGlass);')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.25, fGlass);')
-      .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance *= step(fWin, vLit) * fGlass * mix(vec3(1.0, 0.68, 0.38), vec3(0.72, 0.84, 1.0), step(0.82, fract(fWin * 7.31))) * (0.35 + 0.4 * fract(fWin * 3.17)) * (0.75 + 0.35 * fract(vFacUv.y));');
+      .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance *= step(fWin, vLit) * fGlass * fGlow * mix(vec3(1.0, 0.68, 0.38), vec3(0.72, 0.84, 1.0), step(0.82, fract(fWin * 7.31))) * (0.35 + 0.4 * fract(fWin * 3.17)) * (0.75 + 0.35 * fract(vFacUv.y));');
   };
   return mat;
 }
@@ -221,28 +255,37 @@ function partyWalls(bPolys, parentOutline) {
   return r => r.map((p, i) => owner.get(key(p, r[(i + 1) % r.length])) === true);
 }
 
+// A stone cornice along ring r at height y, into the buffer PB: a ledge 0.3 m out and 0.32 m deep (top, front, darker
+// underside) along all but the party walls pw. s = 1 an outline, -1 a courtyard; k as in wallRing.
+function cornice(PB, r, k, s, pw, y, wc) {
+  const lip = offsetRing(r, pw.map(p => p ? 0 : s * 0.3)), stone = wc.clone().lerp(CAP, 0.5), under = wc.clone().multiplyScalar(0.55), y1 = y - 0.32;
+  for (let i = 0; i < r.length; i++) {
+    const j = (i + 1) % r.length, a = r[i], b = r[j], f = lip[i], g = lip[j], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (pw[i] || L < 1e-3) continue;
+    const o = [k * (b[1] - a[1]) / L, 0, -k * (b[0] - a[0]) / L];
+    quad3(PB, [a[0], y, a[1]], [b[0], y, b[1]], [g[0], y, g[1]], [f[0], y, f[1]], [0, 1, 0], stone);
+    quad3(PB, [f[0], y1, f[1]], [g[0], y1, g[1]], [g[0], y, g[1]], [f[0], y, f[1]], o, stone);
+    quad3(PB, [a[0], y1, a[1]], [b[0], y1, b[1]], [g[0], y1, g[1]], [f[0], y1, f[1]], [0, -1, 0], under);
+  }
+}
+
 // A mansard roof over ring r (s = 1 an outline, -1 a courtyard; k as in wallRing; pw: its party walls), into the wall
 // buffer WB and the plain one PB: a stone cornice at y0, then a zinc slope one storey high (to y1) leaning in by up to
 // 0.35 of its height, about 70°, with a dormer in each bay of the walls below (u0: their first bay). Along party walls
 // it rises straight up, plain. Returns its top ring for the flat roof over it.
 function mansard(WB, PB, r, k, s, pw, y0, y1, rc, wc, u0) {
-  const h = y1 - y0, stone = wc.clone().lerp(CAP, 0.5), under = wc.clone().multiplyScalar(0.55);
+  const h = y1 - y0;
+  cornice(PB, r, k, s, pw, y0, wc);
   let top; for (const lean of [0.35, 0.17, 0]) { // less lean where the slopes would fold over (narrow footprints)
     top = offsetRing(r, pw.map(p => p ? 0 : -s * lean * h));
     if (r.every((a, i) => { const b = r[(i + 1) % r.length], c = top[i], e = top[(i + 1) % r.length]; return (b[0] - a[0]) * (e[0] - c[0]) + (b[1] - a[1]) * (e[1] - c[1]) > 0 || Math.hypot(b[0] - a[0], b[1] - a[1]) < 1e-3; })) break;
   }
-  const lip = offsetRing(r, pw.map(p => p ? 0 : s * 0.3)), U = bayCoords(r, FACADES[FACADE.mansard][2], u0);
+  const U = bayCoords(r, FACADES[FACADE.mansard][2], u0);
   for (let i = 0; i < r.length; i++) {
     const j = (i + 1) % r.length, a = r[i], b = r[j], c = top[i], e = top[j], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz; if (L2 < 1e-6) continue;
     const L = Math.sqrt(L2), nx = k * dz / L, nz = -k * dx / L, lean = ((a[0] - c[0] + b[0] - e[0]) * nx + (a[1] - c[1] + b[1] - e[1]) * nz) / 2, l = Math.hypot(h, lean);
     const [ua, ub] = U[i], u = p => ua + (ub - ua) * ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / L2, st = WB.p.length;
     quad3(WB, [a[0], y0, a[1]], [b[0], y0, b[1]], [e[0], y1, e[1]], [c[0], y1, c[1]], [nx * h / l, lean / l, nz * h / l], pw[i] ? wc : rc, false, [[ua, 1], [ub, 1], [u(e), 2], [u(c), 2]]);
     for (let q = st; q < WB.p.length; q += 3) WB.f.push(pw[i] ? FACADE.blank : FACADE.mansard, 2);
-    if (pw[i]) continue;
-    const f = lip[i], g = lip[j], o = [nx, 0, nz], y = y0 - 0.32; // the cornice: top, front and underside
-    quad3(PB, [a[0], y0, a[1]], [b[0], y0, b[1]], [g[0], y0, g[1]], [f[0], y0, f[1]], [0, 1, 0], stone);
-    quad3(PB, [f[0], y, f[1]], [g[0], y, g[1]], [g[0], y0, g[1]], [f[0], y0, f[1]], o, stone);
-    quad3(PB, [a[0], y, a[1]], [b[0], y, b[1]], [g[0], y, g[1]], [f[0], y, f[1]], [0, -1, 0], under);
   }
   return top;
 }
@@ -250,8 +293,9 @@ function mansard(WB, PB, r, k, s, pw, y0, y1, rc, wc, u0) {
 // polys: parsed OSM areas (buildings and building:parts are used); entranceNodes: 'x,z' keys of mapped entrances.
 // roadAt finds the street a wall faces; mkMesh(buffer, material, uv, castShadow) adds a mesh to the scene;
 // wear(material, kind) lets rain and snow onto a material (world-kit.js weatherLook); height(x, z): the ground;
-// country: the ISO 3166-1 code the map data names (road-layout.js countryCode), which picks the region's look.
-export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m => m, height = () => 0, country = '') {
+// country: the ISO 3166-1 code the map data names (road-layout.js countryCode), which picks the region's look;
+// depth: windows set back in the walls, with rooms behind them (facadeMaterial; quality.js facadeDepth).
+export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m => m, height = () => 0, country = '', depth = false) {
   const bPolys = polys.filter(p => p.kind === 'building' || p.kind === 'part'), region = regionOf(country);
   // outlines with building:part pieces inside are drawn as those parts only (OSM simple 3D buildings)
   const {hidden, parentOutline} = findBuildingParts(bPolys);
@@ -375,6 +419,7 @@ export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m =>
       for (const h of holes) wallRing(h, signedArea(h) > 0 ? -1 : 1, minH, eave, null, wc, fac);
       eachTri(outer, holes, (A, B, C) => flatTri(RF, A, B, C, eave - para, rc));
       parapet(outer, 1, eave - para, eave, wc); for (const h of holes) parapet(h, -1, eave - para, eave, wc);
+      if (style === FACADE.classic && eave - minH > 6) { cornice(PB, outer, k, 1, party(outer), eave - para, wc); for (const h of holes) cornice(PB, h, signedArea(h) > 0 ? -1 : 1, -1, party(h), eave - para, wc); }
     } else if (shape === 'mansard') {
       wallRing(outer, k, minH, eave, null, wc, fac);
       for (const h of holes) wallRing(h, signedArea(h) > 0 ? -1 : 1, minH, eave, null, wc, fac);
@@ -416,7 +461,7 @@ export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m =>
     blds.push({ outer: b.outer, holes: b.holes, h: ground + eave + roofH, minH: minH ? ground + minH : -Infinity, ...bbox(b.outer) });
   }
   const frontMat = frontages.render(PB, mkMesh);
-  const wallMat = facadeMaterial();
+  const wallMat = facadeMaterial(depth);
   if (WB.p.length) mkMesh(WB, wallMat, true); // (WB.f: the facade attribute)
   if (PB.p.length) mkMesh(PB, wear(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), 'roof'), false);
   for (const [B, key] of [[RF, 'gravel'], [RT, 'tiles'], [RM, 'metal']]) if (B.p.length) mkMesh(B, wear(new THREE.MeshStandardMaterial({ map: roofTex(key), vertexColors: true, roughness: B === RM ? 0.55 : 0.9, metalness: B === RM ? 0.35 : 0 }), 'roof'), true);
