@@ -314,7 +314,7 @@ async function startGame(lat0, lon0, placeName) {
   const delivery = deliveryHud(scene, graph, furnitureHit, $('jobButton'), $('jobStage'), $('jobDistance'), flash, receipt => {
     const was = levelOf(wallet.jobs); wallet = earn(wallet, receipt.total); keep(LS_WALLET, wallet); showWallet();
     const now = levelOf(wallet.jobs), up = now > was ? 'Level ' + (now + 1) + ' · ' + JOB_LEVELS[now].name + ': ' + levelText(now) : '';
-    results.show(receipt, wallet.jobs, up); if (up) flash(up, 'gold'); // (the toast waits under the card, for when it's closed early)
+    results.show(receipt, wallet.jobs, up); if (up) flash(up, 'gold'); // (toasts show below the card)
   }, () => levelOf(wallet.jobs));
   function toggleDelivery() {
     if (started && !paused()) delivery.toggle(st.pos.x,st.pos.z);

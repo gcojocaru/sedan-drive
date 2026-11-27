@@ -1,9 +1,9 @@
 import { receiptText, stars, money, JOB_LEVELS, levelOf } from './delivery.js';
 
 // The results card after a delivery (real-map page): the receipt line by line, the pay counting up, the stars
-// (delivery.js stars()), progress to the next level, and a gold banner on a level-up. It hides after 5.5 s or at any
-// key press; it only listens to keys (never preventDefault) and never takes focus, so driving goes on under it. While
-// it's up, html has the class result-up and the toasts (toast.js) wait under it. With the touch controls on it shows only
+// (delivery.js stars()), progress to the next level, and a gold banner on a level-up. It hides after 5.5 s (not on a key:
+// the player drives straight off, and the card never takes focus, so driving goes on under it). While it's up, html
+// has the class result-up and the toasts (toast.js) move below it. With the touch controls on it shows only
 // the pay and the stars. chime(kind, i): driving-audio.js sounds. Creates its own elements and CSS.
 const CSS = `
 .rc{position:fixed;left:50%;top:12%;transform:translateX(-50%);z-index:9;min-width:250px;max-width:calc(100vw - 32px);box-sizing:border-box;padding:14px 22px 16px;border-radius:12px;background:#13262bf0;border-top:4px solid #68e6d3;color:#eff3ef;box-shadow:0 4px 18px rgba(0,0,0,.5);pointer-events:none;text-align:center;font:500 15px/1.4 "Helvetica Neue",Helvetica,Arial,sans-serif;font-variant-numeric:tabular-nums}
@@ -18,7 +18,8 @@ const CSS = `
 .rc small{display:block;margin-top:5px;color:#a6efdf;font-size:12.5px}
 .rc-up{margin-top:10px;padding:6px 10px;border-radius:6px;background:#ffbd66;color:#211c14;font-weight:650}
 .rc-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.result-up .toasts{visibility:hidden}
+.result-up:not(.touch-ui) .toasts{top:62%}
+@media (orientation:portrait){.result-up.touch-ui .toasts{top:60%}}
 @media (prefers-reduced-motion:reduce){.rc-stars i.on{animation:none}}
 .touch-ui .rc{min-width:0;padding:8px 16px 10px} .touch-ui .rc h2,.touch-ui .rc-lines,.touch-ui .rc-bar,.touch-ui .rc small{display:none}
 .touch-ui .rc-total{font-size:28px;margin:0}
@@ -36,7 +37,6 @@ export function resultCard(chime = () => {}) {
     if (!el) {
       document.head.appendChild(document.createElement('style')).textContent = CSS;
       el = document.body.appendChild(document.createElement('div')); el.className = 'rc'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
-      addEventListener('keydown', e => { if (!e.repeat) hide(); }); // (a held key repeats: only a new press closes it)
     }
     hide();
     const { head, lines } = receiptText(r), n = stars(r), L = levelOf(jobs), up = JOB_LEVELS[L + 1], from = JOB_LEVELS[L].from;

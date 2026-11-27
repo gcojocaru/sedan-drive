@@ -88,9 +88,9 @@ root, one copy each. Page URLs don't change.
 | `garage.js` | `UPGRADES`, `PAINTS`, `readGarage`, `readWallet`, `earn`, `price`, `buy`, `carTuning`: what delivery money buys and what it does to the car | nothing |
 | `minimap.js` | Cached raster of real-map geometry, car and goal markers, traffic as dots | `minimap-labels`, `delivery` |
 | `minimap-labels.js` | Nearby names and address numbers on the supplied canvas | `geom` |
-| `traffic-cars.js` | `trafficCars(scene, max, glowTex)` → `sync(cars, lit)`: instanced car bodies posed from `traffic.js` cars | three |
+| `traffic-cars.js` | `trafficCars(scene, max, glowTex)` → `sync(cars, lit)`: instanced car bodies posed from `traffic.js` cars | `world-kit`, three |
 | `traffic-lights.js` | `trafficLights(scene, signals, glowTex)` → `sync(lit)`: the signal heads in `graph.signals`, showing their `state`, and the pedestrian signals their `walk` | three |
-| `pedestrian-figures.js` | `pedestrianFigures(scene, max)` → `sync(people)`: instanced figures posed from `pedestrians.js` people | three |
+| `pedestrian-figures.js` | `pedestrianFigures(scene, max)` → `sync(people)`: instanced figures posed from `pedestrians.js` people | `world-kit`, three |
 | `pedestrians.js` | `walkGraph(roads, paths, junctions, { armBack, roadAt, crossings })` → `{ nodes, edges }`, `createPedestrians(walks, { rand, max, radius, half, seen })` → `people`, `crossing`, `step(dt, player, cars, signals)`, `hit`, `bump`, `clear`, `setLevel`; `PEOPLE`, `SIDEWALK`, `CROSSWALK` | `road-layout`, `geom` |
 | `traffic.js` | `laneGraph(roads, junctions, half, signals)` → lanes, nodes, `signals` (light heads) and `armBack(road, i, direction)` (how far each junction's stop lines stand back), `lightAt(signal, t)`, `walkLeft(ctrl, t)`, `ranRed(signals, ax, az, bx, bz)`, `createTraffic(graph, { rand, max, seen })` → `step(dt, player, others)`, `hit`, `clear`, `setLevel`; `LEVELS` | `road-layout`, `geom` |
 | `sky.js` | `createSky(renderer, scene, lat)` → `TIMES`, `sunAt`, `set(h, forceNight, weather, snow)`, `update(dt, cameraPosition)`, `placeShadow(x, z)`: sun, sky, lights, fog, exposure, rain and snow | `world-kit`, `geom`, three |
@@ -101,7 +101,7 @@ root, one copy each. Page URLs don't change.
 | `sign-mesh.js` | Draw street and landmark signs for the current area | `world-kit`, three |
 | `road-layout.js` | `prepareRoads(roads, side)` → lanes per road, junction arms and corners, spawn segments; `laneSpawn`, `mappedStops`, `drivingSide`, `nodeKey` | nothing |
 | `buildings.js` | `buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear)` → `{ blds, inBuilding, frontMat, wallMat }`; building tag tables, `roofPlanes`, parapets and eaves, shopfronts, the facade material | `world-kit`, `geom`, `building-fronts`, three |
-| `world-kit.js` | three.js and tag helpers shared by `world.js` and `buildings.js`: `fillPoly`/`eachTri`, `makeTex`, `speckle`, `num`, `tagColor`, `matColor`, `weatherLook()` → `{ wear, set, lamps, lit, follow }` | `geom`, three |
+| `world-kit.js` | three.js and tag helpers shared by `world.js`, `buildings.js`, both drive pages, `traffic-cars` and `pedestrian-figures`: `fillPoly`/`eachTri`, `makeTex`, `speckle`, `num`, `tagColor`, `matColor`, `blobTex(inner, a)` (contact-shadow texture), `weatherLook()` → `{ wear, set, lamps, lit, follow }` | `geom`, three |
 | `map-data.js` | `loadArea(lat, lon, status)`: IndexedDB cache → proxy → Overpass → vector fallback; returns `{ data, fallback, err }` | `osm-query`, `vector-fallback` |
 | `sedan-model.js` | `buildCar()` and the axle constants: the procedural car | three |
 | `vaz-model.js` | `loadVaz()`: the VAZ-2101 model file, returned in `buildCar()`'s shape | three (GLTFLoader) |
