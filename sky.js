@@ -2,6 +2,7 @@
 // date at the chosen local solar time, and the sky is redrawn around it, so the sun you see is the one casting the
 // shadows. A cool moon takes over at night. Clouds dim and soften the light, haze closes the fog in, rain and snow fall.
 import * as THREE from 'three';
+import { drawClouds } from './cloud-layer.js';
 import { seeded } from './geom.js';
 import { makeTex } from './world-kit.js';
 
@@ -34,11 +35,6 @@ function drawSky(sd, e, dark, [zen, hor, glow, gnd], cover, haze) {
     }
     const deck = Math.max(2 * cover - 1, haze); // overcast cloud deck or fog: the sky turns one grey towards the horizon
     if (deck > 0) { g = x.createLinearGradient(0, 0, 0, SH / 2); g.addColorStop(0, rgba(zen, deck * 0.9)); g.addColorStop(1, rgba(hor, deck)); x.fillStyle = g; x.fillRect(0, 0, SW, SH / 2); }
-    const rc = seeded(7), cc = (dark ? new THREE.Color('#2a3140') : new THREE.Color('#ffffff').lerp(glow, warm * 0.55).multiplyScalar(0.35 + 0.65 * ss(e, -6, 6))).lerp(grey(hor).multiplyScalar(0.8), cover * 0.7);
-    for (let i = 0; i < 46 + cover * 150; i++) { // clouds
-      const cx = rc() * SW, cy = SH * (0.29 + rc() * 0.16), n = 3 + Math.floor(rc() * 5); x.fillStyle = rgba(cc, ((0.18 + rc() * 0.2) * (dark ? 0.5 : 1) * (1 + cover)).toFixed(3));
-      for (let k = 0; k < n; k++) { x.beginPath(); x.ellipse(cx + k * 26, cy + rc() * 12, 40 + rc() * 20, 12 + rc() * 5, 0, 0, Math.PI * 2); x.fill(); }
-    }
     const disc = (d, core, halo, hr, cr) => { // sun or moon, stretched like everything else near the top of an equirect image
       const [px, py] = dirPx(d), st = 1 / Math.max(0.25, Math.sqrt(1 - d.y * d.y));
       for (const ox of [-SW, 0, SW]) {
@@ -51,6 +47,10 @@ function drawSky(sd, e, dark, [zen, hor, glow, gnd], cover, haze) {
     x.globalAlpha = 1 - ss(cover, 0.5, 1); // the sun or moon fades behind thick cloud (a pale disc still shows through fog)
     if (dark) disc(MOON, 'rgba(236,240,255,1)', 'rgba(150,170,220,.25)', 70, 10);
     else if (e > -3) disc(sd, 'rgba(255,253,244,1)', rgba(glow, 0.6), 120, 14);
+    x.globalAlpha = 1;
+    const bright = dark ? new THREE.Color('#454f67') : new THREE.Color('#fffaf1').lerp(glow, warm * 0.85);
+    const shadow = dark ? new THREE.Color('#131b2c') : hor.clone().lerp(zen, 0.4).multiplyScalar(0.53);
+    drawClouds(x, dark ? MOON : sd, cover, haze, shadow, bright.lerp(shadow, cover * 0.48));
   });
   t.mapping = THREE.EquirectangularReflectionMapping; t.wrapT = THREE.ClampToEdgeWrapping; return t;
 }
@@ -82,7 +82,7 @@ function precipitation(scene, height) {
   for (let i = 0; i < N; i++) { drops[i * 3] = (Math.random() - 0.5) * 2 * R; drops[i * 3 + 1] = Math.random() * H; drops[i * 3 + 2] = (Math.random() - 0.5) * 2 * R; }
   const geo = a => new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(a, 3).setUsage(THREE.DynamicDrawUsage));
   const flake = makeTex(32, 32, x => { const g = x.createRadialGradient(16, 16, 0, 16, 16, 16); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 32, 32); });
-  const rain = new THREE.LineSegments(geo(rainAt), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.5, depthWrite: false }));
+  const rain = new THREE.LineSegments(geo(rainAt), new THREE.LineBasicMaterial({ transparent: true, opacity: 0.20, depthWrite: false }));
   const snow = new THREE.Points(geo(snowAt), new THREE.PointsMaterial({ size: 0.22, map: flake, transparent: true, depthWrite: false }));
   for (const o of [rain, snow]) { o.frustumCulled = false; o.visible = false; scene.add(o); }
   let n = 0, t = 0;
@@ -105,7 +105,7 @@ function precipitation(scene, height) {
         drops[k] = x; drops[k + 1] = y; drops[k + 2] = z;
         y += base;
         if (dx * dx + dz * dz < 2.2) y = base - 50; // none right at the lens, or inside the car from the driver's seat
-        if (isRain) { const j = i * 6; rainAt[j] = rainAt[j + 3] = x; rainAt[j + 1] = y; rainAt[j + 4] = y + 0.8; rainAt[j + 2] = rainAt[j + 5] = z; rainAt[j + 3] += 0.04; }
+        if (isRain) { const j = i * 6; rainAt[j] = rainAt[j + 3] = x; rainAt[j + 1] = y; rainAt[j + 4] = y + 0.32; rainAt[j + 2] = rainAt[j + 5] = z; rainAt[j + 3] += 0.04; }
         else { snowAt[k] = x; snowAt[k + 1] = y; snowAt[k + 2] = z; }
       }
       (isRain ? rain : snow).geometry.attributes.position.needsUpdate = true;
@@ -142,7 +142,7 @@ export function createSky(renderer, scene, lat, now = new Date(), height = () =>
     const night = forceNight || e < -7; if (night) e = Math.min(e, -14);
     const [cover, haze0, gloom] = LOOK[w.kind] || LOOK.clear, haze = haze0 * (w.amount ? 0.5 + 0.5 * w.amount : 1), warm = 1 - ss(e, 2, 30), low = (1 - ss(e, 2, 20)) * ss(e, -3, 1); // low sun: a warm key and a cool fill
     const cols = skyCols(e), [zen, hor, glow, gnd] = cols, hg = grey(hor); // clouds grey the sky and gloom darkens it
-    zen.lerp(hg.clone().multiplyScalar(0.85), cover * 0.85); hor.lerp(hg, cover * 0.8); glow.lerp(hg, cover * 0.9);
+    zen.lerp(hg.clone().multiplyScalar(0.85), cover * cover * 0.65); hor.lerp(hg, cover * 0.8); glow.lerp(hg, cover * 0.9);
     for (const c of cols) c.multiplyScalar(1 - 0.5 * gloom);
     gnd.lerp(hor, 0.7 * snow); // snow on the ground
     // direct light: the sun by day, soft light from the whole sky at dusk, the moon at night
@@ -159,6 +159,11 @@ export function createSky(renderer, scene, lat, now = new Date(), height = () =>
       hemi.color.copy(hor).lerp(zen, 0.25 + 0.45 * low); // the shade is lit by the blue sky overhead, not the sunset
       hemi.groundColor.copy(gnd).lerp(glow, 0.2 * low);
       hemi.intensity = 0.22 + 0.33 * ss(e, -6, 22); // the sky light fades with the sun, so long low shadows still show
+    }
+    if (!night && e < 0) {
+      const twilight = ss(-e, 0, 5);
+      hemi.color.lerp(new THREE.Color('#b3bfdb'), twilight * 0.78);
+      hemi.intensity += 0.21 * twilight;
     }
     sun.intensity *= 1 - 0.7 * cover * cover; sun.shadow.intensity = 1 - 0.3 * cover * cover; sun.shadow.radius = 1 + 5 * cover * cover; // light through cloud: soft shadows, but still there
     hemi.intensity *= (1 + 0.3 * cover) * (1 - 0.5 * gloom);

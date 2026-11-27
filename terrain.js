@@ -20,7 +20,7 @@ async function readTile(zoom, x, y, signal) {
   } finally { bitmap.close(); }
 }
 
-function terrainGrid(values) {
+export function terrainGrid(values) {
   const centre = values[(values.length - 1) / 2];
   function height(x, z) {
     const gx = (Math.max(-EXTENT, Math.min(EXTENT, x)) + EXTENT) / STEP;

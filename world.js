@@ -107,7 +107,7 @@ const isBridge = t => t.bridge && t.bridge !== 'no';
 // elements: an Overpass reply's elements; (lat0, lon0) becomes the origin. say(text) shows progress and waits for a repaint.
 // setGround(wet, snow) (0–1 each, from weather.js groundOf) wets roads, roofs and ground or lays snow on them;
 // reflectLamps(x, z), called as the camera moves, lets the lit street lamps nearest it glint in wet roads.
-export async function buildWorld(elements, lat0, lon0, scene, say, terrain) {
+export async function buildWorld(elements, lat0, lon0, scene, say, terrain, finishCorner) {
   const height = terrain?.height ?? (() => 0);
   await say('Building the streets…');
   const { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts, landmarks, furniture, addressPoints } = parseElements(elements, lat0, lon0);
@@ -183,7 +183,8 @@ export async function buildWorld(elements, lat0, lon0, scene, say, terrain) {
   const signFree = (x,z) => clear(x,z) && !hit(x,z,0,0.35,0.35);
   const signs = planSigns(layout.junctions, landmarks, roadAt, signFree);
   addSignMeshes(scene, signs, landHeight);
-  return { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps, setGround: wx.set, reflectLamps: wx.follow, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs) };
+  const lightFront = await finishCorner?.({ scene, road: LAYERS.road[0], markings: LAYERS.marks[0], wear, height: landHeight, buildings: polys });
+  return { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps: on => { setLamps(on); lightFront?.(on); }, setGround: wx.set, reflectLamps: wx.follow, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs) };
 }
 
 // what the chase camera keeps out of, as geom.js pointGrid points [x, z, r, y0, y1]: tree trunks (not the crowns, which

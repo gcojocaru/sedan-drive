@@ -1,69 +1,78 @@
-// The traffic cars (traffic.js) on screen: one simple car body drawn once per car (instanced), in a range of paint
+// The traffic cars (traffic.js) on screen: three instanced body styles in a range of paint
 // colours, with head and tail lamps that light up at night and brake lights that come on as each car slows, and a soft
 // contact shadow under each. None wears a paint close to the player's (avoid).
 import * as THREE from 'three';
 import { blobTex } from './world-kit.js';
 import { groundPose } from './car-ground.js';
+import { FLEET, AXLES, TYRE_RADIUS, streetCarModel, streetWheel, cabinTexture } from './traffic-models.js';
 
 const PAINT = ['#e9e9e6', '#e9e9e6', '#d3d5d6', '#b9bdc0', '#8b9094', '#5c6165', '#2c2f32', '#151618', '#151618', '#7c1514', '#a92b1f', '#1f3a66', '#2e5079', '#3f5e44', '#c9bb9c', '#6f5b49', '#d8c64a', '#e2e0d8'].map(c => new THREE.Color(c));
 // PAINT without the colours within 0.25 (sRGB, 0–1 a channel) of the player's paint `avoid`
 const near = (a, b) => { const p = a.getHex(), q = b.getHex(); let d = 0; for (const s of [16, 8, 0]) d += ((p >> s & 255) - (q >> s & 255)) ** 2; return d < (0.25 * 255) ** 2; };
 const paints = avoid => { const ok = avoid ? PAINT.filter(c => !near(c, avoid)) : PAINT; return ok.length ? ok : PAINT; };
 const HEAD_ON = new THREE.Color(4, 3.8, 3.3), HEAD_OFF = new THREE.Color('#c9ccce'), TAIL = new THREE.Color(1.6, 0.08, 0.05), TAIL_OFF = new THREE.Color('#5a1010'), BRAKE = new THREE.Color(5, 0.25, 0.15);
-const HEADS = [[2.2, 0.7, 0.55], [2.2, 0.7, -0.55]], TAILS = [[-2.2, 0.8, 0.58], [-2.2, 0.8, -0.58]];
-
-const shape = pts => { const s = new THREE.Shape(); pts.forEach(([x, y], i) => i ? s.lineTo(x, y) : s.moveTo(x, y)); return s; };
-const slab = (pts, width, bevel) => new THREE.ExtrudeGeometry(shape(pts), { depth: width - 2 * bevel, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2 }).translate(0, 0, bevel - width / 2);
-function merge(geos) { // positions and normals of several geometries as one
-  const pos = [], nor = [];
-  for (let g of geos) { if (g.index) g = g.toNonIndexed(); const p = g.attributes.position.array, n = g.attributes.normal.array; for (let i = 0; i < p.length; i++) { pos.push(p[i]); nor.push(n[i]); } }
-  return new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)).setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-}
-const at = (g, x, y, z) => g.translate(x, y, z);
-
-// Car parts in car space: +x forward, y up, 4.4 × 1.7 m, wheels on the axles of the player's sedan.
-function parts() {
-  const body = merge([
-    slab([[-2.14, 0.3], [-2.18, 0.62], [-2.06, 0.9], [-1.34, 0.96], [1.12, 0.96], [1.92, 0.8], [2.14, 0.58], [2.1, 0.3]], 1.7, 0.06),
-    slab([[-0.84, 1.38], [0.42, 1.4], [0.38, 1.46], [-0.78, 1.45]], 1.42, 0.03) // roof
-  ]);
-  const glass = slab([[-1.32, 0.95], [-0.82, 1.4], [0.42, 1.42], [1.14, 0.95]], 1.48, 0);
-  const trim = merge([
-    at(new THREE.BoxGeometry(0.18, 0.18, 1.72), 2.11, 0.38, 0), at(new THREE.BoxGeometry(0.18, 0.18, 1.72), -2.11, 0.4, 0),
-    ...[1.32, -1.31].flatMap(x => [0.77, -0.77].map(z => at(new THREE.CylinderGeometry(0.31, 0.31, 0.2, 14).rotateX(Math.PI / 2), x, 0.31, z)))
-  ]);
-  const lamp = (w, h, d, spots) => merge(spots.map(([x, y, z]) => at(new THREE.BoxGeometry(w, h, d), x * 0.97, y, z)));
-  return { body, glass, trim, head: lamp(0.06, 0.12, 0.34, HEADS), tail: lamp(0.06, 0.15, 0.32, TAILS) };
-}
-
+// Geometry is immutable and shared between parked and moving fleets.
+let models, wheelGeometry, windows;
 function carMeshes(scene, max, height) {
-  const G = parts(), meshes = [];
-  const mk = (geo, mat, shadow, colored) => {
-    const m = new THREE.InstancedMesh(geo, mat, max); m.count = 0; m.castShadow = m.receiveShadow = shadow; m.frustumCulled = false; // lamps neither cast nor take shadows
-    if (colored) m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(max * 3), 3);
-    scene.add(m); meshes.push(m); return m;
-  };
-  const body = mk(G.body, new THREE.MeshStandardMaterial({ roughness: 0.38, metalness: 0.35 }), true, true);
-  mk(G.glass, new THREE.MeshStandardMaterial({ color: '#1b252d', roughness: 0.12, metalness: 0.6 }), true, false);
-  mk(G.trim, new THREE.MeshStandardMaterial({ color: '#17181a', roughness: 0.85 }), true, false);
-  const head = mk(G.head, new THREE.MeshBasicMaterial(), false, true), tail = mk(G.tail, new THREE.MeshBasicMaterial(), false, true);
-  mk(new THREE.PlaneGeometry(4.9, 2.2).rotateX(-Math.PI / 2).translate(0, 0.07, 0), new THREE.MeshBasicMaterial({ map: blobTex(0.35, 0.6), transparent: true, depthWrite: false }), false, false).renderOrder = 2; // contact shadow, as under the player's car
-  const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), rotation = new THREE.Euler(0, 0, 0, 'YXZ'), ONE = new THREE.Vector3(1, 1, 1);
+  models ??= FLEET.map(streetCarModel);
+  wheelGeometry ??= streetWheel();
+  windows ??= cabinTexture();
+  const meshes = [];
+  function batch(name, geometry, material, capacity=max, colored=false, shadow=true) {
+    const mesh = new THREE.InstancedMesh(geometry, material, capacity);
+    mesh.name=name; mesh.count=0; mesh.castShadow=mesh.receiveShadow=shadow; mesh.frustumCulled=false;
+    if (colored) mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity*3),3);
+    scene.add(mesh); meshes.push(mesh);
+    return mesh;
+  }
+  const paint = new THREE.MeshPhysicalMaterial({roughness:0.30, metalness:0.40, clearcoat:0.48, clearcoatRoughness:0.19});
+  const glazing = new THREE.MeshStandardMaterial({map:windows,color:'#bbc7cb',roughness:0.13,metalness:0.32});
+  const fittings = new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.56,metalness:0.23});
+  const lamp = new THREE.MeshBasicMaterial();
+  const fleet = models.map((g,i)=>{
+    const make = (part, mat, colored, shadow) => batch('traffic_'+FLEET[i].name+'_'+part,g[part],mat,max,colored,shadow);
+    return { body:make('body',paint,true,true), glass:make('glass',glazing,false,true),
+      detail:make('detail',fittings,false,true), head:make('head',lamp,true,false), tail:make('tail',lamp,true,false) };
+  });
+  const wheels=batch('traffic_alloys',wheelGeometry,fittings,max*4);
+  const distantWheels=batch('traffic_distant_tyres',new THREE.CylinderGeometry(TYRE_RADIUS,TYRE_RADIUS,0.19,10).rotateX(Math.PI/2),
+    new THREE.MeshStandardMaterial({color:'#242527',roughness:0.87}),max*4);
+  const shade=batch('traffic_contact_shadows',new THREE.PlaneGeometry(4.8,2.1).rotateX(-Math.PI/2).translate(0,0.07,0),
+    new THREE.MeshBasicMaterial({map:blobTex(0.35,0.6),transparent:true,depthWrite:false}),max,false,false);
+  shade.renderOrder=2;
+  const M=new THREE.Matrix4(), W=new THREE.Matrix4(), Q=new THREE.Quaternion(), P=new THREE.Vector3();
+  const orientation=new THREE.Euler(0,0,0,'YXZ'), one=new THREE.Vector3(1,1,1);
+  return function paintCars(cars,lit,pal,placeGlows,eye) {
+    for(const m of meshes)m.count=0;
+    const n=Math.min(cars.length,max);
+    for(let i=0;i<n;i++){
+      const c=cars[i], type=(c.id ?? c.paint)%fleet.length, parts=fleet[type];
+      const ground=height && groundPose(height,c.x,c.z,c.h);
+      Q.setFromEuler(orientation.set(ground?.roll ?? 0,c.h,ground?.pitch ?? 0,'YXZ'));
+      M.compose(P.set(c.x,ground?.y ?? 0,c.z),Q,one);
+      placeGlows?.(c,i,M,models[type]);
+      const close=!eye || (eye.x-c.x)**2+(eye.z-c.z)**2<85**2;
+      const slot=parts.body.count;
+      parts.body.setColorAt(slot,pal[c.paint%pal.length]);
+      parts.head.setColorAt(slot,lit?HEAD_ON:HEAD_OFF);
+      parts.tail.setColorAt(slot,c.braking?BRAKE:lit?TAIL:TAIL_OFF);
+      for(const key of ['body','glass','head','tail'])parts[key].setMatrixAt(parts[key].count++,M);
+      if(close)parts.detail.setMatrixAt(parts.detail.count++,M);
+      shade.setMatrixAt(shade.count++,M);
 
-  return function paintCars(cars, lit, pal, placeGlows) {
-    const n = Math.min(cars.length, max);
-    for (let i = 0; i < n; i++) {
-      const c = cars[i];
-      const ground = height && groundPose(height, c.x, c.z, c.h);
-      Q.setFromEuler(rotation.set(ground?.roll ?? 0, c.h, ground?.pitch ?? 0));
-      M.compose(P.set(c.x, ground?.y ?? 0, c.z), Q, ONE);
-      placeGlows?.(c, i, M);
-      for (const m of meshes) m.setMatrixAt(i, M);
-      body.setColorAt(i, pal[c.paint % pal.length]);
-      head.setColorAt(i, lit ? HEAD_ON : HEAD_OFF);
-      tail.setColorAt(i, c.braking ? BRAKE : lit ? TAIL : TAIL_OFF);
+      const wheel=close?wheels:distantWheels;
+      const spin=close ? -(c.s ?? 0)/TYRE_RADIUS : 0;
+      for(const x of AXLES)for(const side of [-1,1]){
+        // Mirror the outward alloy face, then roll about the axle in car space.
+        W.makeRotationFromEuler(orientation.set(0,side<0?Math.PI:0,spin,'ZXY'));
+        W.setPosition(x,TYRE_RADIUS,side*0.756);
+        wheel.setMatrixAt(wheel.count++,W.premultiply(M));
+      }
     }
-    for (const m of meshes) { m.count = n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+    for(const m of meshes)if(m.count){
+      m.instanceMatrix.needsUpdate=true;
+      if(m.instanceColor)m.instanceColor.needsUpdate=true;
+    }
   };
 }
 
@@ -87,16 +96,16 @@ export function trafficCars(scene, max, glowTex, height) {
   });
   // cars: traffic.js cars; lit: whether their lamps are on (dusk, night, murky weather)
   const point = new THREE.Vector3();
-  function sync(cars, lit) {
+  function sync(cars, lit, eye) {
     const n = Math.min(cars.length, max), [hp, hc] = ['position', 'color'].map(a => glows[0].geometry.attributes[a]), [tp, tc] = ['position', 'color'].map(a => glows[1].geometry.attributes[a]);
-    paintCars(cars, lit, pal, (c, i, matrix) => {
+    paintCars(cars, lit, pal, (c, i, matrix, model) => {
       const tailGlow = c.braking ? (lit ? 1 : 0.35) : lit ? 0.45 : 0;
       for (let k = 0; k < 2; k++) {
-        const [hx, hy, hz] = HEADS[k], [tx, ty, tz] = TAILS[k], j = i * 2 + k;
+        const [hx, hy, hz] = model.heads[k], [tx, ty, tz] = model.tails[k], j = i * 2 + k;
         point.set(hx, hy, hz).applyMatrix4(matrix); hp.setXYZ(j, point.x, point.y, point.z); hc.setXYZ(j, lit ? 0.8 : 0, lit ? 0.8 : 0, lit ? 0.8 : 0);
         point.set(tx, ty, tz).applyMatrix4(matrix); tp.setXYZ(j, point.x, point.y, point.z); tc.setXYZ(j, tailGlow, tailGlow, tailGlow);
       }
-    });
+    }, eye);
     for (const p of glows) { p.geometry.setDrawRange(0, n * 2); p.geometry.attributes.position.needsUpdate = p.geometry.attributes.color.needsUpdate = true; }
   }
   return { sync, avoid(color) { pal = paints(color); } }; // avoid: the player's paint (null: any)
