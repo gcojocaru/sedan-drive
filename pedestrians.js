@@ -2,8 +2,8 @@
 // cut back at each junction to a crosswalk over every arm and a curve round every corner (traffic.js keeps its stop
 // lines 3 m behind the crosswalks), mapped footways, paths and pedestrian streets, and mapped crossings; a loose end
 // within a few metres of a walkway is joined to it. createPedestrians() walks people along it around the player. They
-// keep to one side of the walkway, cross a street only at a crossing (at a light once the cars crossing it have red,
-// elsewhere once no car is coming) and get out of the way of the player's car. Pure: no three.js, no DOM.
+// keep to one side of the walkway, cross a street only at a crossing (at a light in its walk phase, while every car
+// there has red; elsewhere once no car is coming) and get out of the way of the player's car. Pure: no three.js, no DOM.
 import { nodeKey } from './road-layout.js';
 import { offsetLine, cumLen, trimLine, pointAt } from './geom.js';
 
@@ -12,7 +12,7 @@ export const CROSSWALK = 1.2; // how far beyond the junction (traffic.js armBack
 const WALKS = new Set(['footway', 'pedestrian', 'path', 'steps', 'track', 'pier']), SNAP = 3.5;
 const KERB = 0.35; // how far outside every carriageway the middle of a sidewalk stays (people keep up to 0.65 m to one side of it)
 // [label, m of walkway per person, most people]
-export const PEOPLE = [['Off', 0, 0], ['Few', 110, 40], ['Normal', 55, 80], ['Busy', 30, 140]];
+export const PEOPLE = [['Off', 0, 0], ['Few', 60, 70], ['Normal', 28, 160], ['Busy', 15, 280]];
 
 const unit = (a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
 const toSegment = (x, z, a, b) => { // distance from (x, z) to segment ab, and how far along it (0–1) the nearest point is
@@ -213,12 +213,13 @@ export function createPedestrians(walks, { rand = Math.random, max = Infinity, r
     return opts.at(-1);
   }
   function enter(p, f, n) { p.edge = f; p.dir = f.a === n ? 1 : -1; p.s = p.dir > 0 ? 0 : f.len; p.state = f.cross ? 'kerb' : 'walk'; p.wait = 0; }
-  // May someone cross over crossing e now? At a light: once every light for the cars crossing it is red. Elsewhere:
-  // once no car (or the player) is on it or coming within about 4 s.
-  function mayCross(e, bodies, signals) {
+  // May p cross over crossing e now? At a junction with lights (or a crossing within 25 m of one): only in its walk
+  // phase, when every light there is red, and with time left to get across; never while any car there has green.
+  // Elsewhere: once no car (or the player) is on it or coming within about 4 s.
+  function mayCross(p, e, bodies, signals) {
     const c = e.cross, a = e.pts[0], b = e.pts.at(-1), mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
-    if (!c.heads) c.heads = c.at ? signals.filter(s => s.e.r === c.road && Math.hypot(s.e.g.at(-1)[0] - c.at[0], s.e.g.at(-1)[1] - c.at[1]) < 0.5) : [];
-    if (c.heads.some(s => s.state !== 'red')) return false;
+    if (!c.heads) c.heads = signals.filter(s => s.junction?.some(q => c.at ? Math.hypot(q[0] - c.at[0], q[1] - c.at[1]) < 0.5 : Math.hypot(q[0] - mx, q[1] - mz) < 25));
+    if (c.heads.length && !c.heads.every(s => s.state === 'red' && s.walk >= e.len / (p.speed * 1.15) + 1)) return false;
     for (const o of bodies) {
       if (toSegment(o.x, o.z, a, b)[0] < 3.2) return false;
       if (c.heads.length) continue;
@@ -243,8 +244,8 @@ export function createPedestrians(walks, { rand = Math.random, max = Infinity, r
       if (p.state === 'stagger') { p.v = 0; if ((p.wait -= dt) <= 0) p.state = 'walk'; place(p); continue; }
       if (p.state === 'kerb') { // at a crossing, waiting
         p.v = 0; p.wait += dt;
-        if (mayCross(p.edge, bodies, signals)) p.state = 'walk';
-        else if (p.wait > 45) { const n = p.dir > 0 ? p.edge.a : p.edge.b, f = n.edges.find(f => f !== p.edge && !f.cross); if (f) enter(p, f, n); } // gave up
+        if (mayCross(p, p.edge, bodies, signals)) p.state = 'walk';
+        else if (p.wait > (p.edge.cross.heads?.length ? 120 : 45)) { const n = p.dir > 0 ? p.edge.a : p.edge.b, f = n.edges.find(f => f !== p.edge && !f.cross); if (f) enter(p, f, n); } // gave up
         place(p); continue;
       }
       p.v = p.dodge > 0 && !p.around ? 0 : p.speed * (p.edge.cross ? 1.15 : 1); // (a dodge stops them; stepping round a car doesn't)
@@ -261,7 +262,7 @@ export function createPedestrians(walks, { rand = Math.random, max = Infinity, r
     if (!player) return;
     if ((retune -= dt) <= 0) { retune = 5; retarget(player.x, player.z); }
     for (const p of people.slice()) if (Math.hypot(p.x - player.x, p.z - player.z) > radius + 40 && !seen(p.x, p.z)) drop(p);
-    if (people.length < target && (spawnT -= dt) <= 0) { spawnT = 0.2; fill(player.x, player.z, 50, 1); }
+    if (people.length < target && (spawnT -= dt) <= 0) { spawnT = 0.08; fill(player.x, player.z, 50, 1); }
   }
   function fill(x, z, r0, n) { // start up to n people on walkways r0 to radius m from (x, z), out of sight unless close in
     const near = spots.filter(e => Math.hypot(e.pts[0][0] - x, e.pts[0][1] - z) < radius + e.len), total = near.reduce((t, e) => t + e.len, 0);

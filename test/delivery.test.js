@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deliveryNetwork, createDelivery, allowedTime, afterCrash, deliveryPay, receiptText, FINE, KNOCK_FINE } from '../delivery.js';
+import { deliveryNetwork, createDelivery, allowedTime, afterCrash, deliveryPay, receiptText, FINE, KNOCK_FINE, JOB_LEVELS, CARGO, levelOf, levelText } from '../delivery.js';
 import { laneGraph } from '../traffic.js';
 import { prepareRoads } from '../road-layout.js';
 
@@ -80,7 +80,7 @@ test('the clock, damage and fines start once the parcel is aboard, and the recei
   job.crash(15); job.ranRed();
   assert.equal(job.load, null, 'nothing counts before the parcel is collected');
   assert.equal(job.arrive(pickup.x, pickup.z, 0, 100), 'collected');
-  assert.ok(job.load.allowed === allowedTime(job.load.metres) && job.load.since === 100 && job.load.condition === 1);
+  assert.ok(job.load.allowed === Math.round(allowedTime(job.load.metres) * JOB_LEVELS[0].ease) && job.load.since === 100 && job.load.condition === 1, 'the first level has time to spare');
   job.crash(30 / 3.6); job.ranRed();
   const drop = job.target;
   assert.equal(job.arrive(drop.x, drop.z, 0, 100 + 10), 'delivered');
@@ -102,4 +102,54 @@ test('knocking into someone with the parcel aboard is fined, and the receipt say
   assert.equal(both.fines, -(KNOCK_FINE + FINE));
   assert.match(receiptText(both).detail, /fines$/);
   assert.match(receiptText(run(job => { job.ranRed(); job.ranRed(); })).detail, /red lights$/);
+});
+
+// a town of two-way streets `gap` m apart, n by n
+function town(n = 4, gap = 150) {
+  const at = k => (k - (n - 1) / 2) * gap, roads = [];
+  for (let j = 0; j < n; j++) roads.push(street('Row ' + j, [...Array(n)].map((_, i) => [at(i), at(j)])));
+  for (let i = 0; i < n; i++) roads.push(street('Column ' + i, [...Array(n)].map((_, j) => [at(i), at(j)])));
+  return network(roads);
+}
+
+test('levels come with deliveries made: the first is easy, each after carries more parcels and harder cargo for more pay', () => {
+  assert.deepEqual([0, 2, 3, 6, 7, 12, 18, 26, 400].map(levelOf), [0, 0, 1, 1, 2, 3, 4, 5, 5]);
+  JOB_LEVELS.forEach((L, i) => { if (i) { const b = JOB_LEVELS[i - 1]; assert.ok(L.from > b.from && L.drops >= b.drops && L.pay > b.pay && L.ease <= b.ease, L.name); } });
+  assert.ok(JOB_LEVELS[0].drops === 1 && JOB_LEVELS[0].ease > 1 && JOB_LEVELS[0].cargo.join() === 'parcel', 'one plain parcel, time to spare');
+  assert.ok(JOB_LEVELS.at(-1).drops >= 5);
+  assert.equal(levelText(2), '2 drop-offs a job, better pay');
+  assert.equal(levelText(3), '3 drop-offs a job, heavy crates, better pay');
+  assert.equal(allowedTime(300, 3), allowedTime(300) + 30, 'each further drop-off allows 15 s');
+  assert.equal(deliveryPay({ metres: 300, allowed: 75, taken: 75, drops: 3, rate: 1.5 }).base, Math.round((15 + 9) * 1.5));
+});
+
+test('a round drops a parcel at each stop in turn, every one reachable from the last and apart from the others', () => {
+  const stops = town(), job = createDelivery(stops, () => 0.37);
+  assert.ok(job.start(-225, -225, 3, 'heavy'));
+  assert.equal(job.job.parcels, 3); assert.equal(job.job.cargo, CARGO.heavy);
+  const pickup = job.target; assert.equal(job.arrive(pickup.x, pickup.z, 0, 0), 'collected');
+  const seen = [pickup];
+  for (let k = 0; k < 3; k++) {
+    const t = job.target;
+    assert.ok(seen.every(q => Math.hypot(q.x - t.x, q.z - t.z) >= 40), 'stop ' + k + ' stands apart from the others');
+    assert.ok(Math.hypot(seen.at(-1).x - t.x, seen.at(-1).z - t.z) >= 60);
+    assert.equal(job.job.delivered, k);
+    seen.push(t);
+    assert.equal(job.arrive(t.x, t.z, 0, 100 + k), k < 2 ? 'dropped' : 'delivered');
+  }
+  const r = job.receipt;
+  assert.equal(r.drops, 3);
+  assert.ok(r.base > deliveryPay({ metres: r.drops * 100, allowed: 100, taken: 100 }).base, 'a bigger round pays more');
+  assert.match(receiptText(r).title, /^Delivered 3 heavy crates in /);
+  assert.equal(job.job, null);
+});
+
+test('cargo matters: fragile parcels take crashes harder, heavy crates weigh the car down, express letters run a tight clock', () => {
+  const stops = town(), load = kind => { const job = createDelivery(stops, () => 0.5); job.start(0, 0, 4, kind); job.arrive(job.target.x, job.target.z, 0, 0); return job; };
+  const plain = load('parcel'), fragile = load('fragile'), heavy = load('heavy'), express = load('express');
+  plain.crash(30 / 3.6); fragile.crash(30 / 3.6);
+  assert.ok(Math.abs((1 - fragile.load.condition) - 2 * (1 - plain.load.condition)) < 1e-9);
+  assert.ok(CARGO.heavy.power < 1 && CARGO.heavy.brake < 1 && CARGO.parcel.power === 1);
+  assert.ok(express.load.allowed < Math.round(allowedTime(express.load.metres, express.load.drops) * 0.8), 'express gets less time');
+  assert.ok(heavy.load.rate > plain.load.rate && express.load.rate > plain.load.rate);
 });

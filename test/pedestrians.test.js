@@ -62,22 +62,25 @@ test('people walk the sidewalks and keep off the road except at crossings', () =
   assert.ok(crossed > 0, 'and some crossed it');
 });
 
-test('at a light people cross only while the cars crossing their way have red', () => {
+test('at a light people cross in its walk phase, never while a car there has green, and are over before it ends', () => {
   const { walks, graph } = town(3, 100, { signals: [[0, 0]] }), traffic = createTraffic(graph, { rand: seeded(8) }), sim = createPedestrians(walks, { rand: seeded(9) });
   const lit = walks.edges.filter(e => e.cross?.at && e.cross.at[0] === 0 && e.cross.at[1] === 0);
   for (const e of lit) for (const k of [0, 1, 2]) { const p = sim.add(e, 0, 1); p.state = 'kerb'; p.speed = 1.1 + k * 0.1; }
   for (let i = 0; i < 12; i++) { const e = graph.signals[i % 4].e; traffic.add(e, 0, Math.max(2, e.lanes[0].len - 15 - 9 * Math.floor(i / 4))); }
-  let started = 0, wrong = 0;
+  let started = 0, wrong = 0, caught = 0;
   const was = new Map(sim.people.map(p => [p, p.state]));
-  for (let t = 0; t < 30 * 120; t++) {
-    traffic.step(1 / 30, null, sim.people); sim.step(1 / 30, null, traffic.cars, graph.signals);
+  for (let t = 0; t < 30 * 150; t++) {
+    traffic.step(1 / 30, null, sim.crossing); sim.step(1 / 30, null, traffic.cars, graph.signals);
     for (const p of sim.people) {
-      if (was.get(p) === 'kerb' && p.state === 'walk' && p.edge.cross?.heads?.length) { started++; if (p.edge.cross.heads.some(h => h.state !== 'red')) wrong++; }
+      if (was.get(p) === 'kerb' && p.state === 'walk' && p.edge.cross?.heads?.length) { started++; if (graph.signals.some(h => h.state !== 'red' || !(h.walk > 0))) wrong++; }
+      if (p.edge.cross?.heads?.length && p.state === 'walk' && graph.signals.some(h => h.state === 'green')) caught++;
       was.set(p, p.state);
     }
   }
   assert.ok(started >= 12, started + ' crossings started');
-  assert.equal(wrong, 0, 'nobody stepped out on green');
+  assert.equal(wrong, 0, 'nobody stepped out unless every light at the junction was red, in the walk phase');
+  assert.equal(caught, 0, 'and nobody was still crossing when cars got green');
+  assert.ok(lit.every(e => e.cross.heads.length === 4), 'every light at the junction counts, not only the crossed road\'s');
 });
 
 test('away from lights people wait for a gap, and cars stop for people on a crossing', () => {

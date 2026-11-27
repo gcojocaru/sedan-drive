@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { prepareRoads } from '../road-layout.js';
-import { laneGraph, createTraffic, lightAt, ranRed, LEVELS } from '../traffic.js';
+import { laneGraph, createTraffic, lightAt, walkLeft, ranRed, LEVELS } from '../traffic.js';
 import { seeded } from '../geom.js';
 
 const LEN_ = 2.2; // a car's half length
@@ -156,6 +156,23 @@ test('a mapped signal puts a light on every road into its junction, in two phase
     }
     assert.ok(seen.green && seen.amber && seen.red);
   }
+});
+
+test('where the streets have sidewalks, each cycle ends with a walk phase: every light red, long enough to cross', () => {
+  const { graph } = grid(3, 100, 'right', [[0, 0]]), ctrl = graph.signals[0].e.signal.ctrl;
+  assert.ok(graph.signals.every(s => s.junction.some(p => p[0] === 0 && p[1] === 0)), 'each head knows its junction');
+  assert.ok(ctrl.walk >= 6 + 2 * (3.5 + 1.1) / 1.25 - 0.5, 'time for the slowest walkers to cross: ' + ctrl.walk);
+  let walking = 0, last = 0;
+  for (let t = 0; t < 120; t += 0.25) {
+    const w = walkLeft(ctrl, t);
+    if (w > 0) { walking += 0.25; assert.ok(graph.signals.every(s => lightAt(s.e.signal, t) === 'red'), 'a car had a light other than red in the walk phase at ' + t); }
+    if (w > 0 && last === 0) assert.ok(w > ctrl.walk - 0.3, 'it starts with all its time');
+    last = w;
+  }
+  assert.ok(walking >= ctrl.walk, 'and comes round every cycle');
+  // without sidewalks anywhere there, there's no walk phase
+  const bare = grid(3, 100, 'right', [[0, 0]]), roads = bare.roads.map(r => ({ ...r, walk: false })), { junctions } = prepareRoads(roads, 'right');
+  assert.equal(laneGraph(roads, junctions, 500, [[0, 0]]).signals[0].e.signal.ctrl.walk, 0);
 });
 
 test('running a red light is crossing a stop line into the junction while it shows red', () => {
