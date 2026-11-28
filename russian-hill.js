@@ -6,6 +6,7 @@ import { terrainGrid } from './terrain.js';
 import { makeTex } from './world-kit.js';
 
 export const origin = [37.802, -122.422];
+export const parkApproach = { x: 105, z: 14, h: -2.80 };
 export const approach = { x: 67.6, z: 22.1, h: -2.54 };
 async function asset(file) {
   const response = await fetch(new URL('./prototype/' + file, import.meta.url));

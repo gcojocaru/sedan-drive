@@ -61,7 +61,7 @@ $('retry').onclick = () => location.reload();
 $('pickAgain').onclick = backToMap;
 
 const hm = location.hash.match(/^#(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)(?:\|(.*))?$/);
-const cornerPreview = /^#russian-hill(?:-rain)?$/.test(location.hash);
+const cornerPreview = /^#russian-hill(?:-rain|-park)?$/.test(location.hash);
 if (cornerPreview) {
   import('./russian-hill.js').then(corner => startGame(...corner.origin, 'Lombard & Larkin, San Francisco', corner))
     .catch(error => showLoadError(error.message));
@@ -204,7 +204,7 @@ async function startGame(lat0, lon0, placeName, corner) {
   const [terrain] = await Promise.all([terrainRequest, cloudReady]);
   const sky = createSky(renderer, scene, lat0, Q, undefined, terrain.height), { TIMES, NIGHT } = sky;
 
-  const { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint, lampLight } = await buildWorld(data.elements, lat0, lon0, scene, say, terrain, Q, corner?.finishCorner);
+  const { updateTrees, driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint, lampLight } = await buildWorld(data.elements, lat0, lon0, scene, say, terrain, Q, corner?.finishCorner);
 
   // ---- car ----
   await say('Placing the car…');
@@ -248,7 +248,7 @@ async function startGame(lat0, lon0, placeName, corner) {
     cam.reset(st);
   }
   const corners = [[2.2, 0.86], [2.2, -0.86], [0, 0.88], [0, -0.88], [-2.18, 0.86], [-2.18, -0.86]];
-  const spawn = entry ?? corner?.approach;
+  const spawn = entry ?? (location.hash === '#russian-hill-park' ? corner?.parkApproach : corner?.approach);
   const start = laneSpawn(layout.spawnSegments, spawn?.x ?? 0, spawn?.z ?? 0, spawn?.h, HALF, furnitureHit);
   if (spawn && !blocked(spawn.x, spawn.z, spawn.h)) place(spawn.x, spawn.z, spawn.h);
   else if (start) place(start.x, start.z, start.h);
@@ -422,6 +422,7 @@ async function startGame(lat0, lon0, placeName, corner) {
     if (started) cam.update(st, camMode, dt, occluded); else cam.orbit(st, performance.now() / 1000); // before the start: show the place round the car
     if (shake > 0.01) { camera.position.x += (Math.random() - 0.5) * shake * 0.25; camera.position.y += (Math.random() - 0.5) * shake * 0.2; shake *= Math.exp(-dt * 7); }
     sky.placeShadow(st.pos.x + Math.cos(st.h) * 45, st.pos.z - Math.sin(st.h) * 45); // the shadow box reaches further ahead of the car
+    updateTrees(camera.position.x, camera.position.z);
     sky.update(dt, camera.position); reflectLamps(camera.position.x, camera.position.z); lampLight(st.pos.x, st.pos.z, dt); reflect();
   }
 

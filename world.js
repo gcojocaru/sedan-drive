@@ -3,7 +3,7 @@
 // areaAt, inBuilding). buildWorld() runs one builder per feature, in an order that later ones depend on. The surfaces
 // that face the sky can be made wet or snowy afterwards (setGround).
 import * as THREE from 'three';
-import { same, joinRings, inPoly, polyArea, bbox, newBuf, quad, disc, ribbon, offsetLine, cumLen, densify, runs, wallStrip, fenceStrip, seaPolys, gkey, segDist, splitByTile } from './geom.js';
+import { seeded, same, joinRings, inPoly, polyArea, bbox, newBuf, quad, disc, ribbon, offsetLine, cumLen, densify, runs, wallStrip, fenceStrip, seaPolys, gkey, segDist, splitByTile } from './geom.js';
 import { fillPoly, makeTex, speckle, num, tagColor, matColor, WALL_MAT, weatherLook } from './world-kit.js';
 import { buildBuildings } from './buildings.js';
 import { landmarkName, planSigns } from './sign-layout.js';
@@ -15,10 +15,11 @@ import { addBridgeStructures } from './bridge-mesh.js';
 import { levelWaters } from './water-levels.js';
 import { bridgeDecks } from './bridge-decks.js';
 import { drapeSurface } from './terrain-surface.js';
+import { renderRoadsideTrees } from './roadside-trees.js';
 import { HALF } from './osm-query.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
-const TILE = 224; // m: buildings, walls and trees are one mesh per tile (a 5 × 5 grid over the area), so the renderer can skip tiles
+const TILE = 224; // m: buildings and walls are one mesh per tile (a 5 × 5 grid over the area), so the renderer can skip tiles
 
 
 function flatMesh(B, mat, uvScale, terrain) {
@@ -111,7 +112,7 @@ const isBridge = t => t.bridge && t.bridge !== 'no';
 // reflectLamps(x, z), called as the camera moves, lets the lit street lamps nearest it glint in wet roads.
 // terrain: terrain.js loadTerrain() (or nothing: flat); q: { lampLights, facadeDepth }: how many street lamps near the car really
 // light it, and whether windows are set back with rooms behind them (quality.js)
-export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { lampLights = 0, facadeDepth = false } = {}, finishCorner) {
+export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { lampLights = 0, facadeDepth = false, treeDetail = 68 } = {}, finishCorner) {
   const height = terrain?.height ?? (() => 0);
   await say('Building the streets…');
   const { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts, landmarks, furniture, addressPoints } = parseElements(elements, lat0, lon0);
@@ -184,7 +185,8 @@ export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { la
   await say('Raising ' + nB.toLocaleString() + ' buildings…');
   const { blds, inBuilding, frontMat, wallMat } = buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear, landHeight, countryCode(elements), facadeDepth);
   await say('Planting trees…');
-  const trees = plantTrees(scene, treePts, rows, polys, G.noise, look, areaAt, inBuilding, wear, landHeight);
+  const trees = plantTrees(scene, treePts, rows, polys, look, areaAt, inBuilding, seeded(Math.round(lat0 * 1e4) * 701 + Math.round(lon0 * 1e4)));
+  const updateTrees = renderRoadsideTrees(scene, trees, landHeight, wear, treeDetail);
   const { setLamps, glowTex, lamps, lampLight } = streetLamps(scene, roads, look, areaAt, inBuilding, wx, driveHeight, lampLights);
   const clear = signClearance(trees, lamps, look, areaAt, inBuilding);
   const { objects, hit } = planFurniture(furniture, polys, roadAt, clear);
@@ -193,7 +195,7 @@ export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { la
   const signs = planSigns(layout.junctions, landmarks, roadAt, signFree);
   addSignMeshes(scene, signs, landHeight);
   const lightFront = await finishCorner?.({ scene, road: LAYERS.road[0], markings: LAYERS.marks[0], wear, height: landHeight, buildings: polys });
-  return { driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps: on => { setLamps(on); lightFront?.(on); }, setGround: wx.set, reflectLamps: wx.follow, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs), lampLight };
+  return { updateTrees, driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps: on => { setLamps(on); lightFront?.(on); }, setGround: wx.set, reflectLamps: wx.follow, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs), lampLight };
 }
 
 // what the chase camera keeps out of, as geom.js pointGrid points [x, z, r, y0, y1]: tree trunks (not the crowns, which
@@ -229,7 +231,7 @@ function parseElements(elements, lat0, lon0) {
       if (tags.highway === 'stop') stopNodes.push({ id: el.id, p, tags });
       else if (tags.highway === 'traffic_signals') signalPts.push(p);
       else if (tags.highway === 'crossing' && tags['crossing:markings'] !== 'no') crossPts.push(p);
-      else if (tags.natural === 'tree') treePts.push(p);
+      else if (tags.natural === 'tree') treePts.push({ p, conifer: tags.leaf_type === 'needleleaved' });
       continue;
     }
     const t = el.tags || {}, kind = areaKind(t), label = landmarkName(t);
@@ -315,7 +317,7 @@ function layRoads(lines, elements, stopNodes, { LAYERS, BUF, dashLine, levelWate
     } else if (t.waterway) {
       const ww = { river: 12, canal: 10, stream: 2.5, ditch: 1.2, drain: 1.2 }[t.waterway]; const tw = parseFloat(t.width);
       if (ww) rivers.push({ g, hw: (tw > 0 && tw < 300 ? tw : ww) / 2 });
-    } else if (t.natural === 'tree_row') rows.push(g);
+    } else if (t.natural === 'tree_row') rows.push({ g, conifer: t.leaf_type === 'needleleaved' });
   }
   const seas = seaPolys(coast, HALF + 50, 3000);
   for (const s of seas) fillPoly(terrain?.active ? levelWater : BUF.water, s.outer, s.holes, LAYERS.water[1] + (terrain?.seaLevel || 0));
@@ -442,33 +444,13 @@ function areaLookup(polys, seas) {
   return areaAt;
 }
 
-// A broadleaf crown: five lumpy blobs (icosahedra, 400 triangles) round one centre instead of a single sphere, with
-// normals between each blob's and the crown's (soft clumps) and a vertex shade that darkens the underside and the inside.
-function crownGeometry() {
-  const BLOBS = [[0, 0, 0, 1], [0.85, -0.25, 0.45, 0.72], [-0.85, -0.2, -0.4, 0.72], [0.35, -0.15, -0.85, 0.68], [0, 0.75, 0.1, 0.75]];
-  const p = [], n = [], c = [], v = V(), m = V(), w = V();
-  for (const [bx, by, bz, r] of BLOBS) {
-    const g = new THREE.IcosahedronGeometry(1, 1), a = g.attributes.position;
-    for (let i = 0; i < a.count; i++) {
-      v.fromBufferAttribute(a, i); const j = 1 + 0.12 * Math.sin(v.x * 5.1 + v.y * 3.7 + bx * 3) * Math.cos(v.z * 4.3 - v.y * 2.1 + bz * 2); // lumps
-      v.multiplyScalar(r * j).add(m.set(bx, by, bz));
-      w.copy(v).sub(m).normalize().add(m.copy(v).normalize()); w.y *= 1.1; w.normalize(); // between the blob's normal and the crown's
-      const shade = (0.55 + 0.45 * THREE.MathUtils.smoothstep(v.y, -0.9, 0.9)) * (0.8 + 0.2 * Math.min(1, v.length() / 1.2));
-      p.push(v.x * 2.4, v.y * 2.1 + 4.6, v.z * 2.4); n.push(w.x, w.y, w.z); c.push(shade, shade, shade);
-    }
-    g.dispose();
-  }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(n, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
-  g.computeBoundingSphere(); return g;
-}
-
 // mapped trees, tree rows, and trees scattered over forests, scrub, parks and gardens (snow settles on the crowns)
-function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, areaAt, inBuilding, wear, height) {
+function plantTrees(scene, treePts, rows, polys, { roadAt, nearRail }, areaAt, inBuilding, rand) {
   const trees = [], LIM = HALF + 60, within = (x, z) => Math.abs(x) < LIM && Math.abs(z) < LIM;
   const clear = (x, z) => { const r = roadAt(x, z); return !(r.any && r.ae < 1.2) && !inBuilding(x, z, 1) && !areaAt(x, z, NOTREE) && !nearRail(x, z); };
   const roomy = (x, z) => !inBuilding(x + 3, z, 1) && !inBuilding(x - 3, z, 1) && !inBuilding(x, z + 3, 1) && !inBuilding(x, z - 3, 1) && !(roadAt(x, z).ae < 2.5);
-  for (const p of treePts) if (within(p[0], p[1])) trees.push([p[0], p[1], 0.8 + Math.random() * 0.5, 0]);
-  for (const g of rows) for (let i = 0; i < g.length - 1; i++) { const a = g[i], b = g[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]); for (let s = 0; s < L; s += 8) { const x = a[0] + (b[0] - a[0]) * s / L, z = a[1] + (b[1] - a[1]) * s / L; if (within(x, z)) trees.push([x, z, 0.8 + Math.random() * 0.4, 0]); } }
+  for (const { p, conifer } of treePts) if (within(p[0], p[1])) trees.push([p[0], p[1], 0.8 + rand() * 0.5, Number(conifer)]);
+  for (const { g, conifer } of rows) for (let i = 0; i < g.length - 1; i++) { const a = g[i], b = g[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]); for (let s = 0; s < L; s += 8) { const x = a[0] + (b[0] - a[0]) * s / L, z = a[1] + (b[1] - a[1]) * s / L; if (within(x, z)) trees.push([x, z, 0.8 + rand() * 0.4, Number(conifer)]); } }
   const DENS = { forest: 45, scrub: 300, park: 220, resid: 650 }; // m² per tree; residential land gets scattered garden trees
   for (const p of polys.filter(p => DENS[p.kind]).sort((a, b) => (a.kind === 'resid') - (b.kind === 'resid'))) {
     if (trees.length > 7000) break;
@@ -477,29 +459,9 @@ function plantTrees(scene, treePts, rows, polys, noise, { roadAt, nearRail }, ar
     const fill = polyArea(p.outer) / Math.max(1, (B.x1 - B.x0) * (B.z1 - B.z0)), resid = p.kind === 'resid';
     const n = Math.min(2500, Math.round((x1 - x0) * (z1 - z0) * fill / DENS[p.kind]));
     for (let i = 0; i < n * 1.5 && trees.length < 7500; i++) {
-      const x = x0 + Math.random() * (x1 - x0), z = z0 + Math.random() * (z1 - z0);
+      const x = x0 + rand() * (x1 - x0), z = z0 + rand() * (z1 - z0);
       if (!inPoly(x, z, p.outer) || p.holes.some(h => inPoly(x, z, h)) || !clear(x, z) || (resid && !roomy(x, z))) continue;
-      trees.push([x, z, resid ? 0.6 + Math.random() * 0.5 : 0.7 + Math.random() * 0.7, (p.kind === 'forest' ? 0.45 : resid ? 0.15 : 0) > Math.random() ? 1 : 0]);
-    }
-  }
-  {
-    const crownG = crownGeometry();
-    const coneG = new THREE.ConeGeometry(2.0, 5.5, 9).translate(0, 4.6, 0), cone2 = new THREE.ConeGeometry(1.4, 3.6, 9).translate(0, 6.6, 0);
-    const trunkG = new THREE.CylinderGeometry(0.14, 0.24, 3.2, 7).translate(0, 1.6, 0);
-    for (const g of [coneG, cone2]) g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3)); // (the leaves take vertex colours: the crown's shade)
-    const leaf = wear(new THREE.MeshStandardMaterial({ map: noise, roughness: 0.85, vertexColors: true }), 'tree'), bark = new THREE.MeshStandardMaterial({ color: 0x5a4330, roughness: 0.95 });
-    const tiles = new Map(); for (const t of trees) { const k = gkey(Math.floor(t[0] / TILE), Math.floor(t[1] / TILE)); let l = tiles.get(k); if (!l) tiles.set(k, l = []); l.push(t); }
-    for (const trees of tiles.values()) { // one set of meshes per TILE, so trees out of view and out of the shadow box are skipped
-    const nR = trees.filter(t => !t[3]).length, nC = trees.length - nR;
-    const T = new THREE.InstancedMesh(trunkG, bark, Math.max(1, trees.length)), R = new THREE.InstancedMesh(crownG, leaf, Math.max(1, nR)), C1 = new THREE.InstancedMesh(coneG, leaf, Math.max(1, nC)), C2 = new THREE.InstancedMesh(cone2, leaf, Math.max(1, nC));
-    const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), S = V(1, 1, 1), c = new THREE.Color(); let r = 0, k = 0;
-    trees.forEach((t, i) => {
-      Q.setFromAxisAngle(V(0, 1, 0), Math.random() * 6.28); S.set(t[2], t[2] * (0.9 + Math.random() * 0.3), t[2]); M.compose(V(t[0], height(t[0],t[1]), t[1]), Q, S); T.setMatrixAt(i, M);
-      c.setHSL(0.22 + Math.random() * 0.08, 0.35 + Math.random() * 0.2, 0.22 + Math.random() * 0.1);
-      if (t[3]) { c.offsetHSL(0.04, 0, -0.06); C1.setMatrixAt(k, M); C2.setMatrixAt(k, M); C1.setColorAt(k, c); C2.setColorAt(k, c); k++; } else { R.setMatrixAt(r, M); R.setColorAt(r, c); r++; }
-    });
-    T.count = trees.length; R.count = nR; C1.count = C2.count = nC;
-    for (const m of [T, R, C1, C2]) { m.castShadow = true; m.receiveShadow = true; m.computeBoundingSphere(); scene.add(m); }
+      trees.push([x, z, resid ? 0.6 + rand() * 0.5 : 0.7 + rand() * 0.7, p.t.leaf_type === 'needleleaved' ? 1 : p.t.leaf_type === 'broadleaved' ? 0 : Number(rand() < (p.kind === 'forest' ? 0.45 : resid ? 0.15 : 0))]);
     }
   }
   return trees;

@@ -15,3 +15,5 @@ in `building-fronts.js`). All are from [Poly Haven](https://polyhaven.com) and r
 | `tarred_gravel.jpg` | [tarred_gravel](https://polyhaven.com/a/tarred_gravel) | 2.2 m |
 
 The real-map sky uses a masked cloud layer derived from [Kloofendal 48d Partly Cloudy](https://polyhaven.com/a/kloofendal_48d_partly_cloudy), CC0. The panorama's landscape and sun have been removed so the game's terrain, horizon and solar lighting control the view.
+
+The real-map broadleaf sprays and bark use cropped colour and opacity textures from [Tree Small 02](https://polyhaven.com/a/tree_small_02). The fir sprays use [Fir Tree 01](https://polyhaven.com/a/fir_tree_01). Both sources are CC0. The two distant canopy atlases are rendered from the game's branch geometry using those textures.
