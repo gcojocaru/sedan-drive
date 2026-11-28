@@ -150,4 +150,4 @@ Originally made in Claude Design; moved here to keep developing it as code.
 
 ### Russian Hill graphics prototype
 
-On the real-map picker, **Russian Hill prototype** opens a drivable study of Lombard and Larkin. **Midday** and **Wet dusk** start at the same position. Esc opens the usual weather and time controls. The preview includes a local map and elevation snapshot, photographed asphalt, and a detailed southwest curb and residential frontage. [Prototype data and asset credits](prototype/README.md).
+On the real-map picker, **Russian Hill prototype** opens a drivable study of Lombard and Larkin. **Midday** and **Wet dusk** start at the same position. **Park side** starts uphill beside the roadside trees. Esc opens the usual weather and time controls. The preview includes a local map and elevation snapshot, photographed asphalt, and a detailed southwest curb and residential frontage. [Prototype data and asset credits](prototype/README.md).
