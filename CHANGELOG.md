@@ -3,6 +3,12 @@
 What changed in each release of the game. Every pull request bumps the version in `package.json` (minor for features,
 patch for fixes) and adds its entry at the top. Versions before 0.4.0 are in the git history.
 
+## 0.12.0 — 2026-11-28
+
+- **The way to the stop:** during a delivery the minimap draws the shortest way there by road, and arrows on the road
+  show it for the next 100 m (amber on the way to collect, teal on the way to deliver). It keeps to one-way streets and
+  only turns round at a dead end. Take another way and it works out a new one from where you are.
+
 ## 0.11.2 — 2026-11-28
 
 - **Faster maps for everyone:** the game downloads places through its own caching proxy again. Once anyone has driven a

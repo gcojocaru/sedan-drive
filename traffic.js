@@ -222,6 +222,60 @@ function turn(E, k, F, kF) {
   return p;
 }
 
+// The point of lane piece L ({ pts, cum }, also a route) nearest (px, pz): how far it is, how far along L, and L's direction there
+export function nearestOn(L, px, pz) {
+  let best = { d: Infinity, along: 0, u: [1, 0] };
+  for (let i = 1; i < L.pts.length; i++) {
+    const [ax, az] = L.pts[i - 1], dx = L.pts[i][0] - ax, dz = L.pts[i][1] - az, l2 = dx * dx + dz * dz; if (!l2) continue;
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / l2)), d = Math.hypot(ax + t * dx - px, az + t * dz - pz);
+    if (d < best.d) { const l = Math.sqrt(l2); best = { d, along: L.cum[i - 1] + t * l, u: [dx / l, dz / l] }; }
+  }
+  return best;
+}
+
+// The way by road from a car at (x, z) facing h (heading as in drive-core.js: 0 = +x) to a stop at (tx, tz): along the
+// kerbside lanes the way traffic drives them, through the junction curves, with no U-turn but at a dead end and never
+// out of the area (Dijkstra over the edges). Facing the wrong way, turning round counts as `turnRound` m extra.
+// → { pts: [[x, z], …] from the car to the stop, cum (m along it at each point), len (m) }, or null when no lane passes
+// within `reach` m of either end.
+export function routeTo(graph, x, z, h, tx, tz, { reach = 15, turnRound = 60 } = {}) {
+  const { edges, half } = graph, lane = E => E.lanes[0];
+  const inside = E => E.lanes.length > 0 && (E.inArea ??= lane(E).pts.every(p => Math.abs(p[0]) < half && Math.abs(p[1]) < half));
+  const near = (px, pz) => edges.filter(inside).map(E => ({ E, ...nearestOn(lane(E), px, pz) })).filter(c => c.d < reach);
+  const starts = near(x, z), goals = new Map(near(tx, tz).map(c => [c.E, c.along]));
+  if (!starts.length || !goals.size) return null;
+  const onward = E => { const all = E.to.outs.filter(F => F !== E.twin && inside(F)); return all.length ? all : E.twin && inside(E.twin) ? [E.twin] : []; };
+  const gap = (E, F) => 1.2 * Math.hypot(lane(F).pts[0][0] - lane(E).pts.at(-1)[0], lane(F).pts[0][1] - lane(E).pts.at(-1)[1]);
+  const best = new Map(), by = new Map(), heap = []; // best: cost to reach an edge's start; by: the edge before it, or the start
+  const push = e => { heap.push(e); for (let i = heap.length - 1; i > 0;) { const p = (i - 1) >> 1; if (heap[p].c <= heap[i].c) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; for (let i = 0; ;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l].c < heap[m].c) m = l; if (r < heap.length && heap[r].c < heap[m].c) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  const enter = (F, c, from) => { if (c < (best.get(F) ?? Infinity)) { best.set(F, c); by.set(F, from); push({ c, E: F }); } };
+  for (const s of starts) { // from the car: along its edge (the stop may be ahead on it), then on from the edge's end
+    const extra = s.u[0] * Math.cos(h) - s.u[1] * Math.sin(h) < 0 ? turnRound : 0, ahead = goals.get(s.E);
+    if (ahead >= s.along) push({ c: ahead - s.along + extra, E: s.E, done: { start: s, direct: true } });
+    for (const F of onward(s.E)) enter(F, lane(s.E).len - s.along + extra + gap(s.E, F), { start: s });
+  }
+  let end = null;
+  while (heap.length && !end) {
+    const e = pop();
+    if (e.done) { end = e; break; }
+    if (e.c > best.get(e.E)) continue;
+    if (goals.has(e.E)) push({ c: e.c + goals.get(e.E), E: e.E, done: by.get(e.E) });
+    for (const F of onward(e.E)) enter(F, e.c + lane(e.E).len + gap(e.E, F), { E: e.E });
+  }
+  if (!end) return null;
+  const chain = [end.E]; let step = end.done; // the edges in order, walked back from the stop to the car's edge
+  if (!step.direct) { while (step.E) { chain.unshift(step.E); step = by.get(step.E); } chain.unshift(step.start.E); }
+  const pts = [], add = p => { const q = pts.at(-1); if (!q || Math.hypot(p[0] - q[0], p[1] - q[1]) > 0.05) pts.push(p); };
+  chain.forEach((E, i) => {
+    const L = lane(E), a = i ? 0 : step.start.along, b = i === chain.length - 1 ? goals.get(E) : L.len;
+    if (i) for (const p of turn(chain[i - 1], 0, E, 0).pts) add(p);
+    if (b - a > 0.1) for (const p of trimLine(L.pts, a, L.len - b)) add(p);
+  });
+  const cum = cumLen(pts);
+  return pts.length > 1 ? { pts, cum, len: cum.at(-1) } : null;
+}
+
 // Do two car bodies [x, z, ux, uz] (facing ux, uz) touch? Separating axes, with a little room to spare.
 function touch(a, b, hl = 2.3, hw = 0.95) {
   const dx = b[0] - a[0], dz = b[1] - a[1];

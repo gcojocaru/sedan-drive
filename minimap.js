@@ -65,15 +65,20 @@ export function createMinimap(canvas, base, half, geometry) {
   const ctx = canvas.getContext('2d');
   const size = 180; // drawing units, independent of the display's CSS size
   ctx.scale(canvas.width / size, canvas.height / size);
-  let lastX, lastZ, lastHeading, lastTarget;
-  // target: the delivery stop ({ x, z }) or null; others: other cars ({ x, z }), drawn as dots
-  return (x, z, heading, target = null, others = []) => {
-    if (x === lastX && z === lastZ && heading === lastHeading && target === lastTarget && !others.length) return;
-    lastX = x; lastZ = z; lastHeading = heading; lastTarget = target;
+  let lastX, lastZ, lastHeading, lastTarget, lastRoute;
+  // target: the delivery stop ({ x, z }) or null; others: other cars ({ x, z }), drawn as dots; route: the way to the
+  // stop ([[x, z], …], delivery-hud.js), drawn as a line
+  return (x, z, heading, target = null, others = [], route = null) => {
+    if (x === lastX && z === lastZ && heading === lastHeading && target === lastTarget && route === lastRoute && !others.length) return;
+    lastX = x; lastZ = z; lastHeading = heading; lastTarget = target; lastRoute = route;
     const { left, top, span, rotation } = minimapView(x, z, heading, half);
     ctx.fillStyle = '#151d21';
     ctx.fillRect(0, 0, size, size);
     ctx.drawImage(base, left, top, span, span, 0, 0, size, size);
+    if (route?.length > 1) { // the way to the stop: a teal line on a dark edge
+      ctx.beginPath(); trace(ctx, route.map(([px, pz]) => minimapPoint(px, pz, { left, top, span }, half, size)));
+      ctx.lineCap = ctx.lineJoin = 'round'; ctx.strokeStyle = '#102d2c'; ctx.lineWidth = 6; ctx.stroke(); ctx.strokeStyle = '#68e6d3'; ctx.lineWidth = 3.5; ctx.stroke();
+    }
     ctx.fillStyle = '#dfe7e4';
     ctx.strokeStyle = '#172026';
     ctx.lineWidth = 1;

@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { createDelivery, deliveryNetwork, money, minutes, STOP_RADIUS, FINE, KNOCK_FINE } from './delivery.js';
+import { routeTo, nearestOn } from './traffic.js';
+import { pointAt, trimLine } from './geom.js';
 
 
 // Wire up one area's job. The road network is sampled on the first job request. paid(receipt) banks a delivery;
@@ -7,8 +9,30 @@ import { createDelivery, deliveryNetwork, money, minutes, STOP_RADIUS, FINE, KNO
 const cap = s => s[0].toUpperCase() + s.slice(1);
 const away = (t, x, z) => Math.ceil(Math.hypot(t.x-x, t.z-z)) + ' m ' + ['N','NE','E','SE','S','SW','W','NW'][(Math.round(Math.atan2(t.x-x, z-t.z)/(Math.PI/4))+8)%8];
 const AMBER = 0xffbd66, TEAL = 0x68e6d3; // the stop's colour: pickup, drop-off
+// The way to the stop (traffic.js routeTo) is planned when the stop changes and again when the car strays 18 m off it;
+// `route` is what's left of it ahead of the car (for the minimap), and arrows lie on the road along the next 100 m.
 export function deliveryHud(scene, graph, occupied, button, stage, detail, flash, paid = () => {}, level = () => 0, height = () => 0) {
   let job, lastTarget, clock = 0, lit = false; // clock: seconds of driving; lit: night (the beam may glow brighter)
+  let way = null, along = 0, ahead = null, heading = 0, recheck = 0; // way: the route; along: how far the car is along it
+  const ARROWS = 10, chevron = new THREE.Shape([[0.75, 0], [-0.15, 0.95], [-0.7, 0.95], [0.2, 0], [-0.7, -0.95], [-0.15, -0.95]].map(([x, y]) => new THREE.Vector2(x, y)));
+  const arrows = new THREE.InstancedMesh(new THREE.ShapeGeometry(chevron).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.8, depthWrite: false }), ARROWS);
+  arrows.name = 'delivery_route'; arrows.count = 0; arrows.frustumCulled = false; arrows.renderOrder = 2; scene.add(arrows);
+  const place = new THREE.Object3D();
+  function plan(x, z) { const t = job?.target; way = t ? routeTo(graph, x, z, heading, t.x, t.z) : null; along = 0; recheck = 1; }
+  function follow(x, z, dt) { // keep up with the car along the route, plan again once it has left it, and lay the arrows
+    if (!way) { arrows.count = 0; ahead = null; return; }
+    const p = nearestOn(way, x, z);
+    if (p.d > 18 && (recheck -= dt) <= 0) { plan(x, z); if (!way) return follow(x, z, 0); }
+    else if (p.d <= 18) { along = p.along; recheck = 1; }
+    ahead = along < way.len - 1 ? trimLine(way.pts, along, 0) : null;
+    let n = 0;
+    for (let d = along + 9; n < ARROWS && d < Math.min(along + 105, way.len - 4); d += 10, n++) {
+      const [px, pz, ux, uz] = pointAt(way.pts, way.cum, d);
+      place.position.set(px, height(px, pz) + 0.12, pz); place.rotation.set(0, Math.atan2(-uz, ux), 0); place.updateMatrix();
+      arrows.setMatrixAt(n, place.matrix);
+    }
+    arrows.count = n; arrows.instanceMatrix.needsUpdate = true;
+  }
   const marker = new THREE.Group();
   const ring = new THREE.Mesh(new THREE.RingGeometry(STOP_RADIUS-0.45, STOP_RADIUS, 64),
     new THREE.MeshBasicMaterial({color:0x68e6d3, transparent:true, opacity:0.85, depthWrite:false}));
@@ -38,7 +62,7 @@ export function deliveryHud(scene, graph, occupied, button, stage, detail, flash
   function refresh(x,z) {
     const target = job?.target;
     if (target !== lastTarget) {
-      lastTarget = target;
+      lastTarget = target; plan(x, z);
       marker.visible = !!target;
       stage.parentElement.hidden = !target;
       button.textContent = target ? 'Cancel delivery' : 'Start delivery';
@@ -51,7 +75,7 @@ export function deliveryHud(scene, graph, occupied, button, stage, detail, flash
         }
         points.needsUpdate = true;
         ring.geometry.computeBoundingSphere();
-        for (const m of [ring, beam]) m.material.color.set(job.phase === 'pickup' ? AMBER : TEAL);
+        for (const m of [ring, beam, arrows]) m.material.color.set(job.phase === 'pickup' ? AMBER : TEAL);
         const { cargo: C, parcels: n, delivered } = job.job;
         stage.textContent = (job.phase === 'pickup' ? 'Pick up ' + (n > 1 ? n + ' ' + C.many : C.one) : n > 1 ? 'Drop-off ' + (delivered + 1) + ' of ' + n : 'Deliver ' + C.one) + (target.name ? ' · '+target.name : '');
       }
@@ -70,24 +94,26 @@ export function deliveryHud(scene, graph, occupied, button, stage, detail, flash
   }
   return {
     get target() { return job?.target; },
+    // the rest of the way to the stop, [[x, z], …] from the car (null without a route)
+    get route() { return ahead; },
     // the cargo aboard (delivery.js CARGO: what it does to the car), or null
     get cargo() { return job?.load ? job.job.cargo : null; },
-    toggle(x,z) {
-      job ??= createDelivery(deliveryNetwork(graph,occupied));
+    toggle(x,z,h = heading) {
+      heading = h; job ??= createDelivery(deliveryNetwork(graph,occupied));
       if (job.target) { job.cancel(); flash('Delivery cancelled'); }
       else if (!job.start(x,z,level())) flash('No local delivery available here');
       else { const { cargo: C, parcels: n } = job.job; flash('New job · pick up ' + (n > 1 ? n + ' ' + C.many + ' for ' + n + ' drop-offs' : 'a ' + C.one) + ' ' + away(job.target, x, z) + (C.tip ? ' · ' + C.tip : ''), 'good'); }
-      refresh(x,z);
+      refresh(x,z); follow(x, z, 0);
     },
-    // every frame of driving, dt seconds long (night: it's dark)
-    update(x,z,speed,dt = 0,night = false) {
-      clock += dt; lit = night;
-      if (!job?.target) return;
+    // every frame of driving, dt seconds long (night: it's dark; h: the car's heading, for the route)
+    update(x,z,speed,dt = 0,night = false,h = heading) {
+      clock += dt; lit = night; heading = h;
+      if (!job?.target) { follow(x, z, dt); return; }
       const { cargo: C, parcels: n, delivered } = job.job, result = job.arrive(x,z,speed,clock); // (the job as it was: gone once delivered)
       if (result === 'collected') flash((n > 1 ? n + ' ' + C.many + ' aboard · ' + minutes(job.load.allowed) + ' for the round' : cap(C.one) + ' collected · ' + minutes(job.load.allowed) + ' to deliver it') + (C.tip ? ' · ' + C.tip : ''), 'good');
       if (result === 'dropped') flash(cap(C.one) + ' ' + (delivered + 1) + ' of ' + n + ' delivered · ' + (n - delivered - 1) + ' to go', 'good');
       if (result === 'delivered') paid(job.receipt); // (the page shows the results card; refresh hides the marker and the status box)
-      refresh(x,z);
+      refresh(x,z); follow(x, z, dt);
     },
     // a crash at `speed` m/s, running a red light and knocking into someone: they count while the parcel is aboard
     // (knocked() says whether it did)
