@@ -61,9 +61,9 @@ $('retry').onclick = () => location.reload();
 $('pickAgain').onclick = backToMap;
 
 const hm = location.hash.match(/^#(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)(?:\|(.*))?$/);
-const cornerPreview = /^#russian-hill(?:-rain|-park)?$/.test(location.hash);
+const cornerPreview = /^#russian-hill(?:-rain|-park|-block(?:-rain)?)?$/.test(location.hash);
 if (cornerPreview) {
-  import('./russian-hill.js').then(corner => startGame(...corner.origin, 'Lombard & Larkin, San Francisco', corner))
+  import('./russian-hill.js').then(corner => startGame(...corner.origin, location.hash.startsWith('#russian-hill-block') ? 'Russian Hill, San Francisco' : 'Lombard & Larkin, San Francisco', corner))
     .catch(error => showLoadError(error.message));
 } else if (hm) startGame(snap(+hm[1]), snap(+hm[2]), hm[3] ? decodeURIComponent(hm[3]) : '');
 else showPicker();
@@ -204,7 +204,7 @@ async function startGame(lat0, lon0, placeName, corner) {
   const [terrain] = await Promise.all([terrainRequest, cloudReady]);
   const sky = createSky(renderer, scene, lat0, Q, undefined, terrain.height), { TIMES, NIGHT } = sky;
 
-  const { updateTrees, driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, reflectTraffic, glowTex, posts, parkedPaint, lampLight } = await buildWorld(data.elements, lat0, lon0, scene, say, terrain, Q, corner?.finishCorner);
+  const { updateTrees, driveHeight, curbBlock, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, reflectTraffic, glowTex, posts, parkedPaint, lampLight } = await buildWorld(data.elements, lat0, lon0, scene, say, terrain, Q, corner?.finishCorner);
 
   // ---- car ----
   await say('Placing the car…');
@@ -221,7 +221,7 @@ async function startGame(lat0, lon0, placeName, corner) {
   const trafficView = trafficCars(scene, 100, glowTex, driveHeight), me = { x: 0, z: 0, h: 0, v: 0 }; // me: the player, as traffic sees it
   // shortcut: the VAZ's factory paint is a texture, so it isn't avoided; sample its colour if traffic copies it
   const avoidMine = () => { const c = CAR.paint && !CAR.paint.map ? CAR.paint.color : null; trafficView.avoid(c); parkedPaint(c); }; avoidMine(); // no other car wears the player's paint
-  const walks = walkGraph(roads, paths, layout.junctions, { armBack: graph.armBack, roadAt, crossings: crossPts }); // sidewalks, crossings, footways
+  const walks = walkGraph(roads, paths, layout.junctions, { armBack: graph.armBack, roadAt, crossings: crossPts, curbBlock }); // sidewalks, crossings, footways
   const people = createPedestrians(walks, { max: Q.people, half: HALF, seen }), figures = pedestrianFigures(scene, Q.people, driveHeight);
   const ear = { x: 0, z: 0, fx: 1, fz: 0, vx: 0, vz: 0, wet: 0, snow: 0, me }, look = V(0, 0, 0); // the camera, listening to the traffic
   const SOLID = { bld: 'wall', car: 'car', traffic: 'car', post: 'post' }; // what blocked() hits → its crash sound
@@ -248,7 +248,7 @@ async function startGame(lat0, lon0, placeName, corner) {
     cam.reset(st);
   }
   const corners = [[2.2, 0.86], [2.2, -0.86], [0, 0.88], [0, -0.88], [-2.18, 0.86], [-2.18, -0.86]];
-  const spawn = entry ?? (location.hash === '#russian-hill-park' ? corner?.parkApproach : corner?.approach);
+  const spawn = entry ?? (location.hash.startsWith('#russian-hill-block') ? curbBlock?.approach : location.hash === '#russian-hill-park' ? corner?.parkApproach : corner?.approach);
   const start = laneSpawn(layout.spawnSegments, spawn?.x ?? 0, spawn?.z ?? 0, spawn?.h, HALF, furnitureHit);
   if (spawn && !blocked(spawn.x, spawn.z, spawn.h)) place(spawn.x, spawn.z, spawn.h);
   else if (start) place(start.x, start.z, start.h);
@@ -280,7 +280,7 @@ async function startGame(lat0, lon0, placeName, corner) {
 
   // ---- time of day and weather ----
   // 'live' follows the clock and the weather at this place right now; otherwise an index into TIMES / WEATHERS.
-  const rainyPreview = location.hash === '#russian-hill-rain';
+  const rainyPreview = corner && location.hash.endsWith('-rain');
   let live = await liveReq, tSel = entry?.time ?? (corner ? (rainyPreview ? 4 : 1) : 'live'), dayIdx = entry?.day ?? tSel, wSel = entry?.weather ?? (corner ? (rainyPreview ? 4 : 1) : 'live'), lowLight = false, dim = false, grip = 1;
   const clock = h => { const m = Math.round((((h % 24) + 24) % 24) * 60); return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
   const offset = () => live ? live.offset : Math.round(lon0 / 15) * 3600; // the place's UTC offset (s), guessed from its longitude without live data

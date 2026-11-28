@@ -3,6 +3,10 @@
 What changed in each release of the game. Every pull request bumps the version in `package.json` (minor for features,
 patch for fixes) and adds its entry at the top. Versions before 0.4.0 are in the git history.
 
+## 0.12.0 — 2026-11-28
+
+- One mapped block can now have raised sidewalks, concrete gutters and curb cuts at crossings. Sidewalks follow the building fronts, and tight residential blocks can reclaim space from an estimated road width. Drive the Russell Street block in Russian Hill at midday or wet dusk from the map picker.
+
 ## 0.11.0 — 2026-11-28
 
 - **Wet nights that shine:** on wet roads at dusk, at night and in murky weather, the cars around you now leave their

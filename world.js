@@ -5,16 +5,18 @@
 import * as THREE from 'three';
 import { seeded, same, joinRings, inPoly, polyArea, bbox, newBuf, quad, disc, ribbon, offsetLine, cumLen, densify, runs, wallStrip, fenceStrip, seaPolys, gkey, segDist, splitByTile } from './geom.js';
 import { fillPoly, makeTex, speckle, num, tagColor, matColor, WALL_MAT, weatherLook } from './world-kit.js';
-import { buildBuildings } from './buildings.js';
+import { buildBuildings, buildingFootprints } from './buildings.js';
 import { landmarkName, planSigns } from './sign-layout.js';
 import { furnitureKind, planFurniture } from './street-furniture.js';
 import { addFurniture } from './furniture-mesh.js';
 import { addSignMeshes } from './sign-mesh.js';
-import { countryCode, drivingSide, prepareRoads, mappedStops } from './road-layout.js';
+import { countryCode, drivingSide, mappedStops } from './road-layout.js';
 import { addBridgeStructures } from './bridge-mesh.js';
 import { levelWaters } from './water-levels.js';
 import { bridgeDecks } from './bridge-decks.js';
 import { drapeSurface } from './terrain-surface.js';
+import { prepareCurbBlock, curbRiseAt } from './curb-block.js';
+import { addCurbBlock } from './curb-mesh.js';
 import { renderRoadsideTrees } from './roadside-trees.js';
 import { HALF } from './osm-query.js';
 
@@ -116,7 +118,7 @@ const isBridge = t => t.bridge && t.bridge !== 'no';
 export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { lampLights = 0, facadeDepth = false, treeDetail = 68 } = {}, finishCorner) {
   const height = terrain?.height ?? (() => 0);
   await say('Building the streets…');
-  const { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts, landmarks, furniture, addressPoints } = parseElements(elements, lat0, lon0);
+  const { lines, polys, treePts, crossPts, curbCrossings, stopNodes, entranceNodes, signalPts, landmarks, furniture, addressPoints } = parseElements(elements, lat0, lon0);
   const wx = weatherLook(), { wear } = wx;
   const G = groundLayers(scene, wear, terrain), { LAYERS, BUF } = G;
   if (terrain?.active) levelWaters(polys,height);
@@ -126,7 +128,8 @@ export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { la
       fillPoly(G.levelWater, p.outer, p.holes, p.waterLevel + LAYERS.water[1]);
     } else fillPoly(BUF[p.kind], p.outer, p.holes, LAYERS[p.kind][1]);
   }
-  const { roads, paths, rivers, rows, rails, barriers, seas, layout } = layRoads(lines, elements, stopNodes, G);
+  const footprints = buildingFootprints(polys);
+  const { roads, paths, rivers, rows, rails, barriers, seas, layout, block } = layRoads(lines, elements, stopNodes, G, footprints.ground, curbCrossings);
   const waters = polys.filter(p => p.kind === 'water').concat(seas.map(p => ({...p, waterLevel: terrain?.seaLevel ?? 0})));
   const riverSegments = rivers.flatMap(r => r.g.slice(1).map(([x,z],i) => {
     const [ax,az] = r.g[i], dx=x-ax, dz=z-az;
@@ -154,7 +157,9 @@ export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { la
   }
   const decks = bridgeDecks([...roads,...paths], height, waterAt);
   const roadSurface = decks.active ? decks : terrain;
-  const driveHeight = roadSurface?.height ?? height;
+  const surfaceHeight = roadSurface?.height ?? height;
+  if (block) addCurbBlock(scene, block, surfaceHeight, wear);
+  const driveHeight = block ? (x,z) => surfaceHeight(x,z) + curbRiseAt(block,x,z) : surfaceHeight;
   const land = decks.active ? decks.banks : terrain;
   const landHeight = land?.height ?? height;
   const base = newBuf();
@@ -164,7 +169,7 @@ export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { la
     quad(base,[a,c],[b,c],[b,d],[a,d],-0.03);
   }
   scene.add(flatMesh(base, wear(new THREE.MeshStandardMaterial({map:G.noise,color:'#8a9468',roughness:1}), 'ground'), 5, land));
-  addBridgeStructures(scene,decks.crossings,driveHeight);
+  addBridgeStructures(scene,decks.crossings,surfaceHeight);
   const look = roadLookup(roads, paths, rails, layout), { roadAt } = look;
   paintCrossings(paths, crossPts, look, G);
   layRailways(rails, look, G);
@@ -184,7 +189,7 @@ export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { la
   const areaAt = areaLookup(polys, seas);
   const nB = polys.filter(p => p.kind === 'building').length;
   await say('Raising ' + nB.toLocaleString() + ' buildings…');
-  const { blds, inBuilding, frontMat, wallMat } = buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear, landHeight, countryCode(elements), facadeDepth);
+  const { blds, inBuilding, frontMat, wallMat } = buildBuildings(footprints, entranceNodes, roadAt, mkMesh, wear, landHeight, countryCode(elements), facadeDepth);
   await say('Planting trees…');
   const trees = plantTrees(scene, treePts, rows, polys, look, areaAt, inBuilding, seeded(Math.round(lat0 * 1e4) * 701 + Math.round(lon0 * 1e4)));
   const updateTrees = renderRoadsideTrees(scene, trees, landHeight, wear, treeDetail);
@@ -196,7 +201,7 @@ export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { la
   const signs = planSigns(layout.junctions, landmarks, roadAt, signFree);
   addSignMeshes(scene, signs, landHeight);
   const lightFront = await finishCorner?.({ scene, road: LAYERS.road[0], markings: LAYERS.marks[0], wear, height: landHeight, buildings: polys });
-  return { updateTrees, driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps: on => { setLamps(on); lightFront?.(on); }, setGround: wx.set, reflectLamps: wx.follow, reflectTraffic: wx.moving, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs), lampLight };
+  return { updateTrees, driveHeight, curbBlock: block, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps: on => { setLamps(on); lightFront?.(on); }, setGround: wx.set, reflectLamps: wx.follow, reflectTraffic: wx.moving, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs), lampLight };
 }
 
 // what the chase camera keeps out of, as geom.js pointGrid points [x, z, r, y0, y1]: tree trunks (not the crowns, which
@@ -211,7 +216,7 @@ function camPosts(trees, lamps, signs) {
 function parseElements(elements, lat0, lon0) {
   const cosL = Math.cos(lat0 * Math.PI / 180), KX = 111320 * cosL, KZ = 110574;
   const P = (lat, lon) => [(lon - lon0) * KX, -(lat - lat0) * KZ];
-  const lines = [], polys = [], treePts = [], crossPts = [], stopNodes = [], signalPts = [];
+  const lines = [], polys = [], treePts = [], crossPts = [], curbCrossings = [], stopNodes = [], signalPts = [];
   const entranceNodes = new Set(), landmarks = [], furniture = [], addressPoints = [];
   function area(kind, outer, holes, t, id, label) {
     if (kind) polys.push({ kind, outer, holes, t, id });
@@ -231,7 +236,10 @@ function parseElements(elements, lat0, lon0) {
       }
       if (tags.highway === 'stop') stopNodes.push({ id: el.id, p, tags });
       else if (tags.highway === 'traffic_signals') signalPts.push(p);
-      else if (tags.highway === 'crossing' && tags['crossing:markings'] !== 'no') crossPts.push(p);
+      else if (tags.highway === 'crossing') {
+        if (tags.crossing !== 'no') curbCrossings.push(p);
+        if (tags['crossing:markings'] !== 'no') crossPts.push(p);
+      }
       else if (tags.natural === 'tree') treePts.push({ p, conifer: tags.leaf_type === 'needleleaved' });
       continue;
     }
@@ -253,7 +261,7 @@ function parseElements(elements, lat0, lon0) {
       for (const o of joinRings(outs)) area(kind, o, I.filter(h => inPoly(h[0][0], h[0][1], o)), t, el.id, label);
     }
   }
-  return { lines, polys, treePts, crossPts, stopNodes, entranceNodes, signalPts, landmarks, furniture, addressPoints };
+  return { lines, polys, treePts, crossPts, curbCrossings, stopNodes, entranceNodes, signalPts, landmarks, furniture, addressPoints };
 }
 
 // Textures, the flat ground layers (each with its own buffer, filled by the builders below) and the base ground plane.
@@ -297,7 +305,7 @@ function groundLayers(scene, wear, terrain) {
 
 // Sorts the lines into roads, paths, rivers, rails, barriers and coast; lays sea, rivers, paths, roads and junction
 // corners into the ground layers; paints lane markings and stop lines.
-function layRoads(lines, elements, stopNodes, { LAYERS, BUF, dashLine, levelWater, terrain }) {
+function layRoads(lines, elements, stopNodes, { LAYERS, BUF, dashLine, levelWater, terrain }, footprints, curbCrossings) {
   const roads = [], paths = [], rivers = [], rows = [], rails = [], barriers = [], coast = [];
   for (const { t, g, nodes } of lines) {
     if (t.railway && t.railway !== 'platform' && !(t.tunnel && t.tunnel !== 'no')) rails.push({ g, t, tram: t.railway === 'tram' });
@@ -322,7 +330,7 @@ function layRoads(lines, elements, stopNodes, { LAYERS, BUF, dashLine, levelWate
   }
   const seas = seaPolys(coast, HALF + 50, 3000);
   for (const s of seas) fillPoly(terrain?.active ? levelWater : BUF.water, s.outer, s.holes, LAYERS.water[1] + (terrain?.seaLevel || 0));
-  const layout = prepareRoads(roads, drivingSide(elements));
+  const { layout, block } = prepareCurbBlock(roads, drivingSide(elements), paths, curbCrossings, HALF, footprints);
   for (const {poly, sidewalk} of layout.corners) {
     fillPoly(BUF.road, poly, [], LAYERS.road[1]);
     if (sidewalk) fillPoly(BUF.sidewalk, sidewalk, [], LAYERS.sidewalk[1]);
@@ -341,7 +349,7 @@ function layRoads(lines, elements, stopNodes, { LAYERS, BUF, dashLine, levelWate
   for (const [a,b] of mappedStops(roads, layout.junctions, stopNodes)) {
     ribbon(BUF.marks, [a,b], 0.20, LAYERS.marks[1], false);
   }
-  return { roads, paths, rivers, rows, rails, barriers, seas, layout };
+  return { roads, paths, rivers, rows, rails, barriers, seas, layout, block };
 }
 
 // Grid of road/path segments: roadAt(x, z) gives the nearest street and drivable street and how far outside them (m).

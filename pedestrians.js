@@ -20,14 +20,38 @@ const toSegment = (x, z, a, b) => { // distance from (x, z) to segment ab, and h
   return [Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t), t];
 };
 
+// Clip the fitted pavement to the two junction crossings. Break the route
+// wherever even a single walker would overlap the wall or the curb.
+function sidewalkRuns(line, start, setback, sections) {
+  if (!sections) return [{pts:trimLine(line,start,setback), first:true, last:true}];
+  const points=[line[0], ...sections.map(q=>[q.x+q.nx*q.width/2,q.z+q.nz*q.width/2]), line.at(-1)];
+  const widths=[2*SIDEWALK,...sections.map(q=>q.width),2*SIDEWALK];
+  const stations=cumLen(points), end=stations.at(-1)-setback, runs=[];
+  let run=null;
+  for(let i=1;i<points.length;i++) {
+    const lo=Math.max(start,stations[i-1]), hi=Math.min(end,stations[i]);
+    if(hi<=lo) continue;
+    const width=Math.min(widths[i-1],widths[i]);
+    if(width<0.75) { run=null; continue; }
+    if(!run) {
+      run={pts:[pointAt(points,stations,lo).slice(0,2)], first:lo===start, last:false, maxOffset:Infinity};
+      runs.push(run);
+    }
+    run.pts.push(hi===stations[i]?points[i]:pointAt(points,stations,hi).slice(0,2));
+    run.maxOffset=Math.min(run.maxOffset,width/2-0.3);
+    run.last=hi===end;
+  }
+  return runs;
+}
+
 // The walk network: { nodes: [{ x, z, edges }], edges: [{ a, b, pts, cum, len, cross }] }; cross is set on an edge
 // over a carriageway: { road, at (the junction's vertex, or null mid-block), dir (the road's direction) }.
 // roads, paths: world.js's; junctions: prepareRoads().junctions; armBack(r, i, d): traffic.js laneGraph's; roadAt:
 // world.js's lookup (to find crossings over roads); crossings: mapped crossing points [x, z].
-export function walkGraph(roads, paths, junctions, { armBack = () => null, roadAt = null, crossings = [] } = {}) {
+export function walkGraph(roads, paths, junctions, { armBack = () => null, roadAt = null, crossings = [], curbBlock = null } = {}) {
   const nodes = [], edges = [], endsOf = new Map(), armsAt = new Map();
   const node = p => { const n = { id: nodes.length, x: p[0], z: p[1], edges: [] }; nodes.push(n); return n; };
-  const join = (a, b, pts, cross = null) => { const cum = cumLen(pts), e = { id: edges.length, a, b, pts, cum, len: cum.at(-1), cross }; edges.push(e); a.edges.push(e); b.edges.push(e); return e; };
+  const join = (a, b, pts, cross = null, maxOffset = Infinity) => { const cum = cumLen(pts), e = { id: edges.length, a, b, pts, cum, len: cum.at(-1), cross, maxOffset }; edges.push(e); a.edges.push(e); b.edges.push(e); return e; };
   for (const arms of junctions) for (const a of arms) { if (!armsAt.has(a.road)) armsAt.set(a.road, new Map()); const m = armsAt.get(a.road); m.set(a.i, (m.get(a.i) || []).concat([a])); }
   const back = a => (armBack(a.road, a.i, a.direction) ?? a.clear + 1) + CROSSWALK; // where arm a's crosswalk runs
   const end = (a, side, n) => { if (!endsOf.has(a)) endsOf.set(a, {}); endsOf.get(a)[side] = n; };
@@ -68,11 +92,16 @@ export function walkGraph(roads, paths, junctions, { armBack = () => null, roadA
       for (const side of [1, -1]) {
         const line = offsetLine(r.g.slice(i0, i1 + 1), side * (r.hw + SIDEWALK)), b0 = cut(a0, side), b1 = cut(a1, side);
         if (b0 + b1 > cumLen(line).at(-1) - 2) continue; // no room to walk between the two crosswalks
-        const parts = pieces(trimLine(line, b0, b1), (x, z) => onRoad(x, z, KERB));
-        for (const c of parts) if (!c.road && c.len > 2) {
-          const A = node(c.pts[0]), B = node(c.pts.at(-1));
-          join(A, B, c.pts);
-          if (a0 && c === parts[0]) end(a0, side, A); if (a1 && c === parts.at(-1)) end(a1, side, B);
+        const strip = curbBlock?.road === r && curbBlock.first === i0 && curbBlock.last === i1
+          ? curbBlock.strips.find(strip => strip.side === side) : null;
+        for (const run of sidewalkRuns(line,b0,b1,strip?.sections)) {
+          const parts = pieces(run.pts, (x, z) => onRoad(x, z, KERB));
+          for (const c of parts) if (!c.road && c.len > 2) {
+            const A = node(c.pts[0]), B = node(c.pts.at(-1));
+            join(A, B, c.pts, null, run.maxOffset);
+            if (a0 && run.first && c === parts[0]) end(a0, side, A);
+            if (a1 && run.last && c === parts.at(-1)) end(a1, side, B);
+          }
         }
       }
     }
@@ -175,11 +204,11 @@ function joinLooseEnds(nodes, edges, node, join, onRoad) {
     let prev = e.a, s0 = 0;
     for (const { s, n } of list) {
       let m = prev;
-      if (s - s0 > 0.3 && e.len - s > 0.3) { const pts = trimLine(e.pts, s0, e.len - s); m = node(pts.at(-1)); join(prev, m, pts, e.cross); prev = m; s0 = s; }
+      if (s - s0 > 0.3 && e.len - s > 0.3) { const pts = trimLine(e.pts, s0, e.len - s); m = node(pts.at(-1)); join(prev, m, pts, e.cross, e.maxOffset); prev = m; s0 = s; }
       else if (e.len - s <= 0.3) m = e.b;
       if (m !== n) join(n, m, [[n.x, n.z], [m.x, m.z]]);
     }
-    join(prev, e.b, trimLine(e.pts, s0, 0), e.cross);
+    join(prev, e.b, trimLine(e.pts, s0, 0), e.cross, e.maxOffset);
   }
 }
 
@@ -195,7 +224,8 @@ export function createPedestrians(walks, { rand = Math.random, max = Infinity, r
   function place(p) { // on the walkway, keeping to its right, plus any step aside; r: how far traffic keeps from them
     p.r = p.edge.cross && p.state !== 'kerb' ? 1.5 : 0.3; // (on a crossing, out of the whole lane)
     const e = p.edge, [x, z, ux, uz] = pointAt(e.pts, e.cum, p.s), tx = ux * p.dir, tz = uz * p.dir;
-    p.x = x - tz * p.off + p.dx; p.z = z + tx * p.off + p.dz;
+    const offset = Math.min(p.off, e.maxOffset ?? Infinity);
+    p.x = x - tz * offset + p.dx; p.z = z + tx * offset + p.dz;
     if (p.state !== 'stagger') p.h = Math.atan2(-tz, tx);
   }
   function add(e, s, dir) {

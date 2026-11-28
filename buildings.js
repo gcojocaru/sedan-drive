@@ -290,15 +290,25 @@ function mansard(WB, PB, r, k, s, pw, y0, y1, rc, wc, u0) {
   return top;
 }
 
-// polys: parsed OSM areas (buildings and building:parts are used); entranceNodes: 'x,z' keys of mapped entrances.
+export function buildingFootprints(polys) {
+  const bPolys = polys.filter(p => p.kind === 'building' || p.kind === 'part');
+  const { hidden, parentOutline } = findBuildingParts(bPolys);
+  const ground = bPolys.filter(b => !hidden.has(b) && buildingBase(b.t) === 0);
+  return { bPolys, hidden, parentOutline, ground };
+}
+
+function buildingBase(t) {
+  const type = t.building && t.building !== 'yes' ? t.building : t['building:part'];
+  return num(t.min_height) || num(t['building:min_level']) * 3.1 || (type === 'roof' ? 3 : 0);
+}
+
+// footprints: the result of buildingFootprints(polys); entranceNodes: 'x,z' keys of mapped entrances.
 // roadAt finds the street a wall faces; mkMesh(buffer, material, uv, castShadow) adds a mesh to the scene;
 // wear(material, kind) lets rain and snow onto a material (world-kit.js weatherLook); height(x, z): the ground;
 // country: the ISO 3166-1 code the map data names (road-layout.js countryCode), which picks the region's look;
 // depth: windows set back in the walls, with rooms behind them (facadeMaterial; quality.js facadeDepth).
-export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m => m, height = () => 0, country = '', depth = false) {
-  const bPolys = polys.filter(p => p.kind === 'building' || p.kind === 'part'), region = regionOf(country);
-  // outlines with building:part pieces inside are drawn as those parts only (OSM simple 3D buildings)
-  const {hidden, parentOutline} = findBuildingParts(bPolys);
+export function buildBuildings(footprints, entranceNodes, roadAt, mkMesh, wear = m => m, height = () => 0, country = '', depth = false) {
+  const { bPolys, hidden, parentOutline } = footprints, region = regionOf(country);
   const party = partyWalls(bPolys, parentOutline);
   // how mappers here tag roofs decides whether untagged houses get pitched or flat roofs
   let nFlat = 0, nPitch = 0; for (const b of bPolys) { const s = b.t['roof:shape']; if (s) s === 'flat' ? nFlat++ : nPitch++; }
@@ -384,7 +394,7 @@ export function buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear = m =>
     if (outer.length < 3) continue;
     const area = Math.abs(signedArea(outer)); if (area < 1) continue;
     const bp = t['building:part'], type = t.building && t.building !== 'yes' ? t.building : bp && bp !== 'yes' ? bp : b.kind === 'part' ? 'part' : 'yes';
-    const lv = num(t['building:levels']), H = num(t.height), minH = num(t.min_height) || num(t['building:min_level']) * 3.1 || (type === 'roof' ? 3 : 0);
+    const lv = num(t['building:levels']), H = num(t.height), minH = buildingBase(t);
     let shape = ROOF_SHAPE[t['roof:shape']] || 'auto', o = null, roofH = 0;
     const tagged = shape !== 'auto';
     const terraced = party(outer).some(Boolean);

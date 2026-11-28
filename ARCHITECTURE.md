@@ -114,7 +114,9 @@ root, one copy each. Page URLs don't change.
 | `sign-layout.js` | Choose sign positions at named junctions and near mapped landmarks | `geom`, `osm-query` |
 | `sign-mesh.js` | Draw street and landmark signs for the current area | `world-kit`, three |
 | `road-layout.js` | `prepareRoads(roads, side)` → lanes per road, junction arms and corners, spawn segments; `laneSpawn`, `mappedStops`, `drivingSide`, `countryCode`, `nodeKey` | nothing |
-| `buildings.js` | `buildBuildings(polys, entranceNodes, roadAt, mkMesh, wear, height, country, depth)` → `{ blds, inBuilding, frontMat, wallMat }`; building tag tables, `roofPlanes`, parapets and eaves, mansards and party walls, shopfronts, the facade material | `world-kit`, `geom`, `building-fronts`, three |
+| `curb-block.js` | Fit a mapped block between junctions to ground-level footprints and return the road layout, sidewalk profiles and preview pose | `road-layout`, `geom` |
+| `curb-mesh.js` | Draw the fitted curbs, sidewalk panels, gutters and tactile paving | `geom`, `world-kit`, three |
+| `buildings.js` | `buildingFootprints(polys)`, `buildBuildings(footprints, entranceNodes, roadAt, mkMesh, wear, height, country, depth)` → `{ blds, inBuilding, frontMat, wallMat }`; building tag tables, `roofPlanes`, parapets and eaves, mansards and party walls, shopfronts, the facade material | `world-kit`, `geom`, `building-fronts`, three |
 | `world-kit.js` | three.js and tag helpers shared by `world.js`, `buildings.js`, both drive pages, `traffic-cars` and `pedestrian-figures`: `fillPoly`/`eachTri`, `makeTex`, `speckle`, `num`, `tagColor`, `matColor`, `blobTex(inner, a)` (contact-shadow texture), `weatherLook()` → `{ wear, set, lamps, lit, follow, moving }` | `geom`, three |
 | `map-data.js` | `loadArea(lat, lon, status)`: IndexedDB cache → `area-fetch` (racing proxy and Overpass, the simplified map when slow); returns `{ data, fallback, err, full }` | `osm-query`, `area-fetch` |
 | `sedan-model.js` | `buildCar()` and the axle constants: the procedural car | three |
