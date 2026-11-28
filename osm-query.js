@@ -8,7 +8,7 @@ export const SNAP = 0.0005;     // start points snap to this grid (degrees, abou
 
 // The deployed caching proxy (see proxy/README.md), e.g. 'https://sedan-drive-osm.<your-subdomain>.workers.dev'.
 // Leave empty to download straight from the public Overpass servers.
-export const AREA_PROXY = '';
+export const AREA_PROXY = 'https://sedan-drive-osm.sedan-drive.workers.dev';
 
 export const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 

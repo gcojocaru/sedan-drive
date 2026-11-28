@@ -1,6 +1,6 @@
 {
   "name": "sedan-drive",
-  "version": "0.11.1",
+  "version": "0.11.2",
   "private": true,
   "type": "module",
   "description": "Procedural three.js sedan you can drive on a test track or through any real place built from OpenStreetMap.",
