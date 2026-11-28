@@ -26,7 +26,8 @@ import { resultCard } from './result-card.js';
 import { gamepad } from './gamepad.js';
 import { cloudReady } from './cloud-layer.js';
 import { createSky } from './sky.js';
-import { WEATHERS, weatherNow, solarHour, groundOf } from './weather.js';
+import { WEATHERS, weatherNow, groundOf } from './weather.js';
+import { nextChoice, hourIn, weatherIn, timeText, minuteTick } from './time-choice.js';
 import { laneGraph, createTraffic, ranRed, roadLights, LEVELS } from './traffic.js';
 import { trafficCars } from './traffic-cars.js';
 import { trafficLights } from './traffic-lights.js';
@@ -283,10 +284,7 @@ async function startGame(lat0, lon0, placeName, corner) {
   // 'live' follows the clock and the weather at this place right now; otherwise an index into TIMES / WEATHERS.
   const rainyPreview = location.hash === '#russian-hill-rain';
   let live = await liveReq, tSel = entry?.time ?? (corner ? (rainyPreview ? 4 : 1) : 'live'), dayIdx = entry?.day ?? tSel, wSel = entry?.weather ?? (corner ? (rainyPreview ? 4 : 1) : 'live'), lowLight = false, dim = false, grip = 1;
-  const clock = h => { const m = Math.round((((h % 24) + 24) % 24) * 60); return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
-  const offset = () => live ? live.offset : Math.round(lon0 / 15) * 3600; // the place's UTC offset (s), guessed from its longitude without live data
-  const hourOf = () => tSel === 'live' ? solarHour(Date.now(), lon0) : TIMES[tSel][1];
-  const weatherOf = () => wSel !== 'live' ? WEATHERS[wSel] : live || { kind: 'clear', label: 'Weather unavailable' };
+  const hourOf = () => hourIn(tSel, TIMES, lon0, Date.now()), weatherOf = () => weatherIn(wSel, WEATHERS, live); // (time-choice.js)
   const timeSel = $('timeSel'), wxSel = $('wxSel'), pick = v => v === 'live' ? v : +v;
   timeSel.append(new Option('Live time', 'live'), ...TIMES.map(([name], i) => new Option(name, i)));
   wxSel.append(new Option('Live weather', 'live'), ...WEATHERS.map((w, i) => new Option(w.label, i)));
@@ -304,9 +302,8 @@ async function startGame(lat0, lon0, placeName, corner) {
   gfxSel.value = String(qPick); gfxSel.onchange = () => { keep(LS_QUALITY, gfxSel.value === 'auto' ? 'auto' : +gfxSel.value); visitArea({ lat: lat0, lon: lon0, name: placeName, entry: pose() }); }; // (antialias is fixed when the renderer is made: reload here)
   peopleSel.onchange = () => { keep(LS_PEOPLE, peopleSel.value); people.setLevel(+peopleSel.value, st.pos.x, st.pos.z); };
   people.setLevel(+peopleSel.value, st.pos.x, st.pos.z);
-  function showTime(announce) { // local clock time, also for the presets (they are set in solar time)
-    const w = weatherOf(), real = wSel === 'live' && live, lying = !real ? '' : live.snowDepth >= 0.01 ? ', ' + Math.round(live.snowDepth * 100) + ' cm on the ground' : groundOf(w).wet > 0.3 && !['rain', 'storm', 'snow'].includes(w.kind) ? ', wet roads' : '';
-    const text = (tSel === 'live' ? '' : TIMES[tSel][0] + ' · ') + clock(hourOf() - lon0 / 15 + offset() / 3600) + ' · ' + w.label + (real ? ', ' + Math.round(live.temp) + '°C' : '') + lying;
+  function showTime(announce) {
+    const text = timeText({ tSel, wSel, times: TIMES, hour: hourOf(), lon: lon0, weather: weatherOf(), live });
     $('tod').textContent = text; if (announce) flash(text, '', 'time');
   }
   function applyTime(announce) {
@@ -327,11 +324,10 @@ async function startGame(lat0, lon0, placeName, corner) {
   applyTime();
   if (entry) { head = entry.headlights; setLights(); }
   let minutes = 0;
-  setInterval(() => { // live: the sun moves every 5 minutes, the weather is asked again every 15 (Open-Meteo updates every 15)
-    minutes++;
-    if (wSel === 'live' && minutes % 15 === 0) weatherNow(lat0, lon0, fetch).then(w => { live = w; applyTime(); }, () => { });
-    else if (tSel === 'live' && minutes % 5 === 0) applyTime();
-    else showTime();
+  setInterval(() => {
+    const tick = minuteTick(++minutes, tSel, wSel);
+    if (tick === 'weather') weatherNow(lat0, lon0, fetch).then(w => { live = w; applyTime(); }, () => { });
+    else if (tick === 'sun') applyTime(); else showTime();
   }, 60000);
   function blocked(x, z, h) {
     const c = Math.cos(h), s = Math.sin(h);
@@ -501,10 +497,9 @@ async function startGame(lat0, lon0, placeName, corner) {
     keys[e.code] = true; if (e.repeat) return;
     if (e.code === 'KeyJ') toggleDelivery();
     if (e.code === 'KeyH') { head = !head; setLights(); }
-    const next = (i, n) => i === 'live' ? 0 : i + 1 < n ? i + 1 : 'live'; // live, then each preset in turn
     if (e.code === 'KeyN') { tSel = tSel === NIGHT ? dayIdx : NIGHT; applyTime(true); }
-    if (e.code === 'KeyT') { tSel = next(tSel, TIMES.length); applyTime(true); }
-    if (e.code === 'KeyE') { wSel = next(wSel, WEATHERS.length); applyTime(true); }
+    if (e.code === 'KeyT') { tSel = nextChoice(tSel, TIMES.length); applyTime(true); }
+    if (e.code === 'KeyE') { wSel = nextChoice(wSel, WEATHERS.length); applyTime(true); }
     if (e.code === 'KeyC') camMode = 1 - camMode;
     if (e.code === 'KeyV') flash(sound.toggleMute() ? 'Driving sounds off' : 'Driving sounds on', '', 'sound');
     if (e.code === 'KeyQ') tune(e.shiftKey ? -1 : 1);

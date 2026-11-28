@@ -52,6 +52,7 @@ how each part works; this file says how the parts may fit together.
 | `traffic-cars.js` | — | The traffic cars on screen: instanced bodies, paint, brake lights and night glows |
 | `app-version.js` | — | Shared release label from the local package manifest |
 | `storage.js` | — | Browser storage that never throws (`stored`, `keep`), for all three pages |
+| `time-choice.js` | — | Time of day and weather choice on the real-map page: the T/E cycle, the hour and weather to show, the status line, the minute tick |
 | `delivery.js` | — | Parcel stops on connected, directed lanes, pickup/drop-off state, the clock, damage, fines and pay |
 | `delivery-hud.js` | — | Current job prompt, countdown, receipt and road marker |
 | `garage.js` | — | What delivery money buys (upgrades, paint), the wallet, and what the upgrades do to the car |
@@ -81,8 +82,9 @@ What already works well and stays: the Overpass-shaped `elements` list as the si
 and the world builder; `osm-query.js` shared by browser and Worker so the proxy only runs the game's query; I/O passed
 in (`fetchVectorArea(lat, lon, fetchFn)`); named meshes; versioned storage keys.
 
-Nothing structural is outstanding: every module is under ~600 lines and every function under ~150. Keep it that way
-with the rules below.
+Every module is under ~600 lines except `sedan-model.js` (`buildCar`, the whole car), and three functions are past
+~150 lines: `buildCar`, `startGame` in `drive-map.js` and `finishCorner` in `russian-hill.js`. Split those along their
+jobs in refactor PRs, as `time-choice.js` came out of `startGame`; keep everything else inside the limits.
 
 ## Target
 
@@ -97,6 +99,7 @@ root, one copy each. Page URLs don't change.
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`, `brake`), and `repaint(C, hex)` colours the car's `paint`; the ground under the car (`vmax`, `drag`, `rough`, `grip`, optional `height(x,z)`) and collisions | `car-ground` |
 | `app-version.js` | Show the current release on the three game pages | nothing |
 | `storage.js` | `stored(key)` (parsed JSON, else the text, else null) and `keep(key, value)`: localStorage that never throws, for every page | nothing |
+| `time-choice.js` | `nextChoice`, `hourIn`, `weatherIn`, `clock`, `timeText`, `minuteTick`: the real-map page's time and weather choice | `weather` |
 | `delivery.js` | Select reachable stops and advance an area-local job, a round of drop-offs; `JOB_LEVELS`, `levelOf`, `levelText`, `CARGO`; `allowedTime`, `afterCrash` (with the padding's cushion), `deliveryPay`, `receiptText`; fines for red lights and knocking into pedestrians (`FINE`, `KNOCK_FINE`) | nothing |
 | `result-card.js` | `resultCard(chime)` → `show(receipt, jobs, levelUp)`, `hide`: the results card after a delivery | `delivery` |
 | `delivery-hud.js` | Drive the HUD (job, countdown, damage and fines, the stop's ring and beam) and place the active stop in the scene; `paid(receipt)` hands the pay to the page, `level()` says what level to plan jobs at, `cargo` is what's aboard | `delivery`, three |
@@ -144,7 +147,7 @@ root, one copy each. Page URLs don't change.
 | `proxy/worker.js` | Caching proxy | `osm-query` |
 
 Dependencies point down the table only. Page entries are the only modules that touch the page's DOM at import time.
-`geom.js`, `drive-core.js`, `road-layout.js`, `traffic.js`, `pedestrians.js`, `garage.js`, `quality.js`, `area-fetch.js`, `places.js`, `hints.js`, `osm-query.js`, `vector-fallback.js` and `weather.js` stay importable in Node: no three, no DOM, no storage, and network
+`geom.js`, `drive-core.js`, `road-layout.js`, `traffic.js`, `pedestrians.js`, `garage.js`, `quality.js`, `area-fetch.js`, `places.js`, `hints.js`, `osm-query.js`, `vector-fallback.js`, `time-choice.js` and `weather.js` stay importable in Node: no three, no DOM, no storage, and network
 only through a passed-in `fetch`. `radio.js` follows the same rules, except that calling `radio()` creates an `<audio>` and `radioHud()` its on-screen station display. The travel controller reads browser history and the cooldown at runtime. The driving audio factory reads the tab’s mute preference and initializes Web Audio on a driving gesture.
 
 Tests live in `test/*.test.js` and run with `npm test`. Tests build their own fixtures (the vector-fallback test
