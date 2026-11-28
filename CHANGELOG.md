@@ -3,6 +3,12 @@
 What changed in each release of the game. Every pull request bumps the version in `package.json` (minor for features,
 patch for fixes) and adds its entry at the top. Versions before 0.4.0 are in the git history.
 
+## 0.11.2 — 2026-11-28
+
+- **Faster maps for everyone:** the game downloads places through its own caching proxy again. Once anyone has driven a
+  place, the next player gets it in under a second instead of waiting for the public map servers (a big city centre
+  took 75 s the first time and 0.4 s after that).
+
 ## 0.11.1 — 2026-11-28
 
 - **Works with site data blocked:** if your browser blocks this site's storage, the map picker, the test track and the
