@@ -356,7 +356,7 @@ async function startGame(lat0, lon0, placeName, corner) {
     results.show(receipt, wallet.jobs, up); if (up) flash(up, 'gold'); // (toasts show below the card)
   }, () => levelOf(wallet.jobs), driveHeight);
   function toggleDelivery() {
-    if (started && !paused()) delivery.toggle(st.pos.x,st.pos.z);
+    if (started && !paused()) delivery.toggle(st.pos.x,st.pos.z,st.h);
   }
   $('jobButton').onclick = () => { toggleDelivery(); $('jobButton').blur(); };
   const TUNE = { power: 7.4 * tuning.power, idle: 0.5, vtop: 50, brake: tuning.brake };
@@ -406,7 +406,7 @@ async function startGame(lat0, lon0, placeName, corner) {
     else if (contact) { st.v = 0; boundary.offer(contact.hit); } // the edge of the area
     scraping = !!contact && !s.blocked && SOLID[contact.hit] && Math.abs(st.v) > 1;
     if (ranRed(graph.signals, was[0], was[1], st.pos.x, st.pos.z)) delivery.ranRed();
-    if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v, dt, dim);
+    if (!paused()) delivery.update(st.pos.x, st.pos.z, st.v, dt, dim, st.h);
     const ride = { hb: !paused() && k.hb, steer: st.steer, slip: st.slip, rough: !onHard, wet: ear.wet, snow: ear.snow, grip };
     sound.update(st.v, !paused() && k.up, !paused() && k.dn, ride); pad.feel(st.v, s.braking, ride); carfx.frame(dt, st, rig.wheels, ride, s.braking, scraping); if (!paused()) hints(dt, k, onHard);
     return s;
@@ -429,7 +429,7 @@ async function startGame(lat0, lon0, placeName, corner) {
   const kmh = $('kmh'), gear = $('gear'), streetEl = $('street');
   let streetT = 0, shownStreet = null;
   function hud(s, dt) {
-    drawMinimap(st.pos.x, st.pos.z, st.h, delivery.target, traffic.cars);
+    drawMinimap(st.pos.x, st.pos.z, st.h, delivery.target, traffic.cars, delivery.route);
     speedHud(kmh, gear, st, s);
     if ((streetT -= dt) > 0) return; streetT = 0.25;
     const r = roadAt(st.pos.x, st.pos.z); let label = '';

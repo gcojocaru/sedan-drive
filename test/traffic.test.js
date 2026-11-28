@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { prepareRoads } from '../road-layout.js';
-import { laneGraph, createTraffic, lightAt, walkLeft, ranRed, roadLights, LEVELS } from '../traffic.js';
+import { laneGraph, createTraffic, lightAt, walkLeft, ranRed, roadLights, routeTo, LEVELS } from '../traffic.js';
 import { seeded } from '../geom.js';
 
 const LEN_ = 2.2; // a car's half length
@@ -250,4 +250,27 @@ test('wet roads reflect headlights coming, tail lights going, and signals facing
   const many = Array.from({ length: 20 }, (_, i) => ({ x: 5 + i * 10, z: 0, h: Math.PI, braking: false }));
   const near = roadLights(many, [], 0, 0, 3);
   assert.deepEqual(near.map(l => Math.round(l[0])), [3, 13, 23], 'the n nearest');
+});
+
+test('the route goes by road the way traffic drives, from the car to the stop', () => {
+  const { graph } = grid(3, 100);
+  const near = (p, x, z, m) => Math.hypot(p[0] - x, p[1] - z) < m;
+  const r = routeTo(graph, -60, 1.6, 0, 98.4, 50); // eastbound on z = 0, to a stop on the x = 100 street's southbound lane
+  assert.ok(r && near(r.pts[0], -60, 1.6, 2) && near(r.pts.at(-1), 98.4, 50, 2), 'from the car to the stop');
+  assert.ok(r.len > 200 && r.len < 240, 'about 160 m east, then 50 m south: ' + Math.round(r.len));
+  const onStreet = ([x, z]) => Math.min(...[-100, 0, 100].flatMap(c => [Math.abs(x - c), Math.abs(z - c)])) < 8;
+  assert.ok(r.pts.every((p, i) => onStreet(p) && (!i || onStreet([(p[0] + r.pts[i - 1][0]) / 2, (p[1] + r.pts[i - 1][1]) / 2]))), 'every point and every stretch between is on a street, none across a block');
+  const ahead = routeTo(graph, -60, 1.6, 0, -20, 1.6);
+  assert.ok(ahead && Math.abs(ahead.len - 40) < 1, 'a stop ahead on the same street: straight there');
+  const turned = routeTo(graph, -60, 1.6, Math.PI, -20, 1.6);
+  assert.ok(turned && turned.len >= ahead.len, 'facing the wrong way still finds it, and it is never shorter');
+  assert.equal(routeTo(graph, -60, 1.6, 0, 400, 400), null, 'no road near the stop');
+});
+
+test('one-way streets are only routed their own way', () => {
+  const { graph } = grid(3, 100, 'right', null, { oneway: 'yes' }); // every street one-way: east along x, south along z
+  const r = routeTo(graph, -60, 0, 0, 0, 60);
+  assert.ok(r, 'east then south is allowed');
+  for (let i = 1; i < r.pts.length; i++) assert.ok(r.pts[i][0] >= r.pts[i - 1][0] - 1e-6 && r.pts[i][1] >= r.pts[i - 1][1] - 2, 'never back west or north');
+  assert.equal(routeTo(graph, -60, 0, 0, -90, 0), null, 'a stop behind on a one-way grid with no way back');
 });
