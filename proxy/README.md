@@ -10,7 +10,10 @@ browser ──GET /area?lat=…&lon=…──▶ Worker ──▶ edge cache ─
 
 - It only runs the game's own query (`../osm-query.js`) for start points on the game's ~55 m grid, so it can't be used
   to run arbitrary Overpass queries.
-- It only answers the sites listed in `ALLOWED_ORIGINS` (`wrangler.toml`).
+- It only answers the sites listed in `ALLOWED_ORIGINS` (`wrangler.toml`). Any script can send that header, so new
+  downloads from Overpass are also capped (`UPSTREAM` in `wrangler.toml`: 30 a minute per Cloudflare location). Over the
+  cap it replies 429 and the game asks Overpass itself, so players still get their map, and the public servers never
+  see a flood from the proxy.
 - A server that answers HTTP 429/406 is left alone for 30 s, as the Overpass policy asks. When every server is busy it
   replies 503 and the game shows "busy" instead of asking Overpass again itself.
 - Places expire from KV after `TTL_DAYS` (30) and are then downloaded fresh, which keeps storage inside the free 1 GB.

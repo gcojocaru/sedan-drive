@@ -6,6 +6,9 @@ test('the wallet starts from earnings kept before the garage, and anything broke
   assert.deepEqual(readWallet(null, { total: 85, jobs: 6 }), { cash: 85, earned: 85, jobs: 6 });
   assert.deepEqual(readWallet({ cash: 10, earned: 85, jobs: 6 }, { total: 85, jobs: 6 }), { cash: 10, earned: 85, jobs: 6 }, 'the wallet wins once there is one');
   for (const junk of [null, 'x', { cash: -5, earned: 1, jobs: 1 }, { cash: NaN }]) assert.deepEqual(readWallet(junk, null), { cash: 0, earned: 0, jobs: 0 });
+  const mine = { cash: 40, earned: 90, jobs: 3 }; // what the page holds when storage is blocked or damaged
+  assert.equal(readWallet(null, null, mine), mine, 'nothing stored: keep the wallet in hand');
+  assert.deepEqual(readWallet({ cash: 70, earned: 120, jobs: 4 }, null, mine), { cash: 70, earned: 120, jobs: 4 }, 'another tab earned: take its wallet');
   assert.deepEqual(earn({ cash: 10, earned: 85, jobs: 6 }, 14), { cash: 24, earned: 99, jobs: 7 });
 });
 
@@ -42,6 +45,8 @@ test('a stored garage is checked before use', () => {
   assert.deepEqual(g.paints, ['factory', 'navy']);
   assert.equal(g.paint, 'factory', 'not a paint we own');
   assert.deepEqual(readGarage('junk'), freshGarage());
+  const held = { ...freshGarage(), paint: 'factory', levels: { engine: 2, brakes: 0, tyres: 0, padding: 0 } };
+  assert.equal(readGarage(null, held), held, 'nothing stored: keep the garage in hand');
 });
 
 test('what the upgrades do to the car', () => {

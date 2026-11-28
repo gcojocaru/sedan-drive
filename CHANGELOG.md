@@ -3,6 +3,15 @@
 What changed in each release of the game. Every pull request bumps the version in `package.json` (minor for features,
 patch for fixes) and adds its entry at the top. Versions before 0.4.0 are in the git history.
 
+## 0.11.1 — 2026-11-28
+
+- **Works with site data blocked:** if your browser blocks this site's storage, the map picker, the test track and the
+  car viewer now open normally (they used to show an empty page). Settings and progress just aren't remembered.
+- **Two tabs no longer lose your money:** with the game open in two tabs, a delivery in one and a purchase in the other
+  used to overwrite each other's cash and upgrades. Each tab now picks up the other's changes before saving.
+- **Map proxy:** the caching proxy limits how many new places it downloads a minute, so it can't be used to flood the
+  public map servers (for when it is deployed again).
+
 ## 0.11.0 — 2026-11-28
 
 - **Wet nights that shine:** on wet roads at dusk, at night and in murky weather, the cars around you now leave their

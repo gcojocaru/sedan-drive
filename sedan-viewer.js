@@ -1,5 +1,6 @@
 import { buildCar, FA, RA } from './sedan-model.js';
 import { showAppVersion } from './app-version.js';
+import { stored, keep } from './storage.js';
 
 showAppVersion();
 const stage = document.querySelector('three-d-stage');
@@ -48,10 +49,10 @@ car.traverse(o => { if (o.isMesh && o.material === glass || o.material === lensC
 
 // ---------- Controls ----------
 const KEY = 'sedan-lights-v1';
-const st = Object.assign({ beam: 0, fog: false, brake: false, reverse: false, left: false, right: false, hazard: false, cabin: false, night: false }, JSON.parse(localStorage.getItem(KEY) || '{}'));
+const storedLights = stored(KEY), st = Object.assign({ beam: 0, fog: false, brake: false, reverse: false, left: false, right: false, hazard: false, cabin: false, night: false }, storedLights && typeof storedLights === 'object' ? storedLights : {});
 const panel = document.getElementById('panel');
 function apply() {
-  localStorage.setItem(KEY, JSON.stringify(st));
+  keep(KEY, st);
   const n = st.night;
   headMat.emissiveIntensity = st.beam ? (st.beam === 2 ? 9 : 5) : 0;
   drlMat.emissiveIntensity = st.beam ? 6 : 0;

@@ -13,6 +13,7 @@ import { postFx } from './post-fx.js';
 import { carProbe } from './car-probe.js';
 import { carFx } from './car-fx.js';
 import { QUALITY, pickQuality, pixelRatio, dynamicRes } from './quality.js';
+import { stored, keep } from './storage.js';
 import { blobTex } from './world-kit.js';
 
 showAppVersion();
@@ -22,7 +23,7 @@ const C = buildCar(), rig = rigCar(C), car = C.car;
 mergeStatic(car); // the car's still parts in a few draw calls
 
 // graphics quality: the real-map page's setting (sedan-quality-v1), or this device's tier
-let qPick = 'auto'; try { qPick = JSON.parse(localStorage.getItem('sedan-quality-v1')) ?? 'auto'; } catch { }
+const qPick = stored('sedan-quality-v1') ?? 'auto';
 const Q = QUALITY[pickQuality(qPick, { coarse: matchMedia('(pointer: coarse)').matches, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory })];
 const renderer = new THREE.WebGLRenderer({ antialias: Q.msaa && !Q.post });
 let resScale = 1, fx = null; const fit = () => { renderer.setPixelRatio(pixelRatio(Q, devicePixelRatio, innerWidth, innerHeight, resScale)); renderer.setSize(innerWidth, innerHeight); fx?.setSize(); };
@@ -152,7 +153,7 @@ placeOnTrack(N - 14);
 
 // laps
 const BEST_KEY = 'sedan-drive-best-v2'; // (v2: grip limits from 0.7.0 changed lap times)
-let lap = { running: false, t0: 0, n: 0, cps: new Set(), last: null, best: +localStorage.getItem(BEST_KEY) || null };
+let lap = { running: false, t0: 0, n: 0, cps: new Set(), last: null, best: +stored(BEST_KEY) || null };
 const fmt = s => s == null ? '–' : Math.floor(s / 60) + ':' + (s % 60).toFixed(1).padStart(4, '0');
 const flash = toasts(); // flash(text, tone, key)
 let clock = 0;
@@ -160,7 +161,7 @@ function lapLogic(prev, cur) {
   const q = N / 4; for (const c of [1, 2, 3]) if (Math.abs(cur - c * q) < 30) lap.cps.add(c);
   if (prev > N - 80 && cur < 80) { // crossed start line forwards
     if (lap.running && lap.cps.size === 3) { const t = clock - lap.t0; lap.last = t; lap.n++;
-      if (!lap.best || t < lap.best) { lap.best = t; localStorage.setItem(BEST_KEY, t); flash('New best lap  ' + fmt(t), 'gold'); } else flash('Lap ' + fmt(t)); }
+      if (!lap.best || t < lap.best) { lap.best = t; keep(BEST_KEY, t); flash('New best lap  ' + fmt(t), 'gold'); } else flash('Lap ' + fmt(t)); }
     else if (!lap.running) flash('Go', 'good');
     lap.running = true; lap.t0 = clock; lap.cps.clear();
   }
@@ -224,8 +225,8 @@ addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyB') so
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; sound.horn(false); });
 addEventListener('resize', () => { fit(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
 let last = performance.now(), lastS = { braking: false, reversing: false };
-const perf = perfHud(renderer, () => Q.name + ' · pixel ratio ' + renderer.getPixelRatio().toFixed(2), localStorage.getItem('sedan-perf-v1') === 'true');
-perf.onToggle(on => localStorage.setItem('sedan-perf-v1', on));
+const perf = perfHud(renderer, () => Q.name + ' · pixel ratio ' + renderer.getPixelRatio().toFixed(2), stored('sedan-perf-v1') === true);
+perf.onToggle(on => keep('sedan-perf-v1', on));
 renderer.setAnimationLoop(now => {
   const t0 = performance.now();
   if (document.hasFocus()) resTick(now - last); /* (an unfocused window may be held at 30 fps: not a slow GPU) */ const dt = Math.min(0.05, (now - last) / 1000); last = now;
