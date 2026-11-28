@@ -109,7 +109,8 @@ const isBridge = t => t.bridge && t.bridge !== 'no';
 
 // elements: an Overpass reply's elements; (lat0, lon0) becomes the origin. say(text) shows progress and waits for a repaint.
 // setGround(wet, snow) (0–1 each, from weather.js groundOf) wets roads, roofs and ground or lays snow on them;
-// reflectLamps(x, z), called as the camera moves, lets the lit street lamps nearest it glint in wet roads.
+// reflectLamps(x, z), called as the camera moves, lets the lit street lamps nearest it glint in wet roads; reflectTraffic(on, pick),
+// called every frame, does the same for traffic's lamps and signals (world-kit.js weatherLook moving).
 // terrain: terrain.js loadTerrain() (or nothing: flat); q: { lampLights, facadeDepth }: how many street lamps near the car really
 // light it, and whether windows are set back with rooms behind them (quality.js)
 export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { lampLights = 0, facadeDepth = false, treeDetail = 68 } = {}, finishCorner) {
@@ -195,7 +196,7 @@ export async function buildWorld(elements, lat0, lon0, scene, say, terrain, { la
   const signs = planSigns(layout.junctions, landmarks, roadAt, signFree);
   addSignMeshes(scene, signs, landHeight);
   const lightFront = await finishCorner?.({ scene, road: LAYERS.road[0], markings: LAYERS.marks[0], wear, height: landHeight, buildings: polys });
-  return { updateTrees, driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps: on => { setLamps(on); lightFront?.(on); }, setGround: wx.set, reflectLamps: wx.follow, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs), lampLight };
+  return { updateTrees, driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit: hit, frontMat, wallMat, setLamps: on => { setLamps(on); lightFront?.(on); }, setGround: wx.set, reflectLamps: wx.follow, reflectTraffic: wx.moving, glowTex, parkedPaint, posts: camPosts(trees, lamps, signs), lampLight };
 }
 
 // what the chase camera keeps out of, as geom.js pointGrid points [x, z, r, y0, y1]: tree trunks (not the crowns, which

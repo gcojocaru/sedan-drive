@@ -177,6 +177,24 @@ export function ranRed(signals, ax, az, bx, bz) {
 // The colour of light `signal` (an edge's { ctrl, phase }) at time t (s): its phase gets green, then amber, then all
 // stand at red a moment before the next phase's green, and after the last phase, through the walk phase.
 const cycleAt = (ctrl, t) => { const n = ctrl.phases.length, len = n * PHASE + (ctrl.walk || 0); return [((t + ctrl.offset) % len + len) % len, n * PHASE, len]; };
+// The lights traffic shows in a wet road around (x, z), the n nearest, as [x, y, z, strength, r, g, b]: a car's headlights
+// (white) where it faces (x, z), else its tail lights (red, dim unless it brakes); a signal's lamp in its colour where it
+// faces (x, z). Strength grows the more squarely a light faces (x, z). height(x, z): the ground.
+const SIGNAL_LAMP = { red: [3.3, 1, 0.12, 0.05], amber: [3.02, 1, 0.55, 0.08], green: [2.74, 0.15, 1, 0.45] }; // [height (m), r, g, b]
+export function roadLights(cars, signals, x, z, n, height = () => 0) {
+  const out = [], facing = (px, pz, h) => { const fx = Math.cos(h), fz = -Math.sin(h); return [fx, fz, ((x - px) * fx + (z - pz) * fz) / (Math.hypot(x - px, z - pz) || 1)]; };
+  for (const c of cars) {
+    const [fx, fz, f] = facing(c.x, c.z, c.h), y = height(c.x, c.z), k = f > 0 ? LEN : -LEN;
+    out.push(f > 0 ? [c.x + fx * k, y + 0.7, c.z + fz * k, f, 1, 0.92, 0.8] : [c.x + fx * k, y + 0.85, c.z + fz * k, -f * (c.braking ? 1 : 0.35), 1, 0.08, 0.04]);
+  }
+  for (const s of signals) {
+    const [, , f] = facing(s.x, s.z, s.h), [hy, r, g, b] = SIGNAL_LAMP[s.state] || SIGNAL_LAMP.red;
+    if (f > 0) out.push([s.x, height(s.x, s.z) + hy, s.z, f * 0.8, r, g, b]);
+  }
+  const d = l => (l[0] - x) ** 2 + (l[2] - z) ** 2;
+  return out.sort((a, b) => d(a) - d(b)).slice(0, n);
+}
+
 export function lightAt(signal, t) {
   const { ctrl, phase } = signal, [at, cars] = cycleAt(ctrl, t);
   if (at >= cars) return 'red'; // people are crossing
