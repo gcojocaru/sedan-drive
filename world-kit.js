@@ -29,17 +29,20 @@ export function tagColor(s) {
   return null;
 }
 
-// Rain and snow on the surfaces that face the sky. weatherLook() → { wear(material, kind), set(wet, snow), lamps, lit, follow }:
+// Rain and snow on the surfaces that face the sky. weatherLook() → { wear(material, kind), set(wet, snow), lamps, lit, follow, moving }:
 // wear() patches a MeshStandardMaterial before its first render so that wet (0–1) darkens it and makes it glossy, with
 // puddles on roads, and snow (0–1) whitens what faces up, in drifts from one world-space noise, so layers lying on top of
 // each other agree. Every worn material shares the uniforms, so set() changes them all at once. kind: a row of WEAR.
 // Street lamps aren't lights, so wet roads reflect them by hand: lamps(points) gives their heads (x, y, z, …), lit(on)
-// switches them, and follow(x, z) hands the shader the eight nearest the camera.
+// switches them, and follow(x, z) hands the shader the eight nearest the camera. moving(on, pick) does the same each frame
+// for up to eight lights that move or change colour (traffic.js roadLights: car lamps, signals): pick() is only called
+// when the road is wet and on (dusk, night or murky weather).
 const WEAR = { // [wet darkens to, wet gloss, snow (below 1: patchier), slush (0 white … 1 grey), facing up only, puddles]
   road: [0.5, 0.85, 0.36, 0.7, 0, 1], mark: [0.85, 0.6, 0.36, 0.7, 0, 1], pave: [0.62, 0.55, 0.85, 0.2, 0, 0],
   ground: [0.78, 0.15, 1, 0, 0, 0], roof: [0.7, 0.5, 1, 0, 1, 0], tree: [0.85, 0.1, 0.7, 0, 1, 0] };
 export function weatherLook() {
-  const U = { uWet: { value: 0 }, uSnow: { value: 0 }, wxGlint: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) } };
+  const LAMP = new THREE.Vector3(1, 0.78, 0.5), U = { uWet: { value: 0 }, uSnow: { value: 0 }, wxGlint: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) },
+    wxGlintC: { value: Array.from({ length: 16 }, (_, i) => i < 8 ? LAMP : new THREE.Vector3()) } }; // slots 0-7 street lamps, 8-15 moving lights
   const vert = s => s.replace('#include <common>', '#include <common>\nvarying vec3 vWx;\nvarying float vWxUp;').replace('#include <begin_vertex>', `#include <begin_vertex>
 vec4 wxP = vec4(transformed, 1.0); vec3 wxN = objectNormal;
 #ifdef USE_INSTANCING
@@ -48,7 +51,8 @@ wxP = instanceMatrix * wxP; wxN = mat3(instanceMatrix) * wxN;
 vWx = (modelMatrix * wxP).xyz; vWxUp = normalize(mat3(modelMatrix) * wxN).y;`);
   const frag = s => s.replace('#include <common>', `#include <common>
 uniform float uWet, uSnow, wxK[6];
-uniform vec4 wxGlint[8];
+uniform vec4 wxGlint[16];
+uniform vec3 wxGlintC[16];
 varying vec3 vWx;
 varying float vWxUp;
 float wxH(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
@@ -64,11 +68,11 @@ diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.83, 0.86, 0.9), vec3(0.42, 0
     .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 roughnessFactor = mix(mix(mix(roughnessFactor, 0.12, wxWet * wxK[1]), 0.03, wxPud), 0.75, wxS);`)
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-float wxG = wxWet * wxK[1] * wxK[5] * (1.0 - wxS); // lit street lamps glint in wet roads, stretched towards the eye like real reflections
+float wxG = wxWet * wxK[1] * wxK[5] * (1.0 - wxS); // lights glint in wet roads, stretched towards the eye like real reflections
 if (wxG > 0.0) {
   vec3 wxV = normalize(cameraPosition - vWx);
   float wxR = (0.04 + 0.96 * pow(1.0 - wxV.y, 5.0)) * wxG * mix(4.0, 14.0, wxPud), wxE = mix(120.0, 1200.0, wxPud);
-  for (int i = 0; i < 8; i++) totalEmissiveRadiance += vec3(1.0, 0.78, 0.5) * wxGlint[i].w * wxR * pow(max(normalize(normalize(wxGlint[i].xyz - vWx) + wxV).y, 0.0), wxE);
+  for (int i = 0; i < 16; i++) if (wxGlint[i].w > 0.0) totalEmissiveRadiance += wxGlintC[i] * wxGlint[i].w * wxR * pow(max(normalize(normalize(wxGlint[i].xyz - vWx) + wxV).y, 0.0), wxE);
 }`);
   function wear(mat, kind) {
     const k = WEAR[kind];
@@ -79,11 +83,18 @@ if (wxG > 0.0) {
   function follow(x, z) {
     if (!on || !U.uWet.value || Math.hypot(x - fx, z - fz) < 4) return; fx = x; fz = z; // a new pick every 4 m
     const d = i => (heads[i * 3] - x) ** 2 + (heads[i * 3 + 2] - z) ** 2, near = [...Array(heads.length / 3).keys()].sort((a, b) => d(a) - d(b));
-    U.wxGlint.value.forEach((v, i) => i < near.length ? v.set(heads[near[i] * 3], heads[near[i] * 3 + 1], heads[near[i] * 3 + 2], 1) : v.set(0, 0, 0, 0));
+    U.wxGlint.value.slice(0, 8).forEach((v, i) => i < near.length ? v.set(heads[near[i] * 3], heads[near[i] * 3 + 1], heads[near[i] * 3 + 2], 1) : v.set(0, 0, 0, 0));
+  }
+  let moved = true;
+  function moving(lit, pick) {
+    const G = U.wxGlint.value, C = U.wxGlintC.value;
+    if (!lit || !U.uWet.value) { if (moved) for (let i = 8; i < 16; i++) G[i].w = 0; moved = false; return; }
+    const L = pick(); moved = true;
+    for (let i = 0; i < 8; i++) { const l = L[i]; if (l) { G[i + 8].set(l[0], l[1], l[2], l[3]); C[i + 8].set(l[4], l[5], l[6]); } else G[i + 8].w = 0; }
   }
   return {
-    wear, follow, lamps(points) { heads = points; },
-    lit(v) { on = v; fx = Infinity; if (!v) for (const g of U.wxGlint.value) g.w = 0; },
+    wear, follow, moving, lamps(points) { heads = points; },
+    lit(v) { on = v; fx = Infinity; if (!v) for (const g of U.wxGlint.value.slice(0, 8)) g.w = 0; },
     set(wet, snow) { U.uWet.value = wet; U.uSnow.value = snow; fx = Infinity; }
   };
 }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { prepareRoads } from '../road-layout.js';
-import { laneGraph, createTraffic, lightAt, walkLeft, ranRed, LEVELS } from '../traffic.js';
+import { laneGraph, createTraffic, lightAt, walkLeft, ranRed, roadLights, LEVELS } from '../traffic.js';
 import { seeded } from '../geom.js';
 
 const LEN_ = 2.2; // a car's half length
@@ -233,4 +233,21 @@ test('levels set how many cars live around the player, and hit() finds them', ()
   sim.setLevel(0, 0, 0);
   assert.equal(sim.cars.length, 0);
   assert.equal(LEVELS[0][0], 'Off');
+});
+
+test('wet roads reflect headlights coming, tail lights going, and signals facing the eye', () => {
+  const ahead = { x: 20, z: 0, h: Math.PI, braking: false }, away = { x: -20, z: 0, h: Math.PI, braking: true }; // both drive towards -x
+  const [head, tail] = roadLights([ahead, away], [], 0, 0, 8, () => 5);
+  assert.deepEqual(head.slice(4), [1, 0.92, 0.8], 'a car coming shows white headlights');
+  assert.ok(Math.abs(head[0] - (20 - 2.2)) < 1e-9 && head[1] === 5.7 && head[3] > 0.99, 'at its nose, above the ground');
+  assert.deepEqual(tail.slice(4), [1, 0.08, 0.04], 'a car going away shows red tail lights');
+  assert.ok(tail[0] > -20 && tail[3] > 0.99, 'at its tail, bright while it brakes');
+  assert.ok(roadLights([{ ...away, braking: false }], [], 0, 0, 8)[0][3] < 0.4, 'dim when it does not');
+  const facing = { x: 10, z: 0, h: Math.PI, state: 'green' }, turned = { x: -10, z: 0, h: Math.PI, state: 'red' };
+  const sig = roadLights([], [facing, turned], 0, 0, 8);
+  assert.equal(sig.length, 1, 'a signal facing away shows nothing');
+  assert.deepEqual(sig[0].slice(4), [0.15, 1, 0.45]); assert.equal(sig[0][1], 2.74);
+  const many = Array.from({ length: 20 }, (_, i) => ({ x: 5 + i * 10, z: 0, h: Math.PI, braking: false }));
+  const near = roadLights(many, [], 0, 0, 3);
+  assert.deepEqual(near.map(l => Math.round(l[0])), [3, 13, 23], 'the n nearest');
 });

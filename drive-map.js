@@ -27,7 +27,7 @@ import { gamepad } from './gamepad.js';
 import { cloudReady } from './cloud-layer.js';
 import { createSky } from './sky.js';
 import { WEATHERS, weatherNow, solarHour, groundOf } from './weather.js';
-import { laneGraph, createTraffic, ranRed, LEVELS } from './traffic.js';
+import { laneGraph, createTraffic, ranRed, roadLights, LEVELS } from './traffic.js';
 import { trafficCars } from './traffic-cars.js';
 import { trafficLights } from './traffic-lights.js';
 import { walkGraph, createPedestrians, PEOPLE } from './pedestrians.js';
@@ -204,7 +204,7 @@ async function startGame(lat0, lon0, placeName, corner) {
   const [terrain] = await Promise.all([terrainRequest, cloudReady]);
   const sky = createSky(renderer, scene, lat0, Q, undefined, terrain.height), { TIMES, NIGHT } = sky;
 
-  const { updateTrees, driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, glowTex, posts, parkedPaint, lampLight } = await buildWorld(data.elements, lat0, lon0, scene, say, terrain, Q, corner?.finishCorner);
+  const { updateTrees, driveHeight, roads, paths, rivers, polys, seas, blds, trees, addressPoints, nB, layout, signalPts, crossPts, roadAt, areaAt, inBuilding, furnitureHit, frontMat, wallMat, setLamps, setGround, reflectLamps, reflectTraffic, glowTex, posts, parkedPaint, lampLight } = await buildWorld(data.elements, lat0, lon0, scene, say, terrain, Q, corner?.finishCorner);
 
   // ---- car ----
   await say('Placing the car…');
@@ -527,7 +527,8 @@ async function startGame(lat0, lon0, placeName, corner) {
       Object.assign(me, { x: st.pos.x, z: st.pos.z, h: st.h, v: st.v });
       people.step(dt, me, traffic.cars, graph.signals); lap('people'); traffic.step(dt, me, people.crossing); lap('traffic'); // (traffic keeps from the people in the road)
     }
-    trafficView.sync(traffic.cars, dim, camera.position); lightsView.sync(dim); figures.sync(people.people); lap('sync');
+    trafficView.sync(traffic.cars, dim, camera.position); lightsView.sync(dim);
+    reflectTraffic(dim, () => roadLights(traffic.cars, graph.signals, camera.position.x, camera.position.z, 8, driveHeight)); figures.sync(people.people); lap('sync');
     camera.getWorldDirection(look); const flat = Math.hypot(look.x, look.z) || 1;
     Object.assign(ear, { x: camera.position.x, z: camera.position.z, fx: look.x / flat, fz: look.z / flat, vx: Math.cos(st.h) * st.v, vz: -Math.sin(st.h) * st.v });
     sound.traffic(traffic.cars, ear); lap('sound');

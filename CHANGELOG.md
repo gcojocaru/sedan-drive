@@ -3,6 +3,12 @@
 What changed in each release of the game. Every pull request bumps the version in `package.json` (minor for features,
 patch for fixes) and adds its entry at the top. Versions before 0.4.0 are in the git history.
 
+## 0.11.0 — 2026-11-28
+
+- **Wet nights that shine:** on wet roads at dusk, at night and in murky weather, the cars around you now leave their
+  lights in the road: white streaks from the headlights of oncoming cars, red ones from the tail lights ahead (brighter
+  when they brake), and the red, amber or green of the traffic signals facing you.
+
 ## 0.10.0 — 2026-11-28
 
 - **Windows with depth:** on Medium and High graphics, windows sit back in the walls, so from an angle you see the
