@@ -51,6 +51,7 @@ how each part works; this file says how the parts may fit together.
 | `traffic.js` | — | Traffic on the real map: lane graph, traffic lights, car following, junction claims, spawning around the player |
 | `traffic-cars.js` | — | The traffic cars on screen: instanced bodies, paint, brake lights and night glows |
 | `app-version.js` | — | Shared release label from the local package manifest |
+| `storage.js` | — | Browser storage that never throws (`stored`, `keep`), for all three pages |
 | `delivery.js` | — | Parcel stops on connected, directed lanes, pickup/drop-off state, the clock, damage, fines and pay |
 | `delivery-hud.js` | — | Current job prompt, countdown, receipt and road marker |
 | `garage.js` | — | What delivery money buys (upgrades, paint), the wallet, and what the upgrades do to the car |
@@ -91,10 +92,11 @@ root, one copy each. Page URLs don't change.
 | Module | Owns | May import |
 |---|---|---|
 | `drive-map.js` | Real-map page entry: picker, loading screen, time of day, game loop wiring | everything below |
-| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch`, `toast`, `gamepad`, `world-kit`, `quality`, `perf-hud`, `car-merge`, `post-fx`, `car-probe`, `car-fx`, `app-version` |
-| `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model`, `app-version` |
+| `drive-track.js` | Test-track page entry: track geometry, lap timing | `drive-core`, `sedan-model`, `radio`, `touch`, `toast`, `gamepad`, `world-kit`, `quality`, `perf-hud`, `car-merge`, `post-fx`, `car-probe`, `car-fx`, `app-version`, `storage` |
+| `sedan-viewer.js` | Viewer page entry: studio environment, light toggles, views, export | `three-d-stage`, `sedan-model`, `app-version`, `storage` |
 | `drive-core.js` | Driving shared by both drive pages: keys, physics step, wheel/steering/lamp sync, chase camera, speed/gear HUD. Pages pass in their tuning (`power`, `idle`, `vtop`, `brake`), and `repaint(C, hex)` colours the car's `paint`; the ground under the car (`vmax`, `drag`, `rough`, `grip`, optional `height(x,z)`) and collisions | `car-ground` |
 | `app-version.js` | Show the current release on the three game pages | nothing |
+| `storage.js` | `stored(key)` (parsed JSON, else the text, else null) and `keep(key, value)`: localStorage that never throws, for every page | nothing |
 | `delivery.js` | Select reachable stops and advance an area-local job, a round of drop-offs; `JOB_LEVELS`, `levelOf`, `levelText`, `CARGO`; `allowedTime`, `afterCrash` (with the padding's cushion), `deliveryPay`, `receiptText`; fines for red lights and knocking into pedestrians (`FINE`, `KNOCK_FINE`) | nothing |
 | `result-card.js` | `resultCard(chime)` → `show(receipt, jobs, levelUp)`, `hide`: the results card after a delivery | `delivery` |
 | `delivery-hud.js` | Drive the HUD (job, countdown, damage and fines, the stop's ring and beam) and place the active stop in the scene; `paid(receipt)` hands the pay to the page, `level()` says what level to plan jobs at, `cargo` is what's aboard | `delivery`, three |
@@ -156,7 +158,7 @@ and every `integrity` hash matches its file in `vendor/`.
    `surface(x, z)` or `blocked(x, z, h)`); don't fork the code.
 2. **Respect the dependency table.** No upward imports, no new DOM or three.js use in the Node-importable modules, no
    network or storage calls outside `app-version.js` (local package metadata), `map-data.js`, `terrain.js` (Terrarium tiles), `vector-fallback.js`, `weather.js` (through a passed-in `fetch`), `radio.js` (station search through a passed-in
-   `fetch`, and the stream itself), `vaz-model.js` (its own model file), `buildings.js` (its own photo textures in `textures/`), the proxy and the page entries.
+   `fetch`, and the stream itself), `vaz-model.js` (its own model file), `buildings.js` (its own photo textures in `textures/`), `storage.js` (localStorage, for the pages), the proxy and the page entries.
 3. **New logic goes in its module, not in a page and not in `startGame()`.** A new world feature is its own function
    in `world.js` that `buildWorld()` calls, not more lines inside `buildWorld()`. No new inline
    `<script type="module">` logic in pages.

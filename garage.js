@@ -15,10 +15,11 @@ const POWER = [1, 1.12, 1.25, 1.4], BRAKE = [1, 1.12, 1.25], TYRES = [1, 0.75, 0
 
 export const freshGarage = () => ({ levels: { engine: 0, brakes: 0, tyres: 0, padding: 0 }, paints: ['factory'], paint: 'factory' });
 
-// A stored garage made safe to use: unknown items dropped, levels in range, the paint one that's owned.
-export function readGarage(stored) {
+// A stored garage made safe to use: unknown items dropped, levels in range, the paint one that's owned. none: what to use
+// when nothing usable is stored (a fresh garage, or the one in hand when storage is blocked).
+export function readGarage(stored, none = freshGarage()) {
   const g = freshGarage();
-  if (!stored || typeof stored !== 'object') return g;
+  if (!stored || typeof stored !== 'object') return none;
   for (const k in g.levels) { const n = stored.levels?.[k]; if (Number.isInteger(n)) g.levels[k] = Math.max(0, Math.min(UPGRADES[k].levels.length, n)); }
   if (Array.isArray(stored.paints)) g.paints = [...new Set(['factory', ...stored.paints.filter(id => PAINTS.some(p => p[0] === id))])];
   if (g.paints.includes(stored.paint)) g.paint = stored.paint;
@@ -26,12 +27,12 @@ export function readGarage(stored) {
 }
 
 // The wallet: { cash, earned, jobs }. Without one yet, it starts from the earnings deliveries kept before there was
-// anything to spend them on (legacy: { total, jobs }).
-export function readWallet(stored, legacy) {
+// anything to spend them on (legacy: { total, jobs }), else none (empty, or the wallet in hand when storage is blocked).
+export function readWallet(stored, legacy, none = { cash: 0, earned: 0, jobs: 0 }) {
   const ok = n => Number.isFinite(n) && n >= 0;
   if (stored && ok(stored.cash) && ok(stored.earned) && ok(stored.jobs)) return { cash: stored.cash, earned: stored.earned, jobs: stored.jobs };
   if (legacy && ok(legacy.total) && ok(legacy.jobs)) return { cash: legacy.total, earned: legacy.total, jobs: legacy.jobs };
-  return { cash: 0, earned: 0, jobs: 0 };
+  return none;
 }
 export const earn = (wallet, pay) => ({ cash: wallet.cash + pay, earned: wallet.earned + pay, jobs: wallet.jobs + 1 });
 

@@ -39,7 +39,10 @@ export default {
         return new Response(stored, { headers: { ...headers, 'X-Area-Source': 'kv' } });
       }
     }
-    // 3. Overpass, one server at a time
+    // 3. Overpass, one server at a time. The Origin header is easy to fake, so new downloads are capped (UPSTREAM in
+    // wrangler.toml, counted per Cloudflare location): a script walking the grid can't make the public servers turn the
+    // proxy away. Over the cap it answers 429, which the game takes as "ask Overpass yourself".
+    if (env.UPSTREAM && !(await env.UPSTREAM.limit({ key: 'overpass' })).success) return reply(429, 'too many new places at once', { 'Retry-After': '60' });
     const body = 'data=' + encodeURIComponent(overpassQuery(lat, lon)), ua = 'SedanDrive-map-proxy/1.0' + (env.APP_URL ? ' (+' + env.APP_URL + ')' : '');
     let last = 'no map server answered';
     for (const u of ENDPOINTS) {

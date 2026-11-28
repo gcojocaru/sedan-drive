@@ -39,6 +39,7 @@ import { postFx } from './post-fx.js';
 import { carProbe } from './car-probe.js';
 import { carFx } from './car-fx.js';
 import { QUALITY, pickQuality, pixelRatio, dynamicRes } from './quality.js';
+import { stored, keep } from './storage.js';
 
 showAppVersion();
 
@@ -73,7 +74,7 @@ else showPicker();
 // So searches run on submit and are remembered, and a clicked spot is named once, when you press Drive.
 const GEO_KEY = 'sedan-geocode-cache-v1'; let nomLast = 0;
 async function nominatim(path) {
-  let cache = {}; try { cache = JSON.parse(localStorage.getItem(GEO_KEY) || '{}'); } catch { }
+  const saved = stored(GEO_KEY), cache = saved && typeof saved === 'object' ? saved : {};
   if (cache[path]) return cache[path].v;
   const wait = nomLast + 1100 - Date.now(); if (wait > 0) await new Promise(r => setTimeout(r, wait));
   nomLast = Date.now();
@@ -81,7 +82,7 @@ async function nominatim(path) {
   if (!r.ok) throw new Error('place search replied ' + r.status);
   const v = await r.json();
   cache[path] = { v, t: Date.now() }; const ks = Object.keys(cache); if (ks.length > 60) ks.sort((a, b) => cache[a].t - cache[b].t).slice(0, ks.length - 60).forEach(k => delete cache[k]);
-  try { localStorage.setItem(GEO_KEY, JSON.stringify(cache)); } catch { }
+  keep(GEO_KEY, cache);
   return v;
 }
 async function reverseName(lat, lon) {
@@ -92,7 +93,7 @@ async function reverseName(lat, lon) {
 }
 function showPicker() {
   $('picker').style.display = 'block';
-  const last = JSON.parse(localStorage.getItem(LS_PLACE) || 'null');
+  const p = stored(LS_PLACE), last = Number.isFinite(p?.lat) && Number.isFinite(p?.lon) ? p : null;
   const map = L.map('map', { zoomControl: false, worldCopyJump: true }).setView(last ? [last.lat, last.lon] : [30, 0], last ? 15 : 2);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   const street = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, referrerPolicy: 'strict-origin-when-cross-origin', attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
@@ -103,7 +104,7 @@ function showPicker() {
     location.hash = link.dataset.corner; location.reload();
   };
   const go = $('go'), info = $('placeInfo');
-  const carSel = $('car'); carSel.value = localStorage.getItem(LS_CAR) || 'sedan'; carSel.onchange = () => localStorage.setItem(LS_CAR, carSel.value);
+  const carSel = $('car'); carSel.value = stored(LS_CAR) === 'vaz' ? 'vaz' : 'sedan'; carSel.onchange = () => keep(LS_CAR, carSel.value);
   function choose(lat, lon, name) {
     lon = snap(((lon + 540) % 360) - 180); lat = snap(lat); // the grid the map downloads are cached on
     chosen = { lat, lon, name: name || '' };
@@ -120,7 +121,7 @@ function showPicker() {
   map.on('click', e => { choose(e.latlng.lat, e.latlng.lng); if (map.getZoom() < 14) map.setView(e.latlng, 15); });
   if (last) choose(last.lat, last.lon, last.name);
   // one click to a place: featured city centres, a surprise, the player's recent places
-  let recent = []; try { recent = readRecent(JSON.parse(localStorage.getItem(LS_RECENT))); } catch { }
+  const recent = readRecent(stored(LS_RECENT));
   const jump = (lat, lon, name) => { map.setView([lat, lon], 15); choose(lat, lon, name); };
   const chip = (label, fn, cls = '') => { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip ' + cls; b.textContent = label; b.onclick = fn; return b; };
   $('featured').append(chip('Surprise me', () => { const [n, la, lo] = surprise(Math.random(), last); jump(la, lo, n); }, 'surprise'), ...FEATURED.map(([n, la, lo]) => chip(n.split(' · ')[0], () => jump(la, lo, n))));
@@ -142,7 +143,7 @@ function showPicker() {
     if (!chosen || go.disabled) return;
     go.disabled = true;
     if (!chosen.name) { go.textContent = 'Finding the address…'; chosen.name = await reverseName(chosen.lat, chosen.lon); }
-    localStorage.setItem(LS_PLACE, JSON.stringify(chosen)); try { localStorage.setItem(LS_RECENT, JSON.stringify(addRecent(recent, chosen))); } catch { }
+    keep(LS_PLACE, chosen); keep(LS_RECENT, addRecent(recent, chosen));
     location.hash = chosen.lat.toFixed(4) + ',' + chosen.lon.toFixed(4) + '|' + encodeURIComponent(chosen.name);
     location.reload();
   });
@@ -187,7 +188,7 @@ async function startGame(lat0, lon0, placeName, corner) {
   }
 
   // ---- renderer / scene ----
-  let qPick = 'auto'; try { qPick = JSON.parse(localStorage.getItem(LS_QUALITY)) ?? 'auto'; } catch { }
+  const qPick = stored(LS_QUALITY) ?? 'auto';
   const coarse = matchMedia('(pointer: coarse)').matches, Q = QUALITY[pickQuality(qPick, { coarse, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory })];
   const renderer = new THREE.WebGLRenderer({ antialias: Q.msaa && !Q.post, logarithmicDepthBuffer: true }); // (with post-processing the HDR target antialiases)
   let resScale = 1, fx = null; const fit = () => { renderer.setPixelRatio(pixelRatio(Q, devicePixelRatio, innerWidth, innerHeight, resScale)); renderer.setSize(innerWidth, innerHeight); fx?.setSize(); };
@@ -208,10 +209,10 @@ async function startGame(lat0, lon0, placeName, corner) {
 
   // ---- car ----
   await say('Placing the car…');
-  const CAR = localStorage.getItem(LS_CAR) === 'vaz' ? await loadVaz().catch(e => (console.warn('VAZ-2101 did not load, using the sedan', e), buildCar())) : buildCar(), car = CAR.car;
+  const CAR = stored(LS_CAR) === 'vaz' ? await loadVaz().catch(e => (console.warn('VAZ-2101 did not load, using the sedan', e), buildCar())) : buildCar(), car = CAR.car;
   const rig = rigCar(CAR);
-  const stored = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, keep = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } };
   let wallet = readWallet(stored(LS_WALLET), stored(LS_EARNED)), garage = readGarage(stored(LS_GARAGE)), tuning = carTuning(garage); // delivery money, and what it bought
+  const reread = () => { wallet = readWallet(stored(LS_WALLET), null, wallet); garage = readGarage(stored(LS_GARAGE), garage); }; // another tab may have earned or spent since
   repaint(CAR, tuning.paint);
   const frustum = new THREE.Frustum(), view = new THREE.Matrix4(), probe = new THREE.Sphere(V(), 3); // what the camera sees: traffic comes and goes out of sight
   const graph = laneGraph(roads, layout.junctions, HALF, signalPts), lightsView = trafficLights(scene, graph.signals, glowTex, driveHeight);
@@ -291,17 +292,17 @@ async function startGame(lat0, lon0, placeName, corner) {
   wxSel.append(new Option('Live weather', 'live'), ...WEATHERS.map((w, i) => new Option(w.label, i)));
   timeSel.onchange = () => { tSel = pick(timeSel.value); applyTime(); };
   wxSel.onchange = () => { wSel = pick(wxSel.value); applyTime(); };
-  const trafficSel = $('trafficSel'), storedLevel = Number(localStorage.getItem(LS_TRAFFIC) ?? (corner ? 1 : 2));
+  const trafficSel = $('trafficSel'), storedLevel = Number(stored(LS_TRAFFIC) ?? (corner ? 1 : 2));
   trafficSel.append(...LEVELS.map(([name], i) => new Option(name, i)));
   trafficSel.value = LEVELS[storedLevel] ? storedLevel : 2;
-  trafficSel.onchange = () => { localStorage.setItem(LS_TRAFFIC, trafficSel.value); traffic.setLevel(+trafficSel.value, st.pos.x, st.pos.z); };
+  trafficSel.onchange = () => { keep(LS_TRAFFIC, trafficSel.value); traffic.setLevel(+trafficSel.value, st.pos.x, st.pos.z); };
   traffic.setLevel(+trafficSel.value, st.pos.x, st.pos.z);
-  const peopleSel = $('peopleSel'), storedPeople = Number(localStorage.getItem(LS_PEOPLE) ?? 2);
+  const peopleSel = $('peopleSel'), storedPeople = Number(stored(LS_PEOPLE) ?? 2);
   peopleSel.append(...PEOPLE.map(([name], i) => new Option(name, i)));
   peopleSel.value = PEOPLE[storedPeople] ? storedPeople : 2;
   const gfxSel = $('gfxSel'); gfxSel.append(new Option('Auto (' + QUALITY[pickQuality('auto', { coarse, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory })].name + ')', 'auto'), ...QUALITY.map((q, i) => new Option(q.name, i)));
-  gfxSel.value = String(qPick); gfxSel.onchange = () => { localStorage.setItem(LS_QUALITY, JSON.stringify(gfxSel.value === 'auto' ? 'auto' : +gfxSel.value)); visitArea({ lat: lat0, lon: lon0, name: placeName, entry: pose() }); }; // (antialias is fixed when the renderer is made: reload here)
-  peopleSel.onchange = () => { localStorage.setItem(LS_PEOPLE, peopleSel.value); people.setLevel(+peopleSel.value, st.pos.x, st.pos.z); };
+  gfxSel.value = String(qPick); gfxSel.onchange = () => { keep(LS_QUALITY, gfxSel.value === 'auto' ? 'auto' : +gfxSel.value); visitArea({ lat: lat0, lon: lon0, name: placeName, entry: pose() }); }; // (antialias is fixed when the renderer is made: reload here)
+  peopleSel.onchange = () => { keep(LS_PEOPLE, peopleSel.value); people.setLevel(+peopleSel.value, st.pos.x, st.pos.z); };
   people.setLevel(+peopleSel.value, st.pos.x, st.pos.z);
   function showTime(announce) { // local clock time, also for the presets (they are set in solar time)
     const w = weatherOf(), real = wSel === 'live' && live, lying = !real ? '' : live.snowDepth >= 0.01 ? ', ' + Math.round(live.snowDepth * 100) + ' cm on the ground' : groundOf(w).wet > 0.3 && !['rain', 'storm', 'snow'].includes(w.kind) ? ', wet roads' : '';
@@ -354,7 +355,7 @@ async function startGame(lat0, lon0, placeName, corner) {
   showWallet();
   const results = resultCard((kind, i) => sound.chime(kind, i));
   const delivery = deliveryHud(scene, graph, furnitureHit, $('jobButton'), $('jobStage'), $('jobDistance'), flash, receipt => {
-    const was = levelOf(wallet.jobs); wallet = earn(wallet, receipt.total); keep(LS_WALLET, wallet); showWallet();
+    reread(); const was = levelOf(wallet.jobs); wallet = earn(wallet, receipt.total); keep(LS_WALLET, wallet); showWallet();
     const now = levelOf(wallet.jobs), up = now > was ? 'Level ' + (now + 1) + ' · ' + JOB_LEVELS[now].name + ': ' + levelText(now) : '';
     results.show(receipt, wallet.jobs, up); if (up) flash(up, 'gold'); // (toasts show below the card)
   }, () => levelOf(wallet.jobs), driveHeight);
@@ -365,12 +366,12 @@ async function startGame(lat0, lon0, placeName, corner) {
   const TUNE = { power: 7.4 * tuning.power, idle: 0.5, vtop: 50, brake: tuning.brake };
   // ---- garage: delivery money buys upgrades and paint (G) ----
   const garageEl = $('garage'), shop = garagePanel($('garageItems'), item => {
-    const bought = buy(garage, wallet, item); if (!bought) return;
+    reread(); const bought = buy(garage, wallet, item); if (!bought) { showWallet(); shop.draw(garage, wallet); return; }
     ({ garage, wallet } = bought); tuning = carTuning(garage); keep(LS_GARAGE, garage); keep(LS_WALLET, wallet);
     repaint(CAR, tuning.paint); avoidMine(); applyTime(); // (engine and brakes: TUNE, each frame; tyres: the grip)
     showWallet(); shop.draw(garage, wallet);
   });
-  function openGarage() { if (paused()) return; hint.garageSeen = true; clearKeys(); shop.draw(garage, wallet); garageEl.showModal(); }
+  function openGarage() { if (paused()) return; hint.garageSeen = true; clearKeys(); reread(); showWallet(); shop.draw(garage, wallet); garageEl.showModal(); }
   $('garageButton').onclick = () => { openGarage(); $('garageButton').blur(); };
   let scraping = false; // sliding along something solid (car-fx sparks it)
   // just-in-time hints (hints.js): what the player is doing, and the ones already shown
@@ -513,8 +514,8 @@ async function startGame(lat0, lon0, placeName, corner) {
   addEventListener('blur', () => { clearKeys(); sound.horn(false); });
   addEventListener('resize', () => { fit(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
   let last = performance.now(), lastS = { braking: false, reversing: false };
-  const perf = perfHud(renderer, () => Q.name + ' · pixel ratio ' + renderer.getPixelRatio().toFixed(2), localStorage.getItem(LS_PERF) === 'true');
-  const perfChk = $('perfChk'), keepPerf = on => { perfChk.checked = on; localStorage.setItem(LS_PERF, on); };
+  const perf = perfHud(renderer, () => Q.name + ' · pixel ratio ' + renderer.getPixelRatio().toFixed(2), stored(LS_PERF) === true);
+  const perfChk = $('perfChk'), keepPerf = on => { perfChk.checked = on; keep(LS_PERF, on); };
   perfChk.checked = perf.isOn(); perfChk.onchange = () => { perf.show(perfChk.checked); keepPerf(perfChk.checked); }; perf.onToggle(keepPerf);
   renderer.setAnimationLoop(now => {
     const t0 = performance.now(), lap = perf.lap; perf.begin();

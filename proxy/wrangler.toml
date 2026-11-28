@@ -11,6 +11,17 @@ APP_URL = "https://gcojocaru.github.io/sedan-drive/"
 # Days a downloaded place stays in KV before it is fetched fresh (keeps storage within the free 1 GB).
 TTL_DAYS = "30"
 
+# New places downloaded from Overpass, at most `limit` per `period` seconds (10 or 60) in each Cloudflare location; cached
+# places don't count. Keeps a script walking the grid from getting the proxy turned away by the public servers. Needs
+# Wrangler 4.36 or later. namespace_id: any number not used by another rate limit on the account.
+[[ratelimits]]
+name = "UPSTREAM"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 30
+  period = 60
+
 # Created by: npm run proxy:kv
 [[kv_namespaces]]
 binding = "AREAS"
